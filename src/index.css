@@ -107,10 +107,6 @@ body {
   animation: cell-pop 0.2s ease-out;
 }
 
-.cell--clearing {
-  animation: cell-clear 0.25s ease-out both;
-}
-
 .cell--preview-valid {
   opacity: 0.5;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -124,11 +120,6 @@ body {
   0% { transform: scale(0.5); opacity: 0.6; }
   60% { transform: scale(1.1); }
   100% { transform: scale(1); opacity: 1; }
-}
-
-@keyframes cell-clear {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 
 /* Piece tray */
