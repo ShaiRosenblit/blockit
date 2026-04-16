@@ -108,8 +108,8 @@ body {
 }
 
 .cell--clearing {
-  animation: cell-clear 0.3s ease-out both;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: cell-clear 0.3s ease-in both;
+  border: none;
 }
 
 .cell--preview-valid {
@@ -132,10 +132,13 @@ body {
     transform: scale(1);
     opacity: 1;
   }
-  100% {
-    transform: scale(0.4);
+  60% {
+    transform: scale(0.5);
     opacity: 0;
-    border-radius: 50%;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
   }
 }
 
