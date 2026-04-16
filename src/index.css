@@ -108,8 +108,8 @@ body {
 }
 
 .cell--clearing {
-  animation: cell-clear 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  animation: cell-clear 0.3s ease-out both;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .cell--preview-valid {
@@ -131,17 +131,11 @@ body {
   0% {
     transform: scale(1);
     opacity: 1;
-    filter: brightness(1) saturate(1);
-  }
-  30% {
-    transform: scale(1.02);
-    opacity: 1;
-    filter: brightness(1.25) saturate(1.4);
   }
   100% {
-    transform: scale(0.85) translateY(-3px);
+    transform: scale(0.4);
     opacity: 0;
-    filter: brightness(1.1) saturate(0.3);
+    border-radius: 50%;
   }
 }
 

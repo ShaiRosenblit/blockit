@@ -1,17 +1,19 @@
+export type ClearingInfo = { color: string; delay: number };
+
 type CellProps = {
   color: string | null;
   preview?: 'valid' | 'invalid' | null;
-  flash?: string | null;
+  clearing?: ClearingInfo | null;
   justPlaced?: boolean;
 };
 
-export function Cell({ color, preview, flash, justPlaced }: CellProps) {
+export function Cell({ color, preview, clearing, justPlaced }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
 
-  if (flash) {
+  if (clearing) {
     className += ' cell--clearing';
-    style = { backgroundColor: flash };
+    style = { backgroundColor: clearing.color, animationDelay: `${clearing.delay}ms` };
   } else if (preview === 'valid') {
     className += ' cell--preview-valid';
     style = { backgroundColor: color ?? undefined };
