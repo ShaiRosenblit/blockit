@@ -2,7 +2,6 @@ import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
 import { gameReducer, createInitialState } from './game/gameReducer';
 import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
-import type { ClearingInfo } from './components/Cell';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
@@ -32,7 +31,6 @@ export default function App() {
     color: string | null;
   } | null>(null);
 
-  const [clearingCells, setClearingCells] = useState<Map<string, ClearingInfo> | null>(null);
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
 
@@ -112,31 +110,6 @@ export default function App() {
       if (linesCleared > 0) {
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
-        const clearing = new Map<string, ClearingInfo>();
-        const stepDelay = 30;
-        for (const r of rows) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const key = `${r},${c}`;
-            const existing = clearing.get(key);
-            const delay = c * stepDelay;
-            if (!existing || delay < existing.delay) {
-              clearing.set(key, { color: hypothetical[r][c]!, delay });
-            }
-          }
-        }
-        for (const c of cols) {
-          for (let r = 0; r < BOARD_SIZE; r++) {
-            const key = `${r},${c}`;
-            const existing = clearing.get(key);
-            const delay = r * stepDelay;
-            if (!existing || delay < existing.delay) {
-              clearing.set(key, { color: hypothetical[r][c]!, delay });
-            }
-          }
-        }
-        setClearingCells(clearing);
-        const maxDelay = (BOARD_SIZE - 1) * stepDelay + 300;
-        setTimeout(() => setClearingCells(null), maxDelay);
 
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
@@ -205,7 +178,6 @@ export default function App() {
           boardRef={boardRef}
           previewCells={preview?.cells}
           previewColor={preview?.color}
-          clearingCells={clearingCells ?? undefined}
           placedCells={placedCells ?? undefined}
         />
         <PieceTray onDragStart={handleDragStart} draggingIndex={drag?.index ?? null} />

@@ -1,12 +1,12 @@
 const BASE = import.meta.env.BASE_URL;
 
 const SOUND_FILES = [
-  'pickup.ogg',
-  'place.ogg',
-  'line-clear.ogg',
-  'combo.ogg',
-  'invalid-drop.ogg',
-  'game-over.ogg',
+  'pickup.mp3',
+  'place.mp3',
+  'line-clear.mp3',
+  'combo.mp3',
+  'invalid-drop.mp3',
+  'game-over.mp3',
 ] as const;
 
 let ctx: AudioContext | null = null;
@@ -63,15 +63,15 @@ function play(name: string, volume = 0.5) {
 }
 
 export const sounds = {
-  pickup: () => play('pickup.ogg', 0.3),
-  place: () => play('place.ogg', 0.4),
+  pickup: () => play('pickup.mp3', 0.3),
+  place: () => play('place.mp3', 0.4),
   lineClear: (count: number) => {
     if (count >= 2) {
-      play('combo.ogg', 0.5);
+      play('combo.mp3', 0.5);
     } else {
-      play('line-clear.ogg', 0.45);
+      play('line-clear.mp3', 0.45);
     }
   },
-  invalidDrop: () => play('invalid-drop.ogg', 0.25),
-  gameOver: () => play('game-over.ogg', 0.5),
+  invalidDrop: () => play('invalid-drop.mp3', 0.25),
+  gameOver: () => play('game-over.mp3', 0.5),
 };
