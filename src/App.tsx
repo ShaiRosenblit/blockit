@@ -9,6 +9,7 @@ import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord } from './game/types';
 import { BOARD_SIZE } from './game/types';
+import { haptics } from './haptics';
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
@@ -99,13 +100,14 @@ export default function App() {
       }
       setPlacedCells(placed);
       setTimeout(() => setPlacedCells(null), 200);
+      haptics.place();
 
-      // Compute which cells will be cleared for flash animation
       const hypothetical = placePiece(state.board, piece, origin);
       const { rows, cols } = detectCompletedLines(hypothetical);
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
+        haptics.lineClear(linesCleared);
         const flash = new Map<string, string>();
         for (const r of rows) {
           for (let c = 0; c < BOARD_SIZE; c++) {
@@ -138,6 +140,7 @@ export default function App() {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       setDrag({ index, x: e.clientX, y: e.clientY });
       updatePreview(e.clientX, e.clientY, index);
+      haptics.pickup();
     },
     [updatePreview]
   );
@@ -152,12 +155,15 @@ export default function App() {
 
     const onUp = (e: PointerEvent) => {
       const piece = state.tray[drag.index];
+      let placed = false;
       if (piece && boardRef.current) {
         const origin = computeOrigin(e.clientX, e.clientY, piece);
         if (origin && canPlacePiece(state.board, piece, origin)) {
           handlePlace(drag.index, origin);
+          placed = true;
         }
       }
+      if (!placed) haptics.invalidDrop();
       setDrag(null);
       setPreview(null);
     };

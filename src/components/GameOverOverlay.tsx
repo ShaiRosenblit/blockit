@@ -1,7 +1,13 @@
+import { useEffect } from 'react';
 import { useGame } from '../hooks/useGame';
+import { haptics } from '../haptics';
 
 export function GameOverOverlay() {
   const { state, dispatch } = useGame();
+
+  useEffect(() => {
+    if (state.isGameOver) haptics.gameOver();
+  }, [state.isGameOver]);
 
   if (!state.isGameOver) return null;
 
