@@ -1,21 +1,65 @@
 const BASE = import.meta.env.BASE_URL;
 
-const cache = new Map<string, HTMLAudioElement>();
+const SOUND_FILES = [
+  'pickup.ogg',
+  'place.ogg',
+  'line-clear.ogg',
+  'combo.ogg',
+  'invalid-drop.ogg',
+  'game-over.ogg',
+] as const;
 
-function load(name: string): HTMLAudioElement {
-  let audio = cache.get(name);
-  if (!audio) {
-    audio = new Audio(`${BASE}sounds/${name}`);
-    cache.set(name, audio);
+let ctx: AudioContext | null = null;
+const buffers = new Map<string, AudioBuffer>();
+let unlocked = false;
+
+function getContext(): AudioContext {
+  if (!ctx) ctx = new AudioContext();
+  return ctx;
+}
+
+function preload() {
+  const ac = getContext();
+  for (const name of SOUND_FILES) {
+    if (buffers.has(name)) continue;
+    fetch(`${BASE}sounds/${name}`)
+      .then((r) => r.arrayBuffer())
+      .then((data) => ac.decodeAudioData(data))
+      .then((buf) => buffers.set(name, buf))
+      .catch(() => {});
   }
-  return audio;
+}
+
+function unlock() {
+  if (unlocked) return;
+  unlocked = true;
+  const ac = getContext();
+  if (ac.state === 'suspended') ac.resume().catch(() => {});
+  preload();
+  for (const evt of ['pointerdown', 'touchstart', 'keydown'] as const) {
+    document.removeEventListener(evt, unlock, true);
+  }
+}
+
+for (const evt of ['pointerdown', 'touchstart', 'keydown'] as const) {
+  document.addEventListener(evt, unlock, { capture: true, once: false });
 }
 
 function play(name: string, volume = 0.5) {
-  const audio = load(name);
-  audio.volume = volume;
-  audio.currentTime = 0;
-  audio.play().catch(() => {});
+  const ac = getContext();
+  if (ac.state === 'suspended') ac.resume().catch(() => {});
+
+  const buffer = buffers.get(name);
+  if (!buffer) return;
+
+  const source = ac.createBufferSource();
+  source.buffer = buffer;
+
+  const gain = ac.createGain();
+  gain.gain.value = volume;
+
+  source.connect(gain).connect(ac.destination);
+  source.start(0);
 }
 
 export const sounds = {
