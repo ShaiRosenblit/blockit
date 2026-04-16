@@ -108,8 +108,7 @@ body {
 }
 
 .cell--clearing {
-  animation: cell-clear 0.3s ease-in both;
-  border: none;
+  animation: cell-clear 0.25s ease-out both;
 }
 
 .cell--preview-valid {
@@ -128,18 +127,8 @@ body {
 }
 
 @keyframes cell-clear {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  60% {
-    transform: scale(0.5);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(0);
-    opacity: 0;
-  }
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* Piece tray */
