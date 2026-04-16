@@ -1,14 +1,26 @@
 ---
-description: Git commit and push workflow for continuous deployment via GitHub Pages
+description: Git commit and push workflow — every change must be committed and pushed
 alwaysApply: true
 ---
 
 # Git Workflow
 
-After every meaningful change (new feature, bug fix, milestone completion):
+**Every meaningful change MUST be committed and pushed immediately.**
+
+A "meaningful change" is any unit of work that leaves the project in a working state:
+- completing a milestone or sub-milestone
+- adding a new feature or component
+- fixing a bug
+- refactoring or restructuring code
+
+## Steps after each change
 
 1. Stage all relevant files with `git add`
-2. Write a concise commit message describing the change
+2. Write a concise commit message describing what changed and why
 3. Run `git push` to keep the remote up to date
 
-This project deploys via GitHub Pages, so pushing to `main` should always leave the build in a deployable state. Never push broken or half-finished code -- complete the current unit of work first, then commit and push.
+## Rules
+
+- Never push broken or half-finished code — complete the current unit of work first.
+- Commits should be small and focused. One logical change per commit.
+- This project deploys via GitHub Pages, so `main` must always be deployable.
