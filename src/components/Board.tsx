@@ -7,13 +7,15 @@ type BoardProps = {
   boardRef: React.RefObject<HTMLDivElement | null>;
   previewCells?: Map<string, 'valid' | 'invalid'>;
   previewColor?: string | null;
+  flashCells?: Map<string, string>;
+  placedCells?: Set<string>;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor }: BoardProps) {
+export function Board({ boardRef, previewCells, previewColor, flashCells, placedCells }: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -21,11 +23,15 @@ export function Board({ boardRef, previewCells, previewColor }: BoardProps) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       const key = coordKey(r, c);
       const preview = previewCells?.get(key) ?? null;
+      const flash = flashCells?.get(key) ?? null;
+      const justPlaced = placedCells?.has(key) ?? false;
       cells.push(
         <Cell
           key={key}
           color={preview === 'valid' ? previewColor ?? null : state.board[r][c]}
           preview={preview}
+          flash={flash}
+          justPlaced={justPlaced}
         />
       );
     }

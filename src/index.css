@@ -103,6 +103,15 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+.cell--just-placed {
+  animation: cell-pop 0.2s ease-out;
+}
+
+.cell--clearing {
+  animation: cell-clear 0.25s ease-out forwards;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
 .cell--preview-valid {
   opacity: 0.5;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -110,6 +119,18 @@ body {
 
 .cell--preview-invalid {
   background: rgba(255, 60, 60, 0.25);
+}
+
+@keyframes cell-pop {
+  0% { transform: scale(0.5); opacity: 0.6; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes cell-clear {
+  0% { transform: scale(1); opacity: 1; }
+  40% { transform: scale(1.15); opacity: 1; filter: brightness(1.8); }
+  100% { transform: scale(0); opacity: 0; }
 }
 
 /* Piece tray */
@@ -226,4 +247,23 @@ body {
 
 .restart-btn:active {
   transform: scale(0.96);
+}
+
+/* Score popup */
+.score-popup {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  font-weight: 800;
+  color: #FFEAA7;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 1500;
+  animation: score-float 0.6s ease-out forwards;
+}
+
+@keyframes score-float {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+  30% { opacity: 1; transform: translate(-50%, -80%) scale(1.2); }
+  100% { opacity: 0; transform: translate(-50%, -120%) scale(1); }
 }
