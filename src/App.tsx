@@ -10,6 +10,7 @@ import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
+import { sounds } from './sounds';
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
@@ -101,6 +102,7 @@ export default function App() {
       setPlacedCells(placed);
       setTimeout(() => setPlacedCells(null), 200);
       haptics.place();
+      sounds.place();
 
       const hypothetical = placePiece(state.board, piece, origin);
       const { rows, cols } = detectCompletedLines(hypothetical);
@@ -108,6 +110,7 @@ export default function App() {
 
       if (linesCleared > 0) {
         haptics.lineClear(linesCleared);
+        sounds.lineClear(linesCleared);
         const flash = new Map<string, string>();
         for (const r of rows) {
           for (let c = 0; c < BOARD_SIZE; c++) {
@@ -122,7 +125,7 @@ export default function App() {
           }
         }
         setFlashCells(flash);
-        setTimeout(() => setFlashCells(null), 250);
+        setTimeout(() => setFlashCells(null), 400);
 
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
@@ -141,6 +144,7 @@ export default function App() {
       setDrag({ index, x: e.clientX, y: e.clientY });
       updatePreview(e.clientX, e.clientY, index);
       haptics.pickup();
+      sounds.pickup();
     },
     [updatePreview]
   );
@@ -163,7 +167,10 @@ export default function App() {
           placed = true;
         }
       }
-      if (!placed) haptics.invalidDrop();
+      if (!placed) {
+        haptics.invalidDrop();
+        sounds.invalidDrop();
+      }
       setDrag(null);
       setPreview(null);
     };
