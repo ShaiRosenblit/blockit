@@ -33,6 +33,7 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -172,7 +173,20 @@ export default function App() {
   return (
     <GameContext value={{ state, dispatch }}>
       <div className="app">
-        <h1 className="title">Blockit</h1>
+        <div className="header-row">
+          <h1 className="title">Blockit</h1>
+          <button
+            className="sound-toggle"
+            aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+            onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              sounds.setMuted(next);
+            }}
+          >
+            {muted ? '\u{1F507}' : '\u{1F50A}'}
+          </button>
+        </div>
         <ScoreBar />
         <Board
           boardRef={boardRef}

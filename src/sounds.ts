@@ -1,4 +1,5 @@
 const BASE = import.meta.env.BASE_URL;
+const STORAGE_KEY = 'blockit-sound';
 
 const SOUND_FILES = [
   'pickup.mp3',
@@ -8,6 +9,8 @@ const SOUND_FILES = [
   'invalid-drop.mp3',
   'game-over.mp3',
 ] as const;
+
+let muted = localStorage.getItem(STORAGE_KEY) !== 'on';
 
 let ctx: AudioContext | null = null;
 const buffers = new Map<string, AudioBuffer>();
@@ -46,6 +49,8 @@ for (const evt of ['pointerdown', 'touchstart', 'keydown'] as const) {
 }
 
 function play(name: string, volume = 0.5) {
+  if (muted) return;
+
   const ac = getContext();
   if (ac.state === 'suspended') ac.resume().catch(() => {});
 
@@ -63,6 +68,12 @@ function play(name: string, volume = 0.5) {
 }
 
 export const sounds = {
+  isMuted: () => muted,
+  setMuted: (value: boolean) => {
+    muted = value;
+    localStorage.setItem(STORAGE_KEY, value ? 'off' : 'on');
+    if (!value && !unlocked) unlock();
+  },
   pickup: () => play('pickup.mp3', 0.3),
   place: () => play('place.mp3', 0.4),
   lineClear: (count: number) => {
