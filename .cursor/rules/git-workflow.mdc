@@ -1,0 +1,14 @@
+---
+description: Git commit and push workflow for continuous deployment via GitHub Pages
+alwaysApply: true
+---
+
+# Git Workflow
+
+After every meaningful change (new feature, bug fix, milestone completion):
+
+1. Stage all relevant files with `git add`
+2. Write a concise commit message describing the change
+3. Run `git push` to keep the remote up to date
+
+This project deploys via GitHub Pages, so pushing to `main` should always leave the build in a deployable state. Never push broken or half-finished code -- complete the current unit of work first, then commit and push.
