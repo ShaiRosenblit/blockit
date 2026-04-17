@@ -1,6 +1,6 @@
 import type { BoardGrid, Coord, Difficulty, PieceShape } from './types';
 import { BOARD_SIZE, COLORS } from './types';
-import { canPlacePiece, placePiece, detectCompletedLines } from './board';
+import { canPlacePiece, placePiece, detectCompletedLines, clearLines } from './board';
 
 type PieceDef = { id: string; cells: Coord[] };
 
@@ -162,8 +162,12 @@ function randomPiece(difficulty: Difficulty): PieceShape {
   return { ...pieces[idx], color: randomColor() };
 }
 
-function scoreForZen(piece: PieceShape, board: BoardGrid): number {
-  let best = -1;
+function bestZenPlacement(
+  piece: PieceShape,
+  board: BoardGrid
+): { score: number; origin: Coord | null } {
+  let bestScore = -1;
+  let bestOrigin: Coord | null = null;
 
   for (let r = 0; r <= BOARD_SIZE - piece.height; r++) {
     for (let c = 0; c <= BOARD_SIZE - piece.width; c++) {
@@ -205,36 +209,68 @@ function scoreForZen(piece: PieceShape, board: BoardGrid): number {
         }
       }
 
-      best = Math.max(best, score);
+      if (score > bestScore) {
+        bestScore = score;
+        bestOrigin = origin;
+      }
     }
   }
 
-  if (best < 0) return 0;
-  return best + 1;
+  return { score: bestScore < 0 ? 0 : bestScore + 1, origin: bestOrigin };
+}
+
+function simulatePlay(board: BoardGrid, piece: PieceShape, origin: Coord): BoardGrid {
+  let result = placePiece(board, piece, origin);
+  const { rows, cols } = detectCompletedLines(result);
+  if (rows.length > 0 || cols.length > 0) {
+    result = clearLines(result, rows, cols);
+  }
+  return result;
+}
+
+function pickFromTop(
+  candidates: { piece: PieceShape; score: number; origin: Coord | null }[]
+): { piece: PieceShape; score: number; origin: Coord | null } {
+  const top = candidates.slice(0, 5);
+  const weights = top.map((c) => c.score * c.score);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < top.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return top[i];
+  }
+  return top[top.length - 1];
 }
 
 function generateZenPieces(board: BoardGrid): [PieceShape, PieceShape, PieceShape] {
-  const scored = PIECE_CATALOG
-    .map((p) => ({ piece: p, score: scoreForZen(p, board) }))
-    .filter((s) => s.score > 0);
+  const results: PieceShape[] = [];
+  let simBoard = board;
 
-  if (scored.length === 0) {
-    return [randomPiece('easy'), randomPiece('easy'), randomPiece('easy')];
-  }
+  for (let i = 0; i < 3; i++) {
+    const candidates = PIECE_CATALOG
+      .map((p) => ({ piece: p, ...bestZenPlacement(p, simBoard) }))
+      .filter((c) => c.score > 0)
+      .sort((a, b) => b.score - a.score);
 
-  const weighted = scored.map((s) => ({ piece: s.piece, weight: s.score * s.score }));
-  const total = weighted.reduce((sum, s) => sum + s.weight, 0);
-
-  function pick(): PieceShape {
-    let r = Math.random() * total;
-    for (const { piece, weight } of weighted) {
-      r -= weight;
-      if (r <= 0) return { ...piece, color: randomColor() };
+    if (candidates.length === 0) {
+      results.push(randomPiece('easy'));
+      continue;
     }
-    return { ...weighted[weighted.length - 1].piece, color: randomColor() };
+
+    const pick = pickFromTop(candidates);
+    results.push({ ...pick.piece, color: randomColor() });
+
+    if (pick.origin) {
+      simBoard = simulatePlay(simBoard, pick.piece, pick.origin);
+    }
   }
 
-  return [pick(), pick(), pick()];
+  for (let i = results.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [results[i], results[j]] = [results[j], results[i]];
+  }
+
+  return results as [PieceShape, PieceShape, PieceShape];
 }
 
 export function generatePieces(difficulty: Difficulty, board?: BoardGrid): [PieceShape, PieceShape, PieceShape] {
