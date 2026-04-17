@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, TraySlot } from './types';
+import type { BoardGrid, Coord, Difficulty, TraySlot } from './types';
 import { createEmptyBoard, canPlacePiece, placePiece, detectCompletedLines, clearLines, hasValidMoves } from './board';
 import { generatePieces } from './pieces';
 import { calculatePlacementScore, calculateClearScore } from './scoring';
@@ -10,34 +10,56 @@ export type GameState = {
   bestScore: number;
   combo: number;
   isGameOver: boolean;
+  difficulty: Difficulty;
 };
 
 export type GameAction =
   | { type: 'PLACE_PIECE'; trayIndex: number; origin: Coord }
-  | { type: 'RESTART' };
+  | { type: 'RESTART' }
+  | { type: 'SET_DIFFICULTY'; difficulty: Difficulty };
 
-function loadBestScore(): number {
+function bestScoreKey(difficulty: Difficulty): string {
+  return `blockit-best-${difficulty}`;
+}
+
+function loadBestScore(difficulty: Difficulty): number {
   try {
-    return Number(localStorage.getItem('blockit-best')) || 0;
+    return Number(localStorage.getItem(bestScoreKey(difficulty))) || 0;
   } catch {
     return 0;
   }
 }
 
-function saveBestScore(score: number) {
+function saveBestScore(difficulty: Difficulty, score: number) {
   try {
-    localStorage.setItem('blockit-best', String(score));
+    localStorage.setItem(bestScoreKey(difficulty), String(score));
+  } catch { /* noop */ }
+}
+
+function loadDifficulty(): Difficulty {
+  try {
+    const stored = localStorage.getItem('blockit-difficulty');
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') return stored;
+  } catch { /* noop */ }
+  return 'normal';
+}
+
+function saveDifficulty(difficulty: Difficulty) {
+  try {
+    localStorage.setItem('blockit-difficulty', difficulty);
   } catch { /* noop */ }
 }
 
 export function createInitialState(): GameState {
+  const difficulty = loadDifficulty();
   return {
     board: createEmptyBoard(),
-    tray: generatePieces(),
+    tray: generatePieces(difficulty),
     score: 0,
-    bestScore: loadBestScore(),
+    bestScore: loadBestScore(difficulty),
     combo: 0,
     isGameOver: false,
+    difficulty,
   };
 }
 
@@ -67,14 +89,28 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       newTray[action.trayIndex] = null;
 
       const allPlaced = newTray.every((s) => s === null);
-      const finalTray = allPlaced ? generatePieces() : newTray;
+      const finalTray = allPlaced ? generatePieces(state.difficulty) : newTray;
 
       const bestScore = Math.max(score, state.bestScore);
       const isGameOver = !hasValidMoves(board, finalTray);
 
-      if (bestScore > state.bestScore) saveBestScore(bestScore);
+      if (bestScore > state.bestScore) saveBestScore(state.difficulty, bestScore);
 
-      return { board, tray: finalTray, score, bestScore, combo, isGameOver };
+      return { ...state, board, tray: finalTray, score, bestScore, combo, isGameOver };
+    }
+
+    case 'SET_DIFFICULTY': {
+      saveDifficulty(action.difficulty);
+      const difficulty = action.difficulty;
+      return {
+        board: createEmptyBoard(),
+        tray: generatePieces(difficulty),
+        score: 0,
+        bestScore: loadBestScore(difficulty),
+        combo: 0,
+        isGameOver: false,
+        difficulty,
+      };
     }
 
     case 'RESTART':

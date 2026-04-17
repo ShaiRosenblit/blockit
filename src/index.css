@@ -73,6 +73,36 @@ body {
   opacity: 1;
 }
 
+/* Difficulty selector */
+.difficulty-selector {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.difficulty-btn {
+  padding: 5px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.difficulty-btn:hover {
+  color: var(--text);
+}
+
+.difficulty-btn--active {
+  background: #4ECDC4;
+  color: #1a1a2e;
+}
+
 /* Score bar */
 .score-bar {
   display: flex;
@@ -240,6 +270,14 @@ body {
 .game-over-card h2 {
   font-size: 28px;
   font-weight: 800;
+}
+
+.game-over-difficulty {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: #4ECDC4;
+  letter-spacing: 1px;
 }
 
 .game-over-score {

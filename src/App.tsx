@@ -7,7 +7,7 @@ import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
-import type { Coord } from './game/types';
+import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
@@ -187,6 +187,8 @@ export default function App() {
 
   const dragPiece = drag ? state.tray[drag.index] : null;
 
+  const difficulties: Difficulty[] = ['easy', 'normal', 'hard'];
+
   return (
     <GameContext value={{ state, dispatch }}>
       <div className="app">
@@ -203,6 +205,19 @@ export default function App() {
           >
             {muted ? '\u{1F507}' : '\u{1F50A}'}
           </button>
+        </div>
+        <div className="difficulty-selector">
+          {difficulties.map((d) => (
+            <button
+              key={d}
+              className={`difficulty-btn${d === state.difficulty ? ' difficulty-btn--active' : ''}`}
+              onClick={() => {
+                if (d !== state.difficulty) dispatch({ type: 'SET_DIFFICULTY', difficulty: d });
+              }}
+            >
+              {d}
+            </button>
+          ))}
         </div>
         <ScoreBar />
         <Board

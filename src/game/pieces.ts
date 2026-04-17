@@ -1,4 +1,4 @@
-import type { Coord, PieceShape } from './types';
+import type { Coord, Difficulty, PieceShape } from './types';
 import { COLORS } from './types';
 
 type PieceDef = { id: string; cells: Coord[] };
@@ -108,15 +108,58 @@ export const PIECE_CATALOG: PieceShape[] = PIECE_DEFS.map((def) => {
   return { ...def, width, height, color: '' };
 });
 
+function pieceWeight(cellCount: number, difficulty: Difficulty): number {
+  switch (difficulty) {
+    case 'easy':
+      if (cellCount <= 3) return 3;
+      if (cellCount <= 4) return 1;
+      return 0;
+    case 'normal':
+      return 1;
+    case 'hard':
+      if (cellCount <= 2) return 0;
+      if (cellCount <= 3) return 1;
+      return 3;
+  }
+}
+
+function buildWeightedPool(difficulty: Difficulty): { pieces: PieceShape[]; cumWeights: number[] } {
+  const pieces: PieceShape[] = [];
+  const cumWeights: number[] = [];
+  let total = 0;
+  for (const p of PIECE_CATALOG) {
+    const w = pieceWeight(p.cells.length, difficulty);
+    if (w <= 0) continue;
+    total += w;
+    pieces.push(p);
+    cumWeights.push(total);
+  }
+  return { pieces, cumWeights };
+}
+
+const poolCache = new Map<Difficulty, ReturnType<typeof buildWeightedPool>>();
+function getPool(difficulty: Difficulty) {
+  let pool = poolCache.get(difficulty);
+  if (!pool) {
+    pool = buildWeightedPool(difficulty);
+    poolCache.set(difficulty, pool);
+  }
+  return pool;
+}
+
 function randomColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)];
 }
 
-function randomPiece(): PieceShape {
-  const template = PIECE_CATALOG[Math.floor(Math.random() * PIECE_CATALOG.length)];
-  return { ...template, color: randomColor() };
+function randomPiece(difficulty: Difficulty): PieceShape {
+  const { pieces, cumWeights } = getPool(difficulty);
+  const total = cumWeights[cumWeights.length - 1];
+  const r = Math.random() * total;
+  let idx = cumWeights.findIndex((w) => r < w);
+  if (idx === -1) idx = pieces.length - 1;
+  return { ...pieces[idx], color: randomColor() };
 }
 
-export function generatePieces(): [PieceShape, PieceShape, PieceShape] {
-  return [randomPiece(), randomPiece(), randomPiece()];
+export function generatePieces(difficulty: Difficulty): [PieceShape, PieceShape, PieceShape] {
+  return [randomPiece(difficulty), randomPiece(difficulty), randomPiece(difficulty)];
 }

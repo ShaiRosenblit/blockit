@@ -19,8 +19,9 @@ export function GameOverOverlay() {
     <div className="game-over-overlay">
       <div className="game-over-card">
         <h2>Game Over</h2>
+        <p className="game-over-difficulty">{state.difficulty}</p>
         <p className="game-over-score">Score: {state.score}</p>
-        <p className="game-over-best">Best: {state.bestScore}</p>
+        <p className="game-over-best">Best ({state.difficulty}): {state.bestScore}</p>
         <button
           className="restart-btn"
           onClick={() => dispatch({ type: 'RESTART' })}

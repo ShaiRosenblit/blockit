@@ -13,6 +13,8 @@ export type TraySlot = PieceShape | null;
 export type BoardCell = string | null;
 export type BoardGrid = BoardCell[][];
 
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
 export const BOARD_SIZE = 8;
 
 export const COLORS = [
