@@ -59,6 +59,30 @@ const PIECE_DEFS: PieceDef[] = [
   { id: 's2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
   { id: 's3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
   { id: 's4', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
+
+  // Plus / cross
+  { id: 'plus', cells: [
+    { row: 0, col: 1 },
+    { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+    { row: 2, col: 1 },
+  ]},
+
+  // Rectangles
+  { id: 'r2x3', cells: [
+    { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
+    { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+  ]},
+  { id: 'r3x2', cells: [
+    { row: 0, col: 0 }, { row: 0, col: 1 },
+    { row: 1, col: 0 }, { row: 1, col: 1 },
+    { row: 2, col: 0 }, { row: 2, col: 1 },
+  ]},
+
+  // U-shapes
+  { id: 'u1', cells: [{ row: 0, col: 0 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+  { id: 'u2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 2 }] },
+  { id: 'u3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+  { id: 'u4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
 ];
 
 export const PIECE_CATALOG: PieceShape[] = PIECE_DEFS.map((def) => {
