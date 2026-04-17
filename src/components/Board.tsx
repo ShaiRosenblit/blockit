@@ -8,13 +8,14 @@ type BoardProps = {
   previewCells?: Map<string, 'valid' | 'invalid'>;
   previewColor?: string | null;
   placedCells?: Set<string>;
+  clearPreviewCells?: Set<string>;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells }: BoardProps) {
+export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -23,12 +24,14 @@ export function Board({ boardRef, previewCells, previewColor, placedCells }: Boa
       const key = coordKey(r, c);
       const preview = previewCells?.get(key) ?? null;
       const justPlaced = placedCells?.has(key) ?? false;
+      const willClear = clearPreviewCells?.has(key) ?? false;
       cells.push(
         <Cell
           key={key}
           color={preview === 'valid' ? previewColor ?? null : state.board[r][c]}
           preview={preview}
           justPlaced={justPlaced}
+          willClear={willClear}
         />
       );
     }

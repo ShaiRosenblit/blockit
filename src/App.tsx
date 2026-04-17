@@ -29,6 +29,7 @@ export default function App() {
   const [preview, setPreview] = useState<{
     cells: Map<string, 'valid' | 'invalid'>;
     color: string | null;
+    clearCells: Set<string> | null;
   } | null>(null);
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
@@ -70,7 +71,23 @@ export default function App() {
           cells.set(`${r},${c}`, valid ? 'valid' : 'invalid');
         }
       }
-      setPreview(cells.size > 0 ? { cells, color: piece.color } : null);
+
+      let clearCells: Set<string> | null = null;
+      if (valid) {
+        const hypothetical = placePiece(state.board, piece, origin);
+        const { rows, cols } = detectCompletedLines(hypothetical);
+        if (rows.length > 0 || cols.length > 0) {
+          clearCells = new Set<string>();
+          for (const r of rows) {
+            for (let c = 0; c < BOARD_SIZE; c++) clearCells.add(`${r},${c}`);
+          }
+          for (const c of cols) {
+            for (let r = 0; r < BOARD_SIZE; r++) clearCells.add(`${r},${c}`);
+          }
+        }
+      }
+
+      setPreview(cells.size > 0 ? { cells, color: piece.color, clearCells } : null);
     },
     [state.board, state.tray, computeOrigin]
   );
@@ -193,6 +210,7 @@ export default function App() {
           previewCells={preview?.cells}
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
+          clearPreviewCells={preview?.clearCells ?? undefined}
         />
         <PieceTray onDragStart={handleDragStart} draggingIndex={drag?.index ?? null} />
         {drag && dragPiece && (

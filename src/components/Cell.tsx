@@ -2,9 +2,10 @@ type CellProps = {
   color: string | null;
   preview?: 'valid' | 'invalid' | null;
   justPlaced?: boolean;
+  willClear?: boolean;
 };
 
-export function Cell({ color, preview, justPlaced }: CellProps) {
+export function Cell({ color, preview, justPlaced, willClear }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
 
@@ -18,6 +19,8 @@ export function Cell({ color, preview, justPlaced }: CellProps) {
     if (justPlaced) className += ' cell--just-placed';
     style = { backgroundColor: color };
   }
+
+  if (willClear) className += ' cell--will-clear';
 
   return <div className={className} style={style} />;
 }
