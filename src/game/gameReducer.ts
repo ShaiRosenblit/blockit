@@ -39,7 +39,7 @@ function saveBestScore(difficulty: Difficulty, score: number) {
 function loadDifficulty(): Difficulty {
   try {
     const stored = localStorage.getItem('blockit-difficulty');
-    if (stored === 'easy' || stored === 'normal' || stored === 'hard') return stored;
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard' || stored === 'zen') return stored;
   } catch { /* noop */ }
   return 'normal';
 }
@@ -52,9 +52,10 @@ function saveDifficulty(difficulty: Difficulty) {
 
 export function createInitialState(): GameState {
   const difficulty = loadDifficulty();
+  const board = createEmptyBoard();
   return {
-    board: createEmptyBoard(),
-    tray: generatePieces(difficulty),
+    board,
+    tray: generatePieces(difficulty, board),
     score: 0,
     bestScore: loadBestScore(difficulty),
     combo: 0,
@@ -89,7 +90,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       newTray[action.trayIndex] = null;
 
       const allPlaced = newTray.every((s) => s === null);
-      const finalTray = allPlaced ? generatePieces(state.difficulty) : newTray;
+      const finalTray = allPlaced ? generatePieces(state.difficulty, board) : newTray;
 
       const bestScore = Math.max(score, state.bestScore);
       const isGameOver = !hasValidMoves(board, finalTray);
@@ -102,9 +103,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'SET_DIFFICULTY': {
       saveDifficulty(action.difficulty);
       const difficulty = action.difficulty;
+      const freshBoard = createEmptyBoard();
       return {
-        board: createEmptyBoard(),
-        tray: generatePieces(difficulty),
+        board: freshBoard,
+        tray: generatePieces(difficulty, freshBoard),
         score: 0,
         bestScore: loadBestScore(difficulty),
         combo: 0,

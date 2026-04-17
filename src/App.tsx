@@ -187,7 +187,7 @@ export default function App() {
 
   const dragPiece = drag ? state.tray[drag.index] : null;
 
-  const difficulties: Difficulty[] = ['easy', 'normal', 'hard'];
+  const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard'];
 
   return (
     <GameContext value={{ state, dispatch }}>
