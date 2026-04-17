@@ -74,15 +74,15 @@ export const sounds = {
     localStorage.setItem(STORAGE_KEY, value ? 'off' : 'on');
     if (!value && !unlocked) unlock();
   },
-  pickup: () => play('pickup.mp3', 0.3),
-  place: () => play('place.mp3', 0.4),
+  pickup: () => play('pickup.mp3', 0.5),
+  place: () => play('place.mp3', 0.6),
   lineClear: (count: number) => {
     if (count >= 2) {
-      play('combo.mp3', 0.5);
+      play('combo.mp3', 0.7);
     } else {
-      play('line-clear.mp3', 0.45);
+      play('line-clear.mp3', 0.65);
     }
   },
-  invalidDrop: () => play('invalid-drop.mp3', 0.25),
-  gameOver: () => play('game-over.mp3', 0.5),
+  invalidDrop: () => play('invalid-drop.mp3', 0.35),
+  gameOver: () => play('game-over.mp3', 0.6),
 };
