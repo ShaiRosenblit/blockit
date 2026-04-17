@@ -174,22 +174,34 @@ function scoreForZen(piece: PieceShape, board: BoardGrid): number {
       const { rows, cols } = detectCompletedLines(hyp);
       const cleared = rows.length + cols.length;
 
-      let score = cleared * 100;
-
-      if (cleared === 0) {
+      let score: number;
+      if (cleared > 0) {
+        score = 1000 * cleared;
+      } else {
+        score = 0;
         for (let row = 0; row < BOARD_SIZE; row++) {
-          let filled = 0;
+          let filledAfter = 0;
+          let contributed = 0;
           for (let col = 0; col < BOARD_SIZE; col++) {
-            if (hyp[row][col] !== null) filled++;
+            if (hyp[row][col] !== null) filledAfter++;
+            if (board[row][col] === null && hyp[row][col] !== null) contributed++;
           }
-          if (filled >= 5) score += (filled - 4) * 3;
+          if (contributed > 0) {
+            const progress = filledAfter / BOARD_SIZE;
+            score += contributed * progress * progress * progress * 50;
+          }
         }
         for (let col = 0; col < BOARD_SIZE; col++) {
-          let filled = 0;
+          let filledAfter = 0;
+          let contributed = 0;
           for (let row = 0; row < BOARD_SIZE; row++) {
-            if (hyp[row][col] !== null) filled++;
+            if (hyp[row][col] !== null) filledAfter++;
+            if (board[row][col] === null && hyp[row][col] !== null) contributed++;
           }
-          if (filled >= 5) score += (filled - 4) * 3;
+          if (contributed > 0) {
+            const progress = filledAfter / BOARD_SIZE;
+            score += contributed * progress * progress * progress * 50;
+          }
         }
       }
 
@@ -201,15 +213,6 @@ function scoreForZen(piece: PieceShape, board: BoardGrid): number {
   return best + 1;
 }
 
-function pickWeighted(items: { piece: PieceShape; score: number }[], total: number): PieceShape {
-  let r = Math.random() * total;
-  for (const { piece, score } of items) {
-    r -= score;
-    if (r <= 0) return { ...piece, color: randomColor() };
-  }
-  return { ...items[items.length - 1].piece, color: randomColor() };
-}
-
 function generateZenPieces(board: BoardGrid): [PieceShape, PieceShape, PieceShape] {
   const scored = PIECE_CATALOG
     .map((p) => ({ piece: p, score: scoreForZen(p, board) }))
@@ -219,8 +222,19 @@ function generateZenPieces(board: BoardGrid): [PieceShape, PieceShape, PieceShap
     return [randomPiece('easy'), randomPiece('easy'), randomPiece('easy')];
   }
 
-  const total = scored.reduce((sum, s) => sum + s.score, 0);
-  return [pickWeighted(scored, total), pickWeighted(scored, total), pickWeighted(scored, total)];
+  const weighted = scored.map((s) => ({ piece: s.piece, weight: s.score * s.score }));
+  const total = weighted.reduce((sum, s) => sum + s.weight, 0);
+
+  function pick(): PieceShape {
+    let r = Math.random() * total;
+    for (const { piece, weight } of weighted) {
+      r -= weight;
+      if (r <= 0) return { ...piece, color: randomColor() };
+    }
+    return { ...weighted[weighted.length - 1].piece, color: randomColor() };
+  }
+
+  return [pick(), pick(), pick()];
 }
 
 export function generatePieces(difficulty: Difficulty, board?: BoardGrid): [PieceShape, PieceShape, PieceShape] {
