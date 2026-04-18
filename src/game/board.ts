@@ -77,16 +77,45 @@ export function clearLines(
   return newBoard;
 }
 
+export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
+  const rotated = piece.cells.map(({ row, col }) => ({
+    row: col,
+    col: -row,
+  }));
+  const minR = Math.min(...rotated.map((c) => c.row));
+  const minC = Math.min(...rotated.map((c) => c.col));
+  const cells = rotated.map(({ row, col }) => ({
+    row: row - minR,
+    col: col - minC,
+  }));
+  let maxR = 0;
+  let maxC = 0;
+  for (const c of cells) {
+    maxR = Math.max(maxR, c.row);
+    maxC = Math.max(maxC, c.col);
+  }
+  return {
+    ...piece,
+    cells,
+    width: maxC + 1,
+    height: maxR + 1,
+  };
+}
+
 export function hasValidMoves(
   board: BoardGrid,
   tray: (PieceShape | null)[]
 ): boolean {
   for (const piece of tray) {
     if (!piece) continue;
-    for (let r = 0; r <= BOARD_SIZE - piece.height; r++) {
-      for (let c = 0; c <= BOARD_SIZE - piece.width; c++) {
-        if (canPlacePiece(board, piece, { row: r, col: c })) return true;
+    let variant = piece;
+    for (let rot = 0; rot < 4; rot++) {
+      for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
+        for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
+          if (canPlacePiece(board, variant, { row: r, col: c })) return true;
+        }
       }
+      variant = rotatePiece90Clockwise(variant);
     }
   }
   return false;

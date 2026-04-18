@@ -1,5 +1,13 @@
 import type { BoardGrid, Coord, Difficulty, TraySlot } from './types';
-import { createEmptyBoard, canPlacePiece, placePiece, detectCompletedLines, clearLines, hasValidMoves } from './board';
+import {
+  createEmptyBoard,
+  canPlacePiece,
+  placePiece,
+  detectCompletedLines,
+  clearLines,
+  hasValidMoves,
+  rotatePiece90Clockwise,
+} from './board';
 import { generatePieces } from './pieces';
 import { calculatePlacementScore, calculateClearScore } from './scoring';
 
@@ -15,6 +23,7 @@ export type GameState = {
 
 export type GameAction =
   | { type: 'PLACE_PIECE'; trayIndex: number; origin: Coord }
+  | { type: 'ROTATE_TRAY_PIECE'; trayIndex: number }
   | { type: 'RESTART' }
   | { type: 'SET_DIFFICULTY'; difficulty: Difficulty };
 
@@ -66,6 +75,17 @@ export function createInitialState(): GameState {
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
+    case 'ROTATE_TRAY_PIECE': {
+      const { trayIndex } = action;
+      if (trayIndex < 0 || trayIndex > 2) return state;
+      const piece = state.tray[trayIndex];
+      if (!piece) return state;
+      const newTray = [...state.tray] as [TraySlot, TraySlot, TraySlot];
+      newTray[trayIndex] = rotatePiece90Clockwise(piece);
+      const isGameOver = !hasValidMoves(state.board, newTray);
+      return { ...state, tray: newTray, isGameOver };
+    }
+
     case 'PLACE_PIECE': {
       const piece = state.tray[action.trayIndex];
       if (!piece) return state;

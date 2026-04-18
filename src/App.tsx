@@ -12,6 +12,8 @@ import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 
+const DRAG_THRESHOLD_PX = 10;
+
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
 let popupId = 0;
@@ -20,11 +22,19 @@ export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
   const boardRef = useRef<HTMLDivElement>(null);
 
+  const [pendingTray, setPendingTray] = useState<{
+    index: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
   const [drag, setDrag] = useState<{
     index: number;
     x: number;
     y: number;
   } | null>(null);
+
+  const lastTrayIndexRef = useRef<number | null>(null);
 
   const [preview, setPreview] = useState<{
     cells: Map<string, 'valid' | 'invalid'>;
@@ -139,17 +149,68 @@ export default function App() {
     [state.board, state.tray, state.combo, spawnScorePopup]
   );
 
-  const handleDragStart = useCallback(
-    (index: number, e: React.PointerEvent) => {
+  const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    lastTrayIndexRef.current = index;
+    setPendingTray({ index, startX: e.clientX, startY: e.clientY });
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  useEffect(() => {
+    if (pendingTray === null) return;
+    const { index, startX, startY } = pendingTray;
+    const thresh2 = DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX;
+    let becameDrag = false;
+
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (dx * dx + dy * dy > thresh2) {
+        becameDrag = true;
+        setDrag({ index, x: e.clientX, y: e.clientY });
+        setPendingTray(null);
+        updatePreview(e.clientX, e.clientY, index);
+        haptics.pickup();
+        sounds.pickup();
+      }
+    };
+
+    const onUp = () => {
+      if (!becameDrag) {
+        dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: index });
+      }
+      setPendingTray(null);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [pendingTray, updatePreview, dispatch]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'r' && e.key !== 'R') return;
+      if (e.repeat) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest('input, textarea, [contenteditable="true"]')) return;
+      const idx = drag?.index ?? lastTrayIndexRef.current;
+      if (idx === null) return;
+      if (!state.tray[idx]) return;
       e.preventDefault();
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-      setDrag({ index, x: e.clientX, y: e.clientY });
-      updatePreview(e.clientX, e.clientY, index);
-      haptics.pickup();
-      sounds.pickup();
-    },
-    [updatePreview]
-  );
+      dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: idx });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drag, state.tray, dispatch]);
+
+  useEffect(() => {
+    if (drag === null) return;
+    updatePreview(drag.x, drag.y, drag.index);
+  }, [state.tray, drag, updatePreview]);
 
   useEffect(() => {
     if (drag === null) return;
@@ -227,7 +288,10 @@ export default function App() {
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
         />
-        <PieceTray onDragStart={handleDragStart} draggingIndex={drag?.index ?? null} />
+        <div className="piece-tray-wrap">
+          <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
+          <p className="piece-tray-hint">Tap to rotate · drag to place · R</p>
+        </div>
         {drag && dragPiece && (
           <FloatingPiece piece={dragPiece} x={drag.x} y={drag.y} />
         )}

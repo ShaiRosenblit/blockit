@@ -184,6 +184,20 @@ body {
 }
 
 /* Piece tray */
+.piece-tray-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.piece-tray-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
 .piece-tray {
   display: flex;
   gap: 16px;

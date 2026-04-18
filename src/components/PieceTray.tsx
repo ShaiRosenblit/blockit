@@ -2,7 +2,7 @@ import { useGame } from '../hooks/useGame';
 import type { PieceShape } from '../game/types';
 
 type PieceTrayProps = {
-  onDragStart: (index: number, e: React.PointerEvent) => void;
+  onTrayPointerDown: (index: number, e: React.PointerEvent) => void;
   draggingIndex: number | null;
 };
 
@@ -34,7 +34,7 @@ function PieceMiniGrid({ piece }: { piece: PieceShape }) {
   );
 }
 
-export function PieceTray({ onDragStart, draggingIndex }: PieceTrayProps) {
+export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) {
   const { state } = useGame();
 
   return (
@@ -43,7 +43,7 @@ export function PieceTray({ onDragStart, draggingIndex }: PieceTrayProps) {
         <div
           key={i}
           className={`piece-slot${!piece ? ' piece-slot--empty' : ''}${draggingIndex === i ? ' piece-slot--dragging' : ''}`}
-          onPointerDown={(e) => piece && onDragStart(i, e)}
+          onPointerDown={(e) => piece && onTrayPointerDown(i, e)}
           style={{ touchAction: 'none' }}
         >
           {piece && draggingIndex !== i && <PieceMiniGrid piece={piece} />}
