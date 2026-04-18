@@ -3,6 +3,7 @@ import { BOARD_SIZE, COLORS } from './types';
 import { canPlacePiece, placePiece, detectCompletedLines, clearLines } from './board';
 
 type PieceDef = { id: string; cells: Coord[] };
+type FamilyDef = { family: string; variants: PieceDef[] };
 
 function dims(cells: Coord[]): { width: number; height: number } {
   let maxR = 0, maxC = 0;
@@ -13,108 +14,267 @@ function dims(cells: Coord[]): { width: number; height: number } {
   return { width: maxC + 1, height: maxR + 1 };
 }
 
-const PIECE_DEFS: PieceDef[] = [
-  // Single
-  { id: 'dot', cells: [{ row: 0, col: 0 }] },
-
-  // Horizontal lines
-  { id: 'h2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }] },
-  { id: 'h3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }] },
-  { id: 'h4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }] },
-  { id: 'h5', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }] },
-
-  // Vertical lines
-  { id: 'v2', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }] },
-  { id: 'v3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
-  { id: 'v4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }] },
-  { id: 'v5', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }, { row: 4, col: 0 }] },
-
-  // Squares
-  { id: 'sq2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
-  { id: 'sq3', cells: [
-    { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
-    { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
-    { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 },
+// Pieces are grouped into families. Each family represents a distinct shape;
+// variants within a family are its rotations and reflections. Random sampling
+// picks a family with weight based on cell count, then picks a variant uniformly
+// within that family — so each "kind of piece" has equal probability regardless
+// of how many rotational orientations it has.
+const PIECE_FAMILIES: FamilyDef[] = [
+  // Monomino (1 cell)
+  { family: 'monomino', variants: [
+    { id: 'dot', cells: [{ row: 0, col: 0 }] },
   ]},
 
-  // L-shapes (small, 3 cells)
-  { id: 'l1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
-  { id: 'l2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
-  { id: 'l3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }] },
-  { id: 'l4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }] },
-
-  // J-tetromino (4 cells, 4 rotations)
-  { id: 'j1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
-  { id: 'j2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
-  { id: 'j3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 2 }] },
-  { id: 'j4', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-
-  // L-tetromino (4 cells, 4 rotations, mirror of J)
-  { id: 'lt1', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
-  { id: 'lt2', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-  { id: 'lt3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }] },
-  { id: 'lt4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-
-  // L-shapes (medium, 5 cells)
-  { id: 'L1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-  { id: 'L2', cells: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-  { id: 'L3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
-  { id: 'L4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
-
-  // T-shapes
-  { id: 't1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }] },
-  { id: 't2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-  { id: 't3', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
-  { id: 't4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
-
-  // Zig-zag
-  { id: 's1', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
-  { id: 's2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
-  { id: 's3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-  { id: 's4', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
-
-  // Plus / cross
-  { id: 'plus', cells: [
-    { row: 0, col: 1 },
-    { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
-    { row: 2, col: 1 },
+  // Domino (2 cells)
+  { family: 'domino', variants: [
+    { id: 'h2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }] },
+    { id: 'v2', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }] },
   ]},
 
-  // Rectangles
-  { id: 'r2x3', cells: [
-    { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
-    { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
-  ]},
-  { id: 'r3x2', cells: [
-    { row: 0, col: 0 }, { row: 0, col: 1 },
-    { row: 1, col: 0 }, { row: 1, col: 1 },
-    { row: 2, col: 0 }, { row: 2, col: 1 },
+  // I-tromino (3 cells, straight)
+  { family: 'i-tromino', variants: [
+    { id: 'h3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }] },
+    { id: 'v3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
   ]},
 
-  // U-shapes
-  { id: 'u1', cells: [{ row: 0, col: 0 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
-  { id: 'u2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 2 }] },
-  { id: 'u3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-  { id: 'u4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+  // L-tromino (3 cells, bent corner)
+  { family: 'l-tromino', variants: [
+    { id: 'l1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+    { id: 'l2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+    { id: 'l3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }] },
+    { id: 'l4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }] },
+  ]},
 
-  // T-shapes (big, 5 cells)
-  { id: 'T1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-  { id: 'T2', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
-  { id: 'T3', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-  { id: 'T4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
+  // I-tetromino (4 cells, straight)
+  { family: 'i-tetromino', variants: [
+    { id: 'h4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }] },
+    { id: 'v4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }] },
+  ]},
 
-  // Stairs / W-shapes
-  { id: 'w1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-  { id: 'w2', cells: [{ row: 0, col: 2 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-  { id: 'w3', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
-  { id: 'w4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+  // O-tetromino (2x2 square)
+  { family: 'o-tetromino', variants: [
+    { id: 'sq2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+  ]},
 
-  // P-shapes / thumbs
-  { id: 'p1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
-  { id: 'p2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-  { id: 'p3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-  { id: 'p4', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+  // T-tetromino (4 cells)
+  { family: 't-tetromino', variants: [
+    { id: 't1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }] },
+    { id: 't2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+    { id: 't3', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    { id: 't4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
+  ]},
+
+  // S-tetromino (4 cells, zig-zag)
+  { family: 's-tetromino', variants: [
+    { id: 's1', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+    { id: 's3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+  ]},
+
+  // Z-tetromino (4 cells, zig-zag, mirror of S)
+  { family: 'z-tetromino', variants: [
+    { id: 's2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    { id: 's4', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
+  ]},
+
+  // J-tetromino (4 cells)
+  { family: 'j-tetromino', variants: [
+    { id: 'j1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    { id: 'j2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
+    { id: 'j3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 2 }] },
+    { id: 'j4', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+  ]},
+
+  // L-tetromino (4 cells, mirror of J)
+  { family: 'l-tetromino', variants: [
+    { id: 'lt1', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    { id: 'lt2', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    { id: 'lt3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }] },
+    { id: 'lt4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+  ]},
+
+  // I-pentomino (5 cells, straight)
+  { family: 'i-pentomino', variants: [
+    { id: 'h5', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }] },
+    { id: 'v5', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }, { row: 4, col: 0 }] },
+  ]},
+
+  // V-pentomino (5 cells, 3x3 equal legs — previously mislabeled as L1-L4)
+  { family: 'v-pentomino', variants: [
+    { id: 'V1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    { id: 'V2', cells: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    { id: 'V3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+    { id: 'V4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 2, col: 0 }] },
+  ]},
+
+  // L-pentomino (5 cells, true 4x2 — 4 rotations x 2 reflections = 8 orientations)
+  { family: 'l-pentomino', variants: [
+    // 4x2
+    { id: 'Lp1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }, { row: 3, col: 1 }] },
+    // 2x4
+    { id: 'Lp2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 0 }] },
+    // 4x2
+    { id: 'Lp3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
+    // 2x4
+    { id: 'Lp4', cells: [{ row: 0, col: 3 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+    // mirror 4x2
+    { id: 'Lp5', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 3, col: 0 }, { row: 3, col: 1 }] },
+    // mirror 2x4
+    { id: 'Lp6', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+    // mirror 4x2
+    { id: 'Lp7', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }] },
+    // mirror 2x4
+    { id: 'Lp8', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 3 }] },
+  ]},
+
+  // T-pentomino (5 cells)
+  { family: 't-pentomino', variants: [
+    { id: 'T1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+    { id: 'T2', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+    { id: 'T3', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    { id: 'T4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
+  ]},
+
+  // U-pentomino (5 cells)
+  { family: 'u-pentomino', variants: [
+    { id: 'u1', cells: [{ row: 0, col: 0 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    { id: 'u2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 2 }] },
+    { id: 'u3', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    { id: 'u4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+  ]},
+
+  // W-pentomino (5 cells, stairs)
+  { family: 'w-pentomino', variants: [
+    { id: 'w1', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    { id: 'w2', cells: [{ row: 0, col: 2 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    { id: 'w3', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
+    { id: 'w4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+  ]},
+
+  // P-pentomino (5 cells, thumb — 4 rotations x 2 reflections = 8 orientations)
+  { family: 'p-pentomino', variants: [
+    // X X / X X / X .
+    { id: 'p1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }] },
+    // X X / X X / . X
+    { id: 'p2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+    // X . / X X / X X
+    { id: 'p3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    // . X / X X / X X
+    { id: 'p4', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    // X X X / . X X
+    { id: 'p5', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    // X X . / X X X
+    { id: 'p6', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    // . X X / X X X
+    { id: 'p7', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+    // X X X / X X .
+    { id: 'p8', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+  ]},
+
+  // X-pentomino (5 cells, plus/cross — fully symmetric, single orientation)
+  { family: 'x-pentomino', variants: [
+    { id: 'plus', cells: [
+      { row: 0, col: 1 },
+      { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+      { row: 2, col: 1 },
+    ]},
+  ]},
+
+  // F-pentomino (5 cells, 3x3 bounding box — 4 rotations x 2 reflections = 8 orientations)
+  { family: 'f-pentomino', variants: [
+    // . X X / X X . / . X .
+    { id: 'F1', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
+    // . X . / X X X / . . X
+    { id: 'F2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+    // . X . / . X X / X X .
+    { id: 'F3', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    // X . . / X X X / . X .
+    { id: 'F4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
+    // mirror: X X . / . X X / . X .
+    { id: 'F5', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
+    // mirror: . . X / X X X / . X .
+    { id: 'F6', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
+    // mirror: . X . / X X . / . X X
+    { id: 'F7', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    // mirror: . X . / X X X / X . .
+    { id: 'F8', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
+  ]},
+
+  // N-pentomino (5 cells, 4x2 — 4 rotations x 2 reflections = 8 orientations)
+  { family: 'n-pentomino', variants: [
+    // . X / . X / X X / X .
+    { id: 'N1', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 3, col: 0 }] },
+    // X X . . / . X X X
+    { id: 'N2', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+    // . X / X X / X . / X .
+    { id: 'N3', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 3, col: 0 }] },
+    // X X X . / . . X X
+    { id: 'N4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+    // mirror: X . / X . / X X / . X
+    { id: 'N5', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
+    // mirror: . X X X / X X . .
+    { id: 'N6', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 0 }, { row: 1, col: 1 }] },
+    // mirror: X . / X X / . X / . X
+    { id: 'N7', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
+    // mirror: . . X X / X X X .
+    { id: 'N8', cells: [{ row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }] },
+  ]},
+
+  // Y-pentomino (5 cells, 4x2 — 4 rotations x 2 reflections = 8 orientations)
+  { family: 'y-pentomino', variants: [
+    // . X / X X / . X / . X
+    { id: 'Y1', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
+    // . . X . / X X X X
+    { id: 'Y2', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+    // X . / X . / X X / X .
+    { id: 'Y3', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 3, col: 0 }] },
+    // X X X X / . X . .
+    { id: 'Y4', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 1 }] },
+    // mirror: X . / X X / X . / X .
+    { id: 'Y5', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 3, col: 0 }] },
+    // mirror: X X X X / . . X .
+    { id: 'Y6', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 1, col: 2 }] },
+    // mirror: . X / . X / X X / . X
+    { id: 'Y7', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
+    // mirror: . X . . / X X X X
+    { id: 'Y8', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
+  ]},
+
+  // Z-pentomino (5 cells, 3x3 — 2 rotations x 2 reflections = 4 orientations)
+  { family: 'z-pentomino', variants: [
+    // X X . / . X . / . X X
+    { id: 'Z1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
+    // . . X / X X X / X . .
+    { id: 'Z2', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
+    // mirror: . X X / . X . / X X .
+    { id: 'Z3', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
+    // mirror: X . . / X X X / . . X
+    { id: 'Z4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
+  ]},
+
+  // 2x3 rectangle (6 cells)
+  { family: 'rect-2x3', variants: [
+    { id: 'r2x3', cells: [
+      { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
+      { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+    ]},
+    { id: 'r3x2', cells: [
+      { row: 0, col: 0 }, { row: 0, col: 1 },
+      { row: 1, col: 0 }, { row: 1, col: 1 },
+      { row: 2, col: 0 }, { row: 2, col: 1 },
+    ]},
+  ]},
+
+  // 3x3 square (9 cells)
+  { family: 'sq3', variants: [
+    { id: 'sq3', cells: [
+      { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
+      { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+      { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 },
+    ]},
+  ]},
 ];
+
+const PIECE_DEFS: PieceDef[] = PIECE_FAMILIES.flatMap((f) => f.variants);
 
 export const PIECE_CATALOG: PieceShape[] = PIECE_DEFS.map((def) => {
   const { width, height } = dims(def.cells);
@@ -137,25 +297,34 @@ function pieceWeight(cellCount: number, difficulty: Difficulty): number {
   }
 }
 
-function buildWeightedPool(difficulty: Difficulty): { pieces: PieceShape[]; cumWeights: number[] } {
-  const pieces: PieceShape[] = [];
+type FamilyPool = { families: PieceShape[][]; cumWeights: number[] };
+
+function buildFamilyPool(difficulty: Difficulty): FamilyPool {
+  const families: PieceShape[][] = [];
   const cumWeights: number[] = [];
   let total = 0;
-  for (const p of PIECE_CATALOG) {
-    const w = pieceWeight(p.cells.length, difficulty);
+  let catalogIdx = 0;
+  for (const fam of PIECE_FAMILIES) {
+    const variantCount = fam.variants.length;
+    const variants = PIECE_CATALOG.slice(catalogIdx, catalogIdx + variantCount);
+    catalogIdx += variantCount;
+
+    const cellCount = fam.variants[0].cells.length;
+    const w = pieceWeight(cellCount, difficulty);
     if (w <= 0) continue;
+
     total += w;
-    pieces.push(p);
+    families.push(variants);
     cumWeights.push(total);
   }
-  return { pieces, cumWeights };
+  return { families, cumWeights };
 }
 
-const poolCache = new Map<Difficulty, ReturnType<typeof buildWeightedPool>>();
+const poolCache = new Map<Difficulty, FamilyPool>();
 function getPool(difficulty: Difficulty) {
   let pool = poolCache.get(difficulty);
   if (!pool) {
-    pool = buildWeightedPool(difficulty);
+    pool = buildFamilyPool(difficulty);
     poolCache.set(difficulty, pool);
   }
   return pool;
@@ -166,12 +335,14 @@ function randomColor(): string {
 }
 
 function randomPiece(difficulty: Difficulty): PieceShape {
-  const { pieces, cumWeights } = getPool(difficulty);
+  const { families, cumWeights } = getPool(difficulty);
   const total = cumWeights[cumWeights.length - 1];
   const r = Math.random() * total;
-  let idx = cumWeights.findIndex((w) => r < w);
-  if (idx === -1) idx = pieces.length - 1;
-  return { ...pieces[idx], color: randomColor() };
+  let famIdx = cumWeights.findIndex((w) => r < w);
+  if (famIdx === -1) famIdx = families.length - 1;
+  const variants = families[famIdx];
+  const variant = variants[Math.floor(Math.random() * variants.length)];
+  return { ...variant, color: randomColor() };
 }
 
 function bestZenPlacement(
