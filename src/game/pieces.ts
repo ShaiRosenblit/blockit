@@ -179,26 +179,6 @@ const PIECE_FAMILIES: FamilyDef[] = [
     ]},
   ]},
 
-  // F-pentomino (5 cells, 3x3 bounding box — 4 rotations x 2 reflections = 8 orientations)
-  { family: 'f-pentomino', variants: [
-    // . X X / X X . / . X .
-    { id: 'F1', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }] },
-    // . X . / X X X / . . X
-    { id: 'F2', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
-    // . X . / . X X / X X .
-    { id: 'F3', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-    // X . . / X X X / . X .
-    { id: 'F4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
-    // mirror: X X . / . X X / . X .
-    { id: 'F5', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
-    // mirror: . . X / X X X / . X .
-    { id: 'F6', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }] },
-    // mirror: . X . / X X . / . X X
-    { id: 'F7', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-    // mirror: . X . / X X X / X . .
-    { id: 'F8', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
-  ]},
-
   // N-pentomino (5 cells, 4x2 — 4 rotations x 2 reflections = 8 orientations)
   { family: 'n-pentomino', variants: [
     // . X / . X / X X / X .
@@ -237,18 +217,6 @@ const PIECE_FAMILIES: FamilyDef[] = [
     { id: 'Y7', cells: [{ row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 3, col: 1 }] },
     // mirror: . X . . / X X X X
     { id: 'Y8', cells: [{ row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] },
-  ]},
-
-  // Z-pentomino (5 cells, 3x3 — 2 rotations x 2 reflections = 4 orientations)
-  { family: 'z-pentomino', variants: [
-    // X X . / . X . / . X X
-    { id: 'Z1', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 1 }, { row: 2, col: 1 }, { row: 2, col: 2 }] },
-    // . . X / X X X / X . .
-    { id: 'Z2', cells: [{ row: 0, col: 2 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 0 }] },
-    // mirror: . X X / . X . / X X .
-    { id: 'Z3', cells: [{ row: 0, col: 1 }, { row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2, col: 0 }, { row: 2, col: 1 }] },
-    // mirror: X . . / X X X / . . X
-    { id: 'Z4', cells: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 2 }] },
   ]},
 
   // 2x3 rectangle (6 cells)
