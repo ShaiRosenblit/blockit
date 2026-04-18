@@ -7,7 +7,7 @@
 }
 
 :root {
-  --board-size: min(90vw, 90vh - 200px, 420px);
+  --board-size: min(90vw, calc(100dvh - 340px), 420px);
   --cell-size: calc(var(--board-size) / 8);
   --gap: 2px;
   --bg: #1a1a2e;
@@ -18,7 +18,7 @@
 }
 
 html, body {
-  height: 100%;
+  height: 100dvh;
   overflow: hidden;
 }
 
