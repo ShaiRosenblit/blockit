@@ -6,7 +6,17 @@ type PieceTrayProps = {
   draggingIndex: number | null;
 };
 
+const SLOT_INNER_PX = 76;
+const MINI_GAP_PX = 2;
+const MAX_MINI_CELL_PX = 20;
+
 function PieceMiniGrid({ piece }: { piece: PieceShape }) {
+  const maxDim = Math.max(piece.width, piece.height, 1);
+  const cellSize = Math.min(
+    MAX_MINI_CELL_PX,
+    Math.floor((SLOT_INNER_PX - MINI_GAP_PX * (maxDim - 1)) / maxDim)
+  );
+
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < piece.height; r++) {
     for (let c = 0; c < piece.width; c++) {
@@ -15,7 +25,11 @@ function PieceMiniGrid({ piece }: { piece: PieceShape }) {
         <div
           key={`${r},${c}`}
           className={filled ? 'mini-cell mini-cell--filled' : 'mini-cell'}
-          style={filled ? { backgroundColor: piece.color } : undefined}
+          style={{
+            width: cellSize,
+            height: cellSize,
+            ...(filled ? { backgroundColor: piece.color } : {}),
+          }}
         />
       );
     }
@@ -25,8 +39,9 @@ function PieceMiniGrid({ piece }: { piece: PieceShape }) {
     <div
       className="mini-grid"
       style={{
-        gridTemplateColumns: `repeat(${piece.width}, 1fr)`,
-        gridTemplateRows: `repeat(${piece.height}, 1fr)`,
+        gridTemplateColumns: `repeat(${piece.width}, ${cellSize}px)`,
+        gridTemplateRows: `repeat(${piece.height}, ${cellSize}px)`,
+        gap: MINI_GAP_PX,
       }}
     >
       {cells}

@@ -203,7 +203,7 @@ body {
   gap: 16px;
   justify-content: center;
   align-items: center;
-  min-height: 80px;
+  height: 88px;
 }
 
 .piece-slot {
@@ -212,9 +212,9 @@ body {
   justify-content: center;
   background: var(--surface);
   border-radius: 10px;
-  padding: 10px;
-  min-width: 70px;
-  min-height: 70px;
+  padding: 6px;
+  width: 88px;
+  height: 88px;
   cursor: grab;
   transition: transform 0.15s ease, opacity 0.15s ease;
 }
