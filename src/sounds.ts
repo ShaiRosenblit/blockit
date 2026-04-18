@@ -4,6 +4,7 @@ const STORAGE_KEY = 'blockit-sound';
 const SOUND_FILES = [
   'pickup.mp3',
   'place.mp3',
+  'rotate.mp3',
   'line-clear.mp3',
   'combo.mp3',
   'invalid-drop.mp3',
@@ -76,6 +77,7 @@ export const sounds = {
   },
   pickup: () => play('pickup.mp3', 0.5),
   place: () => play('place.mp3', 0.6),
+  rotate: () => play('rotate.mp3', 0.45),
   lineClear: (count: number) => {
     if (count >= 2) {
       play('combo.mp3', 0.7);

@@ -178,6 +178,7 @@ export default function App() {
     const onUp = () => {
       if (!becameDrag) {
         dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: index });
+        sounds.rotate();
       }
       setPendingTray(null);
     };
@@ -202,6 +203,7 @@ export default function App() {
       if (!state.tray[idx]) return;
       e.preventDefault();
       dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: idx });
+      sounds.rotate();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
