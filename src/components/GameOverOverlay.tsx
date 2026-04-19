@@ -65,6 +65,13 @@ export function GameOverOverlay() {
                 Replay
               </button>
             </>
+          ) : isRiddle && solved && atLastLevel ? (
+            <button
+              className="restart-btn"
+              onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+            >
+              New puzzle
+            </button>
           ) : isRiddle && failed ? (
             <button className="restart-btn" onClick={() => dispatch({ type: 'RESTART' })}>
               Retry level

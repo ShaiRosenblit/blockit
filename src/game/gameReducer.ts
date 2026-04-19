@@ -1,4 +1,5 @@
-import type { BoardGrid, Coord, Difficulty, TargetPattern, TraySlot } from './types';
+import type { BoardGrid, Coord, Difficulty, PieceShape, TargetPattern, TraySlot } from './types';
+import { BOARD_SIZE } from './types';
 import {
   createEmptyBoard,
   canPlacePiece,
@@ -37,6 +38,13 @@ export type GameState = {
   riddleLevel: number;
   /** Highest riddle level the player has unlocked (1..RIDDLE_MAX_LEVEL). */
   riddleMaxLevel: number;
+  /**
+   * Snapshot of the active riddle's starting board/tray so RESTART can return
+   * to this exact puzzle without generating a fresh one. `null` outside of
+   * riddle mode.
+   */
+  riddleInitialBoard: BoardGrid | null;
+  riddleInitialTray: PieceShape[] | null;
 };
 
 export type GameAction =
@@ -44,7 +52,9 @@ export type GameAction =
   | { type: 'ROTATE_TRAY_PIECE'; trayIndex: number }
   | { type: 'RESTART' }
   | { type: 'SET_DIFFICULTY'; difficulty: Difficulty }
-  | { type: 'SET_RIDDLE_LEVEL'; level: number };
+  | { type: 'SET_RIDDLE_LEVEL'; level: number }
+  /** Discard the active riddle puzzle and generate a fresh one at the current level. */
+  | { type: 'NEW_RIDDLE' };
 
 function bestScoreKey(difficulty: Difficulty): string {
   return `blockit-best-${difficulty}`;
@@ -88,6 +98,63 @@ function saveDifficulty(difficulty: Difficulty) {
 
 const RIDDLE_LEVEL_KEY = 'blockit-riddle-level';
 const RIDDLE_MAX_LEVEL_KEY = 'blockit-riddle-max-level';
+const RIDDLE_PUZZLE_KEY = 'blockit-riddle-puzzle';
+
+/**
+ * Shape of the active riddle puzzle as persisted to localStorage. Storing the
+ * puzzle's starting position (not mid-game state) means refresh restores the
+ * same challenge, and Restart returns to this exact beginning.
+ */
+type StoredRiddle = {
+  level: number;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+};
+
+function isValidStoredRiddle(p: unknown, expectedLevel: number): p is StoredRiddle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredRiddle>;
+  if (r.level !== expectedLevel) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  return true;
+}
+
+function loadRiddlePuzzle(expectedLevel: number): StoredRiddle | null {
+  try {
+    const raw = localStorage.getItem(RIDDLE_PUZZLE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredRiddle(parsed, expectedLevel)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveRiddlePuzzle(p: StoredRiddle) {
+  try {
+    localStorage.setItem(RIDDLE_PUZZLE_KEY, JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
+function cloneBoard(b: BoardGrid): BoardGrid {
+  return b.map((row) => [...row]);
+}
+function cloneTarget(t: TargetPattern): TargetPattern {
+  return t.map((row) => [...row]);
+}
+function cloneTray(t: PieceShape[]): PieceShape[] {
+  return t.map((p) => ({ ...p, cells: p.cells.map((c) => ({ ...c })) }));
+}
 
 function loadRiddleLevel(): number {
   try {
@@ -117,26 +184,42 @@ function saveRiddleMaxLevel(level: number) {
   } catch { /* noop */ }
 }
 
-/** Build a fresh state for the given riddle level, reusing best score / max level. */
+/**
+ * Build a fresh state for the given riddle level, reusing best score / max
+ * level. If `forceNew` is false and a puzzle for this level is already stored
+ * in localStorage (from a previous session or a level switch), that puzzle is
+ * loaded so the player faces the same challenge they were on. Otherwise a new
+ * puzzle is generated and persisted.
+ */
 function freshRiddleState(
   level: number,
   bestScore: number,
-  riddleMaxLevel: number
+  riddleMaxLevel: number,
+  options: { forceNew?: boolean } = {}
 ): GameState {
   const clamped = clampRiddleLevel(level);
-  const { board, tray, target } = generateRiddle({ level: clamped });
+
+  let stored = options.forceNew ? null : loadRiddlePuzzle(clamped);
+  if (!stored) {
+    const { board, tray, target } = generateRiddle({ level: clamped });
+    stored = { level: clamped, board, tray, target };
+    saveRiddlePuzzle(stored);
+  }
+
   return {
-    board,
-    tray,
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
     score: 0,
     bestScore,
     combo: 0,
     isGameOver: false,
     difficulty: 'riddle',
     riddleResult: null,
-    riddleTarget: target,
+    riddleTarget: cloneTarget(stored.target),
     riddleLevel: clamped,
     riddleMaxLevel,
+    riddleInitialBoard: cloneBoard(stored.board),
+    riddleInitialTray: cloneTray(stored.tray),
   };
 }
 
@@ -162,6 +245,8 @@ export function createInitialState(): GameState {
     riddleTarget: null,
     riddleLevel,
     riddleMaxLevel,
+    riddleInitialBoard: null,
+    riddleInitialTray: null,
   };
 }
 
@@ -271,6 +356,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveDifficulty(action.difficulty);
       const difficulty = action.difficulty;
       if (difficulty === 'riddle') {
+        // Entering riddle mode: resume the stored puzzle at the current level
+        // if there is one, otherwise generate and persist a new one.
         return freshRiddleState(
           state.riddleLevel,
           loadBestScore(difficulty),
@@ -290,6 +377,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         riddleTarget: null,
         riddleLevel: state.riddleLevel,
         riddleMaxLevel: state.riddleMaxLevel,
+        riddleInitialBoard: null,
+        riddleInitialTray: null,
       };
     }
 
@@ -301,14 +390,35 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // Just remember the selection; picking the riddle difficulty loads it.
         return { ...state, riddleLevel: target };
       }
-      return freshRiddleState(target, state.bestScore, state.riddleMaxLevel);
+      // Switching levels always starts fresh for the destination level: if a
+      // stored puzzle exists for it, resume; otherwise generate one.
+      return freshRiddleState(target, state.bestScore, state.riddleMaxLevel, { forceNew: true });
+    }
+
+    case 'NEW_RIDDLE': {
+      if (state.difficulty !== 'riddle') return state;
+      return freshRiddleState(
+        state.riddleLevel,
+        state.bestScore,
+        state.riddleMaxLevel,
+        { forceNew: true }
+      );
     }
 
     case 'RESTART': {
-      // In riddle mode, restart the CURRENT level (not a random one) so players
-      // can retry the same challenge or replay after solving.
-      if (state.difficulty === 'riddle') {
-        return freshRiddleState(state.riddleLevel, state.bestScore, state.riddleMaxLevel);
+      // Riddle mode: reset to the CURRENT puzzle's initial position without
+      // generating a new one. The same board, tray, and target are restored;
+      // only score / combo / result flags are wiped.
+      if (state.difficulty === 'riddle' && state.riddleInitialBoard && state.riddleInitialTray) {
+        return {
+          ...state,
+          board: cloneBoard(state.riddleInitialBoard),
+          tray: cloneTray(state.riddleInitialTray),
+          score: 0,
+          combo: 0,
+          isGameOver: false,
+          riddleResult: null,
+        };
       }
       return { ...createInitialState(), bestScore: state.bestScore };
     }

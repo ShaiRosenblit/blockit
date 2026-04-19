@@ -436,27 +436,38 @@ export default function App() {
         </div>
         <ScoreBar scoreValueRef={scoreValueRef} />
         {state.difficulty === 'riddle' && (
-          <div className="riddle-level-strip" role="tablist" aria-label="Riddle level">
-            {Array.from({ length: RIDDLE_MAX_LEVEL }, (_, i) => i + 1).map((lvl) => {
-              const locked = lvl > state.riddleMaxLevel;
-              const current = lvl === state.riddleLevel;
-              return (
-                <button
-                  key={lvl}
-                  role="tab"
-                  aria-selected={current}
-                  aria-disabled={locked}
-                  disabled={locked}
-                  className={`riddle-level-pip${current ? ' riddle-level-pip--current' : ''}${locked ? ' riddle-level-pip--locked' : ''}`}
-                  onClick={() => {
-                    if (locked || current) return;
-                    dispatch({ type: 'SET_RIDDLE_LEVEL', level: lvl });
-                  }}
-                >
-                  {lvl}
-                </button>
-              );
-            })}
+          <div className="riddle-controls">
+            <div className="riddle-level-strip" role="tablist" aria-label="Riddle level">
+              {Array.from({ length: RIDDLE_MAX_LEVEL }, (_, i) => i + 1).map((lvl) => {
+                const locked = lvl > state.riddleMaxLevel;
+                const current = lvl === state.riddleLevel;
+                return (
+                  <button
+                    key={lvl}
+                    role="tab"
+                    aria-selected={current}
+                    aria-disabled={locked}
+                    disabled={locked}
+                    className={`riddle-level-pip${current ? ' riddle-level-pip--current' : ''}${locked ? ' riddle-level-pip--locked' : ''}`}
+                    onClick={() => {
+                      if (locked || current) return;
+                      dispatch({ type: 'SET_RIDDLE_LEVEL', level: lvl });
+                    }}
+                  >
+                    {lvl}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="riddle-restart-btn"
+              aria-label="Restart this level"
+              title="Restart this level"
+              onClick={() => dispatch({ type: 'RESTART' })}
+            >
+              <span aria-hidden>{'\u21BB'}</span>
+              <span className="riddle-restart-btn__label">Restart</span>
+            </button>
           </div>
         )}
         <Board
