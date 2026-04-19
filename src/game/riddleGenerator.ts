@@ -15,6 +15,12 @@ export const RIDDLE_TRAY_SIZE = 5;
 
 const RECENT_SIGNATURE_LIMIT = 12;
 const recentSignatures: string[] = [];
+const TARGET_WINNING_OPENINGS = 1;
+const MAX_WINNING_OPENINGS = 2;
+const MAX_WINNING_BRANCHES = 3;
+const MIN_LEGAL_OPENINGS = 10;
+
+type Axis = 'row' | 'col';
 
 /**
  * Hard riddle pool: prefer 4- and 5-cell shapes so the puzzle has fewer
@@ -25,16 +31,29 @@ const RIDDLE_SHAPE_POOL = PIECE_CATALOG.filter((p) => {
   return n >= 4 && n <= 5;
 });
 
-type RowBandOption = {
+type BandOption = {
   piece: PieceShape;
-  rowCount: 1 | 2;
-  rowsTouched: number[];
+  axis: Axis;
+  lineCount: 1 | 2;
+  lineOffsets: number[];
+};
+
+type PositionedBand = {
+  option: BandOption;
+  origin: Coord;
+};
+
+type DifficultyStats = {
+  legalOpenings: number;
+  winningOpenings: number;
+  winningBranches: number;
 };
 
 type BuiltRiddle = {
   board: BoardGrid;
   tray: PieceShape[];
   signature: string;
+  stats: DifficultyStats;
 };
 
 function mulberry32(seed: number): () => number {
@@ -79,6 +98,13 @@ function clonePiece(piece: PieceShape): PieceShape {
   };
 }
 
+function pieceGeometryKey(piece: PieceShape): string {
+  return piece.cells
+    .map((cell) => `${cell.row},${cell.col}`)
+    .sort()
+    .join('|');
+}
+
 function occupancyKey(board: BoardGrid): string {
   let s = '';
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -91,7 +117,7 @@ function occupancyKey(board: BoardGrid): string {
 
 function remainingKey(pieces: PieceShape[]): string {
   return [...pieces]
-    .map((p) => p.id)
+    .map((p) => `${p.id}:${pieceGeometryKey(p)}`)
     .sort()
     .join(',');
 }
@@ -141,74 +167,129 @@ function colorizeTray(pieces: PieceShape[], rng: () => number): PieceShape[] {
 }
 
 /**
- * Whether some sequence of placing exactly these three pieces clears the board.
- * BFS over (occupancy mask × multiset of remaining shapes). Exported for tests / tooling.
+ * Count solution branches up to a cap. Exported boolean helper uses this under
+ * the hood so riddle generation can reason about uniqueness, not just solvability.
  */
-export function canClearBoard(board: BoardGrid, pieces: PieceShape[]): boolean {
-  type Node = { b: BoardGrid; rem: PieceShape[] };
-  const queue: Node[] = [{ b: board, rem: [...pieces] }];
+type EnumeratedMove = {
+  pieceIndex: number;
+  piece: PieceShape;
+  origin: Coord;
+  nextBoard: BoardGrid;
+  moveKey: string;
+};
+
+function filledCellCount(board: BoardGrid): number {
+  let count = 0;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== null) count++;
+    }
+  }
+  return count;
+}
+
+function enumerateMoves(board: BoardGrid, pieces: PieceShape[]): EnumeratedMove[] {
+  const moves: EnumeratedMove[] = [];
   const seen = new Set<string>();
-  let expansions = 0;
-  const maxExpansions = 120_000;
 
-  while (queue.length > 0) {
-    if (++expansions > maxExpansions) return false;
+  for (let pieceIndex = 0; pieceIndex < pieces.length; pieceIndex++) {
+    const template = pieces[pieceIndex];
+    const variants = orientations(template);
 
-    const { b, rem } = queue.shift()!;
-    if (boardIsEmpty(b)) return true;
-    if (rem.length === 0) continue;
+    for (const piece of variants) {
+      const geometryKey = pieceGeometryKey(piece);
+      for (let r = 0; r <= BOARD_SIZE - piece.height; r++) {
+        for (let c = 0; c <= BOARD_SIZE - piece.width; c++) {
+          const origin: Coord = { row: r, col: c };
+          if (!canPlacePiece(board, piece, origin)) continue;
 
-    const stateKey = `${occupancyKey(b)}|${remainingKey(rem)}`;
-    if (seen.has(stateKey)) continue;
-    seen.add(stateKey);
+          const moveKey = `${geometryKey}@${r},${c}`;
+          if (seen.has(moveKey)) continue;
+          seen.add(moveKey);
 
-    for (let i = 0; i < rem.length; i++) {
-      const template = rem[i];
-      const rest = rem.filter((_, j) => j !== i);
-
-      for (const piece of orientations(template)) {
-        for (let r = 0; r <= BOARD_SIZE - piece.height; r++) {
-          for (let c = 0; c <= BOARD_SIZE - piece.width; c++) {
-            const origin: Coord = { row: r, col: c };
-            if (!canPlacePiece(b, piece, origin)) continue;
-            const next = applyPlacementAndClear(b, piece, origin);
-            queue.push({ b: next, rem: rest });
-          }
+          const nextBoard = applyPlacementAndClear(board, piece, origin);
+          moves.push({
+            pieceIndex,
+            piece,
+            origin,
+            nextBoard,
+            moveKey,
+          });
         }
       }
     }
   }
 
-  return false;
+  const before = filledCellCount(board);
+  moves.sort((a, b) => {
+    const progressA = before - filledCellCount(a.nextBoard);
+    const progressB = before - filledCellCount(b.nextBoard);
+    return progressB - progressA;
+  });
+
+  return moves;
 }
 
-const ROW_BAND_OPTIONS: RowBandOption[] = RIDDLE_SHAPE_POOL.flatMap((piece) =>
-  orientations(piece)
-    .map((variant) => {
-      const rowsTouched = uniqueSorted(variant.cells.map((cell) => cell.row));
-      if (variant.height > 2) return null;
-      if (rowsTouched.length !== variant.height) return null;
-      return {
-        piece: variant,
-        rowCount: rowsTouched.length as 1 | 2,
-        rowsTouched,
-      };
-    })
-    .filter((option): option is RowBandOption => option !== null)
-);
+function countSolutionsCapped(
+  board: BoardGrid,
+  pieces: PieceShape[],
+  cap: number,
+  memo: Map<string, number>
+): number {
+  if (boardIsEmpty(board)) return 1;
+  if (pieces.length === 0) return 0;
 
-function assignBandStarts(rowCounts: Array<1 | 2>, rng: () => number): number[] | null {
+  const stateKey = `${occupancyKey(board)}|${remainingKey(pieces)}`;
+  const cached = memo.get(stateKey);
+  if (cached !== undefined) return Math.min(cached, cap);
+
+  let total = 0;
+  const moves = enumerateMoves(board, pieces);
+  for (const move of moves) {
+    const rest = pieces.filter((_, idx) => idx !== move.pieceIndex);
+    total += countSolutionsCapped(move.nextBoard, rest, cap - total, memo);
+    if (total >= cap) {
+      memo.set(stateKey, cap);
+      return cap;
+    }
+  }
+
+  memo.set(stateKey, total);
+  return total;
+}
+
+export function canClearBoard(board: BoardGrid, pieces: PieceShape[]): boolean {
+  return countSolutionsCapped(board, pieces, 1, new Map()) > 0;
+}
+
+const ROW_BAND_OPTIONS: BandOption[] = RIDDLE_SHAPE_POOL.flatMap((piece) => {
+  const options: BandOption[] = [];
+  for (const variant of orientations(piece)) {
+    const rowsTouched = uniqueSorted(variant.cells.map((cell) => cell.row));
+    if (variant.height > 2) continue;
+    if (rowsTouched.length !== variant.height) continue;
+    options.push({
+      piece: variant,
+      axis: 'row',
+      lineCount: rowsTouched.length as 1 | 2,
+      lineOffsets: rowsTouched,
+    });
+  }
+  return options;
+});
+
+function assignBandStarts(lineCounts: Array<1 | 2>, rng: () => number): number[] | null {
   for (let attempt = 0; attempt < 80; attempt++) {
-    const starts = new Array<number>(rowCounts.length).fill(-1);
+    const starts = new Array<number>(lineCounts.length).fill(-1);
     const used = Array.from({ length: BOARD_SIZE }, () => false);
-    const order = shuffleInPlace(rowCounts.map((rowCount, index) => ({ rowCount, index })), rng);
+    const order = shuffleInPlace(lineCounts.map((lineCount, index) => ({ lineCount, index })), rng);
     let ok = true;
 
-    for (const { rowCount, index } of order) {
+    for (const { lineCount, index } of order) {
       const candidates: number[] = [];
-      for (let start = 0; start <= BOARD_SIZE - rowCount; start++) {
+      for (let start = 0; start <= BOARD_SIZE - lineCount; start++) {
         let fits = true;
-        for (let offset = 0; offset < rowCount; offset++) {
+        for (let offset = 0; offset < lineCount; offset++) {
           if (used[start + offset]) {
             fits = false;
             break;
@@ -222,7 +303,7 @@ function assignBandStarts(rowCounts: Array<1 | 2>, rng: () => number): number[] 
       }
       const start = sample(candidates, rng);
       starts[index] = start;
-      for (let offset = 0; offset < rowCount; offset++) {
+      for (let offset = 0; offset < lineCount; offset++) {
         used[start + offset] = true;
       }
     }
@@ -233,22 +314,22 @@ function assignBandStarts(rowCounts: Array<1 | 2>, rng: () => number): number[] 
   return null;
 }
 
-function buildBoardFromBands(
-  options: RowBandOption[],
-  bandStarts: number[],
-  colStarts: number[]
-): { board: BoardGrid; tray: PieceShape[] } {
+function buildBoardFromBands(positionedBands: PositionedBand[]): { board: BoardGrid; tray: PieceShape[] } {
   const board = createEmptyBoard();
   const tray: PieceShape[] = [];
 
-  for (let i = 0; i < options.length; i++) {
-    const option = options[i];
-    const origin: Coord = { row: bandStarts[i], col: colStarts[i] };
-
-    for (const rowOffset of option.rowsTouched) {
-      const boardRow = origin.row + rowOffset;
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        board[boardRow][c] = RIDDLE_GRID_COLOR;
+  for (const { option, origin } of positionedBands) {
+    for (const offset of option.lineOffsets) {
+      if (option.axis === 'row') {
+        const boardRow = origin.row + offset;
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          board[boardRow][c] = RIDDLE_GRID_COLOR;
+        }
+      } else {
+        const boardCol = origin.col + offset;
+        for (let r = 0; r < BOARD_SIZE; r++) {
+          board[r][boardCol] = RIDDLE_GRID_COLOR;
+        }
       }
     }
 
@@ -264,41 +345,34 @@ function buildBoardFromBands(
 
 function verifyBandSolution(
   board: BoardGrid,
-  options: RowBandOption[],
-  bandStarts: number[],
-  colStarts: number[]
+  positionedBands: PositionedBand[]
 ): boolean {
   let next = cloneBoard(board);
 
-  for (let i = 0; i < options.length; i++) {
-    const origin: Coord = { row: bandStarts[i], col: colStarts[i] };
-    if (!canPlacePiece(next, options[i].piece, origin)) return false;
-    next = applyPlacementAndClear(next, options[i].piece, origin);
+  for (const { option, origin } of positionedBands) {
+    if (!canPlacePiece(next, option.piece, origin)) return false;
+    next = applyPlacementAndClear(next, option.piece, origin);
   }
 
   return boardIsEmpty(next);
 }
 
-function chooseBandOptions(rng: () => number): RowBandOption[] | null {
-  for (let attempt = 0; attempt < 240; attempt++) {
-    const pool = shuffleInPlace([...ROW_BAND_OPTIONS], rng);
-    const picked = pool.slice(0, RIDDLE_TRAY_SIZE);
-    if (picked.length < RIDDLE_TRAY_SIZE) return null;
+function chooseRowOnlyBandOptions(rng: () => number): BandOption[] | null {
+  for (let attempt = 0; attempt < 320; attempt++) {
+    const picked = shuffleInPlace([...ROW_BAND_OPTIONS], rng).slice(0, RIDDLE_TRAY_SIZE);
+    if (picked.length !== RIDDLE_TRAY_SIZE) return null;
 
-    const totalRows = picked.reduce((sum, option) => sum + option.rowCount, 0);
-    if (totalRows < 6 || totalRows > 8) continue;
+    const totalLines = picked.reduce((sum, option) => sum + option.lineCount, 0);
+    if (totalLines < 6 || totalLines > 8) continue;
 
     const distinctIds = new Set(picked.map((option) => option.piece.id));
-    if (distinctIds.size < 3) continue;
+    if (distinctIds.size < 4) continue;
 
-    const twoRowCount = picked.filter((option) => option.rowCount === 2).length;
-    if (twoRowCount < 2) continue;
-
-    const straightCount = picked.filter((option) => isStraightPiece(option.piece)).length;
-    if (straightCount > 2) continue;
+    const twoLineCount = picked.filter((option) => option.lineCount === 2).length;
+    if (twoLineCount < 2) continue;
 
     const largeCount = picked.filter((option) => option.piece.cells.length === 5).length;
-    if (largeCount < 1) continue;
+    if (largeCount < 2) continue;
 
     const nonStraightCount = picked.filter((option) => !isStraightPiece(option.piece)).length;
     if (nonStraightCount < 3) continue;
@@ -325,28 +399,73 @@ function rotateRiddle(
   return { board: nextBoard, tray: nextTray };
 }
 
-function buildRichRiddle(rng: () => number): BuiltRiddle | null {
-  for (let attempt = 0; attempt < 220; attempt++) {
-    const options = chooseBandOptions(rng);
-    if (!options) continue;
+function analyzeDifficulty(board: BoardGrid, tray: PieceShape[]): DifficultyStats {
+  const openings = enumerateMoves(board, tray);
+  let winningOpenings = 0;
+  let winningBranches = 0;
+  const memo = new Map<string, number>();
 
-    const bandStarts = assignBandStarts(options.map((option) => option.rowCount), rng);
+  for (const move of openings) {
+    const remaining = tray.filter((_, idx) => idx !== move.pieceIndex);
+    const branches = countSolutionsCapped(
+      move.nextBoard,
+      remaining,
+      MAX_WINNING_BRANCHES + 1 - winningBranches,
+      memo
+    );
+    if (branches > 0) {
+      winningOpenings++;
+      winningBranches += branches;
+      if (winningOpenings > MAX_WINNING_OPENINGS || winningBranches > MAX_WINNING_BRANCHES) {
+        break;
+      }
+    }
+  }
+
+  return {
+    legalOpenings: openings.length,
+    winningOpenings,
+    winningBranches: Math.min(winningBranches, MAX_WINNING_BRANCHES + 1),
+  };
+}
+
+function difficultyScore(stats: DifficultyStats): number {
+  const openingPenalty = stats.winningOpenings * 120;
+  const branchPenalty = stats.winningBranches * 80;
+  const rewardForOptions = Math.min(stats.legalOpenings, 24) * 4;
+  const targetBonus = stats.winningOpenings === TARGET_WINNING_OPENINGS ? 90 : 0;
+  return rewardForOptions + targetBonus - openingPenalty - branchPenalty;
+}
+
+function buildCandidate(rng: () => number): BuiltRiddle | null {
+  const options = chooseRowOnlyBandOptions(rng);
+  if (!options) return null;
+
+  for (let positionAttempt = 0; positionAttempt < 12; positionAttempt++) {
+    const bandStarts = assignBandStarts(options.map((option) => option.lineCount), rng);
     if (!bandStarts) continue;
 
-    const colStarts = options.map((option) => Math.floor(rng() * (BOARD_SIZE - option.piece.width + 1)));
-    const base = buildBoardFromBands(options, bandStarts, colStarts);
-    if (!verifyBandSolution(base.board, options, bandStarts, colStarts)) continue;
+    const positioned = options.map((option, index) => ({
+      option,
+      origin: {
+        row: bandStarts[index],
+        col: Math.floor(rng() * (BOARD_SIZE - option.piece.width + 1)),
+      },
+    }));
+
+    const base = buildBoardFromBands(positioned);
+    if (!verifyBandSolution(base.board, positioned)) continue;
 
     const turns = Math.floor(rng() * 4);
     let { board, tray } = rotateRiddle(base.board, base.tray, turns);
 
-    // Do not hand the player the exact solved orientation every time.
     tray = tray.map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4)));
     tray = colorizeTray(shuffleInPlace([...tray], rng), rng);
 
+    const stats = analyzeDifficulty(board, tray);
     const pieceKey = [...tray].map((piece) => piece.id).sort().join(',');
     const signature = `${occupancyKey(board)}|${pieceKey}`;
-    return { board, tray, signature };
+    return { board, tray, signature, stats };
   }
 
   return null;
@@ -360,22 +479,33 @@ function recordSignature(signature: string): void {
 }
 
 function buildFallbackRiddle(): BuiltRiddle {
-  const byId = (id: string) => {
+  const pickRow = (id: string) => {
     const option = ROW_BAND_OPTIONS.find((candidate) => candidate.piece.id === id);
     if (!option) throw new Error(`Missing fallback piece ${id}`);
     return option;
   };
 
-  const options = [byId('h4'), byId('h5'), byId('h4'), byId('h5'), byId('h4')];
-  const bandStarts = [0, 1, 2, 3, 4];
-  const colStarts = [0, 2, 3, 1, 4];
-  const built = buildBoardFromBands(options, bandStarts, colStarts);
-  if (!verifyBandSolution(built.board, options, bandStarts, colStarts)) {
+  const positioned: PositionedBand[] = [
+    { option: pickRow('h4'), origin: { row: 0, col: 1 } },
+    { option: pickRow('h5'), origin: { row: 1, col: 2 } },
+    { option: pickRow('h4'), origin: { row: 2, col: 0 } },
+    { option: pickRow('sq2'), origin: { row: 4, col: 4 } },
+    { option: pickRow('p5'), origin: { row: 6, col: 1 } },
+  ];
+
+  const built = buildBoardFromBands(positioned);
+  if (!verifyBandSolution(built.board, positioned)) {
     throw new Error('Fallback riddle construction failed.');
   }
+
   const tray = colorizeTray(built.tray, mulberry32(0x51ced));
   const signature = `${occupancyKey(built.board)}|${tray.map((piece) => piece.id).sort().join(',')}`;
-  return { board: built.board, tray, signature };
+  return {
+    board: built.board,
+    tray,
+    signature,
+    stats: analyzeDifficulty(built.board, tray),
+  };
 }
 
 const fallbackRiddle = buildFallbackRiddle();
@@ -386,15 +516,36 @@ export function generateRiddle(seedHint?: number): {
 } {
   const seed = (seedHint ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
   const rng = mulberry32(seed);
+  let best: BuiltRiddle | null = null;
 
-  for (let attempt = 0; attempt < 24; attempt++) {
-    const built = buildRichRiddle(rng);
-    if (!built) break;
+  for (let attempt = 0; attempt < 48; attempt++) {
+    const built = buildCandidate(rng);
+    if (!built) continue;
     if (recentSignatures.includes(built.signature)) continue;
-    recordSignature(built.signature);
+
+    const isElite =
+      built.stats.legalOpenings >= MIN_LEGAL_OPENINGS &&
+      built.stats.winningOpenings <= TARGET_WINNING_OPENINGS &&
+      built.stats.winningBranches <= 2;
+
+    if (isElite) {
+      recordSignature(built.signature);
+      return {
+        board: cloneBoard(built.board),
+        tray: built.tray.map((piece) => clonePiece(piece)),
+      };
+    }
+
+    if (!best || difficultyScore(built.stats) > difficultyScore(best.stats)) {
+      best = built;
+    }
+  }
+
+  if (best && !recentSignatures.includes(best.signature)) {
+    recordSignature(best.signature);
     return {
-      board: cloneBoard(built.board),
-      tray: built.tray.map((piece) => clonePiece(piece)),
+      board: cloneBoard(best.board),
+      tray: best.tray.map((piece) => clonePiece(piece)),
     };
   }
 
@@ -402,5 +553,28 @@ export function generateRiddle(seedHint?: number): {
   return {
     board: cloneBoard(fallbackRiddle.board),
     tray: fallbackRiddle.tray.map((piece) => clonePiece(piece)),
+  };
+}
+
+export function debugRiddleSearch(seedHint: number): {
+  usedFallback: boolean;
+  bestStats: DifficultyStats | null;
+  bestSignature: string | null;
+} {
+  const rng = mulberry32(seedHint >>> 0);
+  let best: BuiltRiddle | null = null;
+
+  for (let attempt = 0; attempt < 48; attempt++) {
+    const built = buildCandidate(rng);
+    if (!built) continue;
+    if (!best || difficultyScore(built.stats) > difficultyScore(best.stats)) {
+      best = built;
+    }
+  }
+
+  return {
+    usedFallback: best === null,
+    bestStats: best?.stats ?? null,
+    bestSignature: best?.signature ?? null,
   };
 }
