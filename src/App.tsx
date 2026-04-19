@@ -345,11 +345,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [drag, state.tray, dispatch]);
 
+  // Refresh placement preview when the tray piece changes during drag (e.g. rotate).
+  // Pointer moves call updatePreview in the drag listener — do not also depend on `drag`
+  // here or every move runs this effect and double-updates preview (flicker).
   useEffect(() => {
     if (drag === null) return;
     const { x: ex, y: ey } = dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync preview after tray commit (rotate during drag)
     updatePreview(ex, ey, drag.index);
-  }, [state.tray, drag, updatePreview]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally tray-only; drag read from latest render
+  }, [state.tray, updatePreview]);
 
   useEffect(() => {
     if (drag === null) return;

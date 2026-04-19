@@ -161,20 +161,24 @@ body {
 .cell--preview-valid {
   opacity: 0.5;
   border: 1px solid rgba(255, 255, 255, 0.3);
+  /* Snap instantly while dragging — inherited .cell transition caused flicker */
+  transition: none;
 }
 
 .cell--preview-invalid {
   background: rgba(255, 60, 60, 0.25);
+  transition: none;
 }
 
 .cell--will-clear {
-  animation: will-clear-pulse 0.8s ease-in-out infinite alternate;
+  /* Slower, subtler pulse — fast brightness alternation read as flicker */
+  animation: will-clear-pulse 1.4s ease-in-out infinite alternate;
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 @keyframes will-clear-pulse {
   0% { filter: brightness(1); }
-  100% { filter: brightness(1.8); }
+  100% { filter: brightness(1.35); }
 }
 
 @keyframes cell-pop {
