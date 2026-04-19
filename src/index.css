@@ -257,7 +257,6 @@ body {
 .floating-piece {
   display: grid;
   gap: 2px;
-  opacity: 0.85;
 }
 
 /* Game over overlay */
