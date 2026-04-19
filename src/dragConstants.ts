@@ -4,4 +4,4 @@
  * so the hand does not cover the preview.
  */
 export const DRAG_POINTER_OFFSET_X = -12;
-export const DRAG_POINTER_OFFSET_Y = -96;
+export const DRAG_POINTER_OFFSET_Y = -140;
