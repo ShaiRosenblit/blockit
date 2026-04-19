@@ -4,6 +4,7 @@ import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
+import type { ClearAnimationCell } from './components/ClearAnimationOverlay';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
@@ -13,10 +14,15 @@ import { haptics } from './haptics';
 import { sounds } from './sounds';
 
 const DRAG_THRESHOLD_PX = 10;
+const CLEAR_ANIMATION_MS = 860;
+const CLEAR_ANIMATION_MAX_DELAY_MS = 80;
+const CLEAR_ANIMATION_LIFETIME_MS = CLEAR_ANIMATION_MS + CLEAR_ANIMATION_MAX_DELAY_MS + 80;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type ClearAnimationEvent = { id: number; cells: ClearAnimationCell[] };
 
 let popupId = 0;
+let clearAnimationId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -43,8 +49,10 @@ export default function App() {
   } | null>(null);
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
+  const [clearAnimations, setClearAnimations] = useState<ClearAnimationEvent[]>([]);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
   const [muted, setMuted] = useState(() => sounds.isMuted());
+  const clearAnimationTimersRef = useRef<number[]>([]);
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -115,6 +123,14 @@ export default function App() {
     }, 600);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      for (const timer of clearAnimationTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
   const handlePlace = useCallback(
     (trayIndex: number, origin: Coord) => {
       const piece = state.tray[trayIndex];
@@ -136,6 +152,45 @@ export default function App() {
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
+        const cellsByCoord = new Map<string, ClearAnimationCell>();
+        const eventId = ++clearAnimationId;
+        const registerCell = (row: number, col: number) => {
+          const color = hypothetical[row][col];
+          if (!color) return;
+          const key = `${row},${col}`;
+          if (cellsByCoord.has(key)) return;
+          cellsByCoord.set(key, {
+            id: `${eventId}-${key}`,
+            row,
+            col,
+            color,
+            delayMs: Math.floor(Math.random() * CLEAR_ANIMATION_MAX_DELAY_MS),
+            tailScale: 0.9 + Math.random() * 0.45,
+            wobblePx: Math.round((Math.random() - 0.5) * 8),
+            driftPx: Math.round((Math.random() - 0.5) * 12),
+            fallCells: Math.max(0.25, BOARD_SIZE - row - 1.08 + Math.random() * 0.18),
+            satelliteScale: 0.85 + Math.random() * 0.45,
+          });
+        };
+
+        for (const row of rows) {
+          for (let col = 0; col < BOARD_SIZE; col++) registerCell(row, col);
+        }
+        for (const col of cols) {
+          for (let row = 0; row < BOARD_SIZE; row++) registerCell(row, col);
+        }
+
+        if (cellsByCoord.size > 0) {
+          setClearAnimations((prev) => [...prev, { id: eventId, cells: [...cellsByCoord.values()] }]);
+          const cleanupTimer = window.setTimeout(() => {
+            setClearAnimations((prev) => prev.filter((event) => event.id !== eventId));
+            clearAnimationTimersRef.current = clearAnimationTimersRef.current.filter(
+              (timer) => timer !== cleanupTimer
+            );
+          }, CLEAR_ANIMATION_LIFETIME_MS);
+          clearAnimationTimersRef.current.push(cleanupTimer);
+        }
+
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
@@ -289,6 +344,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearAnimations={clearAnimations.flatMap((event) => event.cells)}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
