@@ -442,7 +442,7 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
             {state.difficulty === 'riddle'
-              ? 'Clear the grid with these three pieces — no blocks left.'
+              ? `Clear the grid with these ${state.tray.length} pieces — no blocks left.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>

@@ -7,15 +7,14 @@ type PieceTrayProps = {
   draggingIndex: number | null;
 };
 
-const SLOT_INNER_PX = 76;
 const MINI_GAP_PX = 2;
 const MAX_MINI_CELL_PX = 20;
 
-function PieceMiniGrid({ piece }: { piece: PieceShape }) {
+function PieceMiniGrid({ piece, slotInnerPx }: { piece: PieceShape; slotInnerPx: number }) {
   const maxDim = Math.max(piece.width, piece.height, 1);
   const cellSize = Math.min(
     MAX_MINI_CELL_PX,
-    Math.floor((SLOT_INNER_PX - MINI_GAP_PX * (maxDim - 1)) / maxDim)
+    Math.floor((slotInnerPx - MINI_GAP_PX * (maxDim - 1)) / maxDim)
   );
 
   const cells: React.ReactNode[] = [];
@@ -52,17 +51,19 @@ function PieceMiniGrid({ piece }: { piece: PieceShape }) {
 
 export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) {
   const { state } = useGame();
+  const dense = state.difficulty === 'riddle' && state.tray.length > 3;
+  const slotInnerPx = dense ? 56 : 76;
 
   return (
-    <div className="piece-tray">
+    <div className={`piece-tray${dense ? ' piece-tray--dense' : ''}`}>
       {state.tray.map((piece, i) => (
         <div
           key={i}
-          className={`piece-slot${!piece ? ' piece-slot--empty' : ''}${draggingIndex === i ? ' piece-slot--dragging' : ''}`}
+          className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${draggingIndex === i ? ' piece-slot--dragging' : ''}`}
           onPointerDown={(e) => piece && onTrayPointerDown(i, e)}
           style={{ touchAction: 'none' }}
         >
-          {piece && draggingIndex !== i && <PieceMiniGrid piece={piece} />}
+          {piece && draggingIndex !== i && <PieceMiniGrid piece={piece} slotInnerPx={slotInnerPx} />}
         </div>
       ))}
     </div>

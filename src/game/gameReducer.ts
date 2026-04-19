@@ -15,7 +15,7 @@ import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from
 
 export type GameState = {
   board: BoardGrid;
-  tray: [TraySlot, TraySlot, TraySlot];
+  tray: TraySlot[];
   score: number;
   bestScore: number;
   combo: number;
@@ -103,10 +103,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'ROTATE_TRAY_PIECE': {
       const { trayIndex } = action;
-      if (trayIndex < 0 || trayIndex > 2) return state;
+      if (trayIndex < 0 || trayIndex >= state.tray.length) return state;
       const piece = state.tray[trayIndex];
       if (!piece) return state;
-      const newTray = [...state.tray] as [TraySlot, TraySlot, TraySlot];
+      const newTray = [...state.tray];
       newTray[trayIndex] = rotatePiece90Clockwise(piece);
       const isGameOver = !hasValidMoves(state.board, newTray);
       const riddleResult =
@@ -134,7 +134,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         combo = 0;
       }
 
-      const newTray = [...state.tray] as [TraySlot, TraySlot, TraySlot];
+      const newTray = [...state.tray];
       newTray[action.trayIndex] = null;
 
       const allPlaced = newTray.every((s) => s === null);

@@ -11,14 +11,18 @@ import { PIECE_CATALOG } from './pieces';
 
 /** Filled cells that belong to the riddle grid (not going in the tray). */
 export const RIDDLE_GRID_COLOR = '#5c6b7a';
+export const RIDDLE_TRAY_SIZE = 5;
 
-const RECENT_SIGNATURE_LIMIT = 8;
+const RECENT_SIGNATURE_LIMIT = 12;
 const recentSignatures: string[] = [];
 
-/** Trominoes through pentominoes; small enough for exhaustive solve checks. */
+/**
+ * Hard riddle pool: prefer 4- and 5-cell shapes so the puzzle has fewer
+ * obvious placements and more rotation burden.
+ */
 const RIDDLE_SHAPE_POOL = PIECE_CATALOG.filter((p) => {
   const n = p.cells.length;
-  return n >= 3 && n <= 5;
+  return n >= 4 && n <= 5;
 });
 
 type RowBandOption = {
@@ -29,7 +33,7 @@ type RowBandOption = {
 
 type BuiltRiddle = {
   board: BoardGrid;
-  tray: [PieceShape, PieceShape, PieceShape];
+  tray: PieceShape[];
   signature: string;
 };
 
@@ -128,12 +132,12 @@ function rotateBoard90Clockwise(board: BoardGrid): BoardGrid {
   return next;
 }
 
-function colorizeTray(pieces: PieceShape[], rng: () => number): [PieceShape, PieceShape, PieceShape] {
+function colorizeTray(pieces: PieceShape[], rng: () => number): PieceShape[] {
   const palette = shuffleInPlace([...COLORS], rng);
   return pieces.map((piece, index) => ({
     ...clonePiece(piece),
     color: palette[index % palette.length],
-  })) as [PieceShape, PieceShape, PieceShape];
+  }));
 }
 
 /**
@@ -233,7 +237,7 @@ function buildBoardFromBands(
   options: RowBandOption[],
   bandStarts: number[],
   colStarts: number[]
-): { board: BoardGrid; tray: [PieceShape, PieceShape, PieceShape] } {
+): { board: BoardGrid; tray: PieceShape[] } {
   const board = createEmptyBoard();
   const tray: PieceShape[] = [];
 
@@ -255,23 +259,49 @@ function buildBoardFromBands(
     tray.push(clonePiece(option.piece));
   }
 
-  return { board, tray: tray as [PieceShape, PieceShape, PieceShape] };
+  return { board, tray };
+}
+
+function verifyBandSolution(
+  board: BoardGrid,
+  options: RowBandOption[],
+  bandStarts: number[],
+  colStarts: number[]
+): boolean {
+  let next = cloneBoard(board);
+
+  for (let i = 0; i < options.length; i++) {
+    const origin: Coord = { row: bandStarts[i], col: colStarts[i] };
+    if (!canPlacePiece(next, options[i].piece, origin)) return false;
+    next = applyPlacementAndClear(next, options[i].piece, origin);
+  }
+
+  return boardIsEmpty(next);
 }
 
 function chooseBandOptions(rng: () => number): RowBandOption[] | null {
-  for (let attempt = 0; attempt < 120; attempt++) {
+  for (let attempt = 0; attempt < 240; attempt++) {
     const pool = shuffleInPlace([...ROW_BAND_OPTIONS], rng);
-    const picked = pool.slice(0, 3);
-    if (picked.length < 3) return null;
+    const picked = pool.slice(0, RIDDLE_TRAY_SIZE);
+    if (picked.length < RIDDLE_TRAY_SIZE) return null;
 
     const totalRows = picked.reduce((sum, option) => sum + option.rowCount, 0);
-    if (totalRows < 4 || totalRows > 6) continue;
+    if (totalRows < 6 || totalRows > 8) continue;
 
     const distinctIds = new Set(picked.map((option) => option.piece.id));
-    if (distinctIds.size < 2) continue;
+    if (distinctIds.size < 3) continue;
+
+    const twoRowCount = picked.filter((option) => option.rowCount === 2).length;
+    if (twoRowCount < 2) continue;
+
+    const straightCount = picked.filter((option) => isStraightPiece(option.piece)).length;
+    if (straightCount > 2) continue;
+
+    const largeCount = picked.filter((option) => option.piece.cells.length === 5).length;
+    if (largeCount < 1) continue;
 
     const nonStraightCount = picked.filter((option) => !isStraightPiece(option.piece)).length;
-    if (nonStraightCount === 0) continue;
+    if (nonStraightCount < 3) continue;
 
     return picked;
   }
@@ -281,22 +311,22 @@ function chooseBandOptions(rng: () => number): RowBandOption[] | null {
 
 function rotateRiddle(
   board: BoardGrid,
-  tray: [PieceShape, PieceShape, PieceShape],
+  tray: PieceShape[],
   turns: number
-): { board: BoardGrid; tray: [PieceShape, PieceShape, PieceShape] } {
+): { board: BoardGrid; tray: PieceShape[] } {
   let nextBoard = cloneBoard(board);
-  let nextTray = tray.map((piece) => clonePiece(piece)) as [PieceShape, PieceShape, PieceShape];
+  let nextTray = tray.map((piece) => clonePiece(piece));
 
   for (let i = 0; i < turns; i++) {
     nextBoard = rotateBoard90Clockwise(nextBoard);
-    nextTray = nextTray.map((piece) => rotatePiece90Clockwise(piece)) as [PieceShape, PieceShape, PieceShape];
+    nextTray = nextTray.map((piece) => rotatePiece90Clockwise(piece));
   }
 
   return { board: nextBoard, tray: nextTray };
 }
 
 function buildRichRiddle(rng: () => number): BuiltRiddle | null {
-  for (let attempt = 0; attempt < 160; attempt++) {
+  for (let attempt = 0; attempt < 220; attempt++) {
     const options = chooseBandOptions(rng);
     if (!options) continue;
 
@@ -305,15 +335,14 @@ function buildRichRiddle(rng: () => number): BuiltRiddle | null {
 
     const colStarts = options.map((option) => Math.floor(rng() * (BOARD_SIZE - option.piece.width + 1)));
     const base = buildBoardFromBands(options, bandStarts, colStarts);
+    if (!verifyBandSolution(base.board, options, bandStarts, colStarts)) continue;
 
     const turns = Math.floor(rng() * 4);
     let { board, tray } = rotateRiddle(base.board, base.tray, turns);
 
     // Do not hand the player the exact solved orientation every time.
-    tray = tray.map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4))) as [PieceShape, PieceShape, PieceShape];
+    tray = tray.map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4)));
     tray = colorizeTray(shuffleInPlace([...tray], rng), rng);
-
-    if (!canClearBoard(board, [...tray])) continue;
 
     const pieceKey = [...tray].map((piece) => piece.id).sort().join(',');
     const signature = `${occupancyKey(board)}|${pieceKey}`;
@@ -337,21 +366,23 @@ function buildFallbackRiddle(): BuiltRiddle {
     return option;
   };
 
-  const options = [byId('h4'), byId('sq2'), byId('t1')];
-  const built = buildBoardFromBands(options, [1, 3, 6], [1, 4, 2]);
+  const options = [byId('h4'), byId('h5'), byId('h4'), byId('h5'), byId('h4')];
+  const bandStarts = [0, 1, 2, 3, 4];
+  const colStarts = [0, 2, 3, 1, 4];
+  const built = buildBoardFromBands(options, bandStarts, colStarts);
+  if (!verifyBandSolution(built.board, options, bandStarts, colStarts)) {
+    throw new Error('Fallback riddle construction failed.');
+  }
   const tray = colorizeTray(built.tray, mulberry32(0x51ced));
   const signature = `${occupancyKey(built.board)}|${tray.map((piece) => piece.id).sort().join(',')}`;
   return { board: built.board, tray, signature };
 }
 
 const fallbackRiddle = buildFallbackRiddle();
-if (!canClearBoard(fallbackRiddle.board, [...fallbackRiddle.tray])) {
-  throw new Error('Fallback riddle is not solvable.');
-}
 
 export function generateRiddle(seedHint?: number): {
   board: BoardGrid;
-  tray: [PieceShape, PieceShape, PieceShape];
+  tray: PieceShape[];
 } {
   const seed = (seedHint ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
   const rng = mulberry32(seed);
@@ -363,13 +394,13 @@ export function generateRiddle(seedHint?: number): {
     recordSignature(built.signature);
     return {
       board: cloneBoard(built.board),
-      tray: built.tray.map((piece) => clonePiece(piece)) as [PieceShape, PieceShape, PieceShape],
+      tray: built.tray.map((piece) => clonePiece(piece)),
     };
   }
 
   recordSignature(fallbackRiddle.signature);
   return {
     board: cloneBoard(fallbackRiddle.board),
-    tray: fallbackRiddle.tray.map((piece) => clonePiece(piece)) as [PieceShape, PieceShape, PieceShape],
+    tray: fallbackRiddle.tray.map((piece) => clonePiece(piece)),
   };
 }

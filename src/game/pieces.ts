@@ -394,7 +394,7 @@ function pickFromTop(
   return top[top.length - 1];
 }
 
-function generateZenPieces(board: BoardGrid): [PieceShape, PieceShape, PieceShape] {
+function generateZenPieces(board: BoardGrid): PieceShape[] {
   const results: PieceShape[] = [];
   let simBoard = board;
 
@@ -422,10 +422,10 @@ function generateZenPieces(board: BoardGrid): [PieceShape, PieceShape, PieceShap
     [results[i], results[j]] = [results[j], results[i]];
   }
 
-  return results as [PieceShape, PieceShape, PieceShape];
+  return results;
 }
 
-export function generatePieces(difficulty: Difficulty, board?: BoardGrid): [PieceShape, PieceShape, PieceShape] {
+export function generatePieces(difficulty: Difficulty, board?: BoardGrid): PieceShape[] {
   if (difficulty === 'zen' && board) {
     return generateZenPieces(board);
   }
