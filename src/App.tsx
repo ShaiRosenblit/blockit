@@ -16,11 +16,21 @@ const DRAG_THRESHOLD_PX = 10;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
+type FlyingOrb = {
+  id: number;
+  color: string;
+  path: string;
+  duration: number;
+  delay: number;
+};
+
 let popupId = 0;
+let orbId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
   const boardRef = useRef<HTMLDivElement>(null);
+  const scoreValueRef = useRef<HTMLSpanElement>(null);
 
   const [pendingTray, setPendingTray] = useState<{
     index: number;
@@ -44,7 +54,23 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [flyingOrbs, setFlyingOrbs] = useState<FlyingOrb[]>([]);
+  const [scorePulseTick, setScorePulseTick] = useState(0);
   const [muted, setMuted] = useState(() => sounds.isMuted());
+
+  useEffect(() => {
+    if (scorePulseTick === 0) return;
+    const el = scoreValueRef.current;
+    if (!el) return;
+    el.classList.remove('score-value--collect-pulse');
+    // Force reflow so the animation can restart on rapid successive ticks.
+    void el.offsetWidth;
+    el.classList.add('score-value--collect-pulse');
+    const timeout = window.setTimeout(() => {
+      el.classList.remove('score-value--collect-pulse');
+    }, 320);
+    return () => window.clearTimeout(timeout);
+  }, [scorePulseTick]);
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -102,6 +128,85 @@ export default function App() {
     [state.board, state.tray, computeOrigin]
   );
 
+  const spawnCollectOrbs = useCallback(
+    (
+      cellsToClear: Array<{ row: number; col: number; color: string }>,
+      originRow: number,
+      originCol: number
+    ) => {
+      if (cellsToClear.length === 0) return;
+      if (!boardRef.current || !scoreValueRef.current) return;
+
+      const boardRect = boardRef.current.getBoundingClientRect();
+      const cellSize = boardRect.width / BOARD_SIZE;
+
+      const scoreRect = scoreValueRef.current.getBoundingClientRect();
+      const endX = scoreRect.left + scoreRect.width / 2;
+      const endY = scoreRect.top + scoreRect.height / 2;
+
+      // Sort so cells nearer to the placement origin leave first — visually
+      // reads as a wave radiating out of where the piece landed.
+      const withDistance = cellsToClear.map((c) => ({
+        ...c,
+        _dist: Math.hypot(c.row - originRow, c.col - originCol),
+      }));
+      withDistance.sort((a, b) => a._dist - b._dist);
+
+      const STAGGER = 45;
+      const newOrbs: FlyingOrb[] = withDistance.map((cell, i) => {
+        const startX = boardRect.left + (cell.col + 0.5) * cellSize;
+        const startY = boardRect.top + (cell.row + 0.5) * cellSize;
+
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const distance = Math.hypot(dx, dy);
+
+        // Perpendicular unit vector to bend the bezier arc away from the line.
+        const invLen = distance > 0 ? 1 / distance : 0;
+        const perpX = -dy * invLen;
+        const perpY = dx * invLen;
+
+        // Bias the arc so it always bows "outward" from the score bar
+        // (upward/outward looks magical rather than crossing itself).
+        const bias = endY < startY ? 1 : -1;
+        const arc = (0.18 + Math.random() * 0.22) * distance * bias;
+        const jitter = (Math.random() - 0.5) * 40;
+
+        const midX = startX + dx * 0.5 + perpX * arc + jitter;
+        const midY = startY + dy * 0.5 + perpY * arc;
+
+        const path = `M ${startX.toFixed(2)} ${startY.toFixed(2)} Q ${midX.toFixed(2)} ${midY.toFixed(2)} ${endX.toFixed(2)} ${endY.toFixed(2)}`;
+
+        // Farther cells travel slightly longer so everything feels weighty.
+        const duration = Math.round(620 + Math.min(distance, 600) * 0.4);
+        const delay = i * STAGGER;
+
+        return {
+          id: ++orbId,
+          color: cell.color,
+          path,
+          duration,
+          delay,
+        };
+      });
+
+      setFlyingOrbs((prev) => [...prev, ...newOrbs]);
+
+      for (const orb of newOrbs) {
+        const arrivalMs = orb.delay + Math.round(orb.duration * 0.92);
+        window.setTimeout(() => {
+          setScorePulseTick((n) => n + 1);
+        }, arrivalMs);
+
+        const removeMs = orb.delay + orb.duration + 160;
+        window.setTimeout(() => {
+          setFlyingOrbs((prev) => prev.filter((o) => o.id !== orb.id));
+        }, removeMs);
+      }
+    },
+    []
+  );
+
   const spawnScorePopup = useCallback((value: number, boardOrigin: Coord) => {
     if (!boardRef.current || value === 0) return;
     const rect = boardRef.current.getBoundingClientRect();
@@ -142,11 +247,38 @@ export default function App() {
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
         spawnScorePopup(totalPopup, origin);
+
+        // Build the set of cells about to be cleared, capturing their colors
+        // from the hypothetical board (which already includes the piece we
+        // just placed). This must happen BEFORE dispatch, so we can read the
+        // colors and viewport positions before the reducer wipes them.
+        const clearSet = new Set<string>();
+        const cellsToClear: Array<{ row: number; col: number; color: string }> = [];
+        for (const r of rows) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const key = `${r},${c}`;
+            if (clearSet.has(key)) continue;
+            clearSet.add(key);
+            const color = hypothetical[r][c];
+            if (color) cellsToClear.push({ row: r, col: c, color });
+          }
+        }
+        for (const c of cols) {
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            const key = `${r},${c}`;
+            if (clearSet.has(key)) continue;
+            clearSet.add(key);
+            const color = hypothetical[r][c];
+            if (color) cellsToClear.push({ row: r, col: c, color });
+          }
+        }
+
+        spawnCollectOrbs(cellsToClear, origin.row, origin.col);
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
     },
-    [state.board, state.tray, state.combo, spawnScorePopup]
+    [state.board, state.tray, state.combo, spawnScorePopup, spawnCollectOrbs]
   );
 
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
@@ -282,7 +414,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <ScoreBar />
+        <ScoreBar scoreValueRef={scoreValueRef} />
         <Board
           boardRef={boardRef}
           previewCells={preview?.cells}
@@ -306,6 +438,35 @@ export default function App() {
             +{popup.value}
           </div>
         ))}
+        {flyingOrbs.length > 0 && (
+          <div className="magnet-overlay" aria-hidden>
+            {flyingOrbs.map((orb) => {
+              const baseStyle = {
+                '--orb-color': orb.color,
+                offsetPath: `path('${orb.path}')`,
+                animationDuration: `${orb.duration}ms`,
+              } as React.CSSProperties;
+              return (
+                <div key={orb.id} className="magnet-orb-flight">
+                  <div
+                    className="magnet-orb"
+                    style={{ ...baseStyle, animationDelay: `${orb.delay}ms` }}
+                  />
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className={`magnet-sparkle magnet-sparkle--${i}`}
+                      style={{
+                        ...baseStyle,
+                        animationDelay: `${orb.delay + i * 55}ms`,
+                      }}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <GameOverOverlay />
       </div>
     </GameContext>
