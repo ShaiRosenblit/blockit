@@ -15,8 +15,21 @@ import { sounds } from './sounds';
 const DRAG_THRESHOLD_PX = 10;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type LineClearSweepCell = {
+  key: string;
+  row: number;
+  col: number;
+  color: string;
+  dx: string;
+  dy: string;
+  rot: string;
+  delayMs: number;
+  durationMs: number;
+};
+type LineClearSweep = { id: number; cells: LineClearSweepCell[] };
 
 let popupId = 0;
+let lineClearSweepId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,6 +57,7 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [lineClearSweeps, setLineClearSweeps] = useState<LineClearSweep[]>([]);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
@@ -136,6 +150,63 @@ export default function App() {
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
+        const durationMs = 240;
+        const staggerMs = 20;
+        const rowPushLeft = origin.col < BOARD_SIZE / 2;
+        const rowDirection = rowPushLeft ? 'left' : 'right';
+        const rowCols = rowPushLeft
+          ? Array.from({ length: BOARD_SIZE }, (_, i) => i)
+          : Array.from({ length: BOARD_SIZE }, (_, i) => BOARD_SIZE - 1 - i);
+        const cellsByKey = new Map<string, LineClearSweepCell>();
+
+        for (const row of rows) {
+          rowCols.forEach((col, order) => {
+            const color = hypothetical[row][col];
+            if (!color) return;
+            const key = `${row},${col}`;
+            cellsByKey.set(key, {
+              key,
+              row,
+              col,
+              color,
+              dx: rowDirection === 'left' ? 'calc(var(--board-size) * -1.2)' : 'calc(var(--board-size) * 1.2)',
+              dy: '0px',
+              rot: rowDirection === 'left' ? '-5deg' : '5deg',
+              delayMs: order * staggerMs,
+              durationMs,
+            });
+          });
+        }
+
+        for (const col of cols) {
+          for (let row = 0; row < BOARD_SIZE; row++) {
+            const color = hypothetical[row][col];
+            if (!color) continue;
+            const key = `${row},${col}`;
+            if (cellsByKey.has(key)) continue;
+            cellsByKey.set(key, {
+              key,
+              row,
+              col,
+              color,
+              dx: '0px',
+              dy: 'calc(var(--board-size) * 1.2)',
+              rot: col % 2 === 0 ? '8deg' : '-8deg',
+              delayMs: row * staggerMs,
+              durationMs,
+            });
+          }
+        }
+
+        const cells = [...cellsByKey.values()];
+        const id = ++lineClearSweepId;
+        const maxDelay = cells.reduce((max, cell) => Math.max(max, cell.delayMs), 0);
+        const totalDuration = maxDelay + durationMs + 30;
+        setLineClearSweeps((prev) => [...prev, { id, cells }]);
+        setTimeout(() => {
+          setLineClearSweeps((prev) => prev.filter((sweep) => sweep.id !== id));
+        }, totalDuration);
+
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
@@ -283,13 +354,37 @@ export default function App() {
           ))}
         </div>
         <ScoreBar />
-        <Board
-          boardRef={boardRef}
-          previewCells={preview?.cells}
-          previewColor={preview?.color}
-          placedCells={placedCells ?? undefined}
-          clearPreviewCells={preview?.clearCells ?? undefined}
-        />
+        <div className="board-stage">
+          <Board
+            boardRef={boardRef}
+            previewCells={preview?.cells}
+            previewColor={preview?.color}
+            placedCells={placedCells ?? undefined}
+            clearPreviewCells={preview?.clearCells ?? undefined}
+          />
+          {lineClearSweeps.map((sweep) => (
+            <div key={sweep.id} className="line-clear-sweep-layer" aria-hidden="true">
+              {sweep.cells.map((cell) => (
+                <div
+                  key={`${sweep.id}-${cell.key}`}
+                  className="line-clear-sweep-cell"
+                  style={
+                    {
+                      backgroundColor: cell.color,
+                      '--row': cell.row,
+                      '--col': cell.col,
+                      '--dx': cell.dx,
+                      '--dy': cell.dy,
+                      '--rot': cell.rot,
+                      '--delay-ms': `${cell.delayMs}ms`,
+                      '--duration-ms': `${cell.durationMs}ms`,
+                    } as React.CSSProperties
+                  }
+                />
+              ))}
+            </div>
+          ))}
+        </div>
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">Tap to rotate · drag to place · R</p>

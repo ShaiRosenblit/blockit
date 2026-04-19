@@ -142,6 +142,36 @@ body {
   padding: var(--gap);
 }
 
+.board-stage {
+  position: relative;
+}
+
+.line-clear-sweep-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 10;
+}
+
+.line-clear-sweep-cell {
+  position: absolute;
+  top: calc(var(--gap) + var(--row) * (var(--cell-size) + var(--gap)));
+  left: calc(var(--gap) + var(--col) * (var(--cell-size) + var(--gap)));
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: line-clear-sweep var(--duration-ms) cubic-bezier(0.3, 0.05, 0.8, 0.35) var(--delay-ms) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes line-clear-sweep {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate3d(var(--dx), var(--dy), 0) rotate(var(--rot)); opacity: 0; }
+}
+
 .cell {
   width: var(--cell-size);
   height: var(--cell-size);
