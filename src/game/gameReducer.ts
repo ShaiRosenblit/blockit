@@ -10,7 +10,12 @@ import {
   boardMatchesTarget,
 } from './board';
 import { generatePieces } from './pieces';
-import { generateRiddle } from './riddleGenerator';
+import {
+  generateRiddle,
+  clampRiddleLevel,
+  RIDDLE_FIRST_LEVEL,
+  RIDDLE_MAX_LEVEL,
+} from './riddleGenerator';
 import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
 
 export type GameState = {
@@ -28,13 +33,18 @@ export type GameState = {
    * non-riddle modes.
    */
   riddleTarget: TargetPattern | null;
+  /** Current riddle level being played (1..RIDDLE_MAX_LEVEL). */
+  riddleLevel: number;
+  /** Highest riddle level the player has unlocked (1..RIDDLE_MAX_LEVEL). */
+  riddleMaxLevel: number;
 };
 
 export type GameAction =
   | { type: 'PLACE_PIECE'; trayIndex: number; origin: Coord }
   | { type: 'ROTATE_TRAY_PIECE'; trayIndex: number }
   | { type: 'RESTART' }
-  | { type: 'SET_DIFFICULTY'; difficulty: Difficulty };
+  | { type: 'SET_DIFFICULTY'; difficulty: Difficulty }
+  | { type: 'SET_RIDDLE_LEVEL'; level: number };
 
 function bestScoreKey(difficulty: Difficulty): string {
   return `blockit-best-${difficulty}`;
@@ -76,22 +86,69 @@ function saveDifficulty(difficulty: Difficulty) {
   } catch { /* noop */ }
 }
 
+const RIDDLE_LEVEL_KEY = 'blockit-riddle-level';
+const RIDDLE_MAX_LEVEL_KEY = 'blockit-riddle-max-level';
+
+function loadRiddleLevel(): number {
+  try {
+    const stored = Number(localStorage.getItem(RIDDLE_LEVEL_KEY));
+    if (Number.isFinite(stored) && stored > 0) return clampRiddleLevel(stored);
+  } catch { /* noop */ }
+  return RIDDLE_FIRST_LEVEL;
+}
+
+function saveRiddleLevel(level: number) {
+  try {
+    localStorage.setItem(RIDDLE_LEVEL_KEY, String(clampRiddleLevel(level)));
+  } catch { /* noop */ }
+}
+
+function loadRiddleMaxLevel(): number {
+  try {
+    const stored = Number(localStorage.getItem(RIDDLE_MAX_LEVEL_KEY));
+    if (Number.isFinite(stored) && stored > 0) return clampRiddleLevel(stored);
+  } catch { /* noop */ }
+  return RIDDLE_FIRST_LEVEL;
+}
+
+function saveRiddleMaxLevel(level: number) {
+  try {
+    localStorage.setItem(RIDDLE_MAX_LEVEL_KEY, String(clampRiddleLevel(level)));
+  } catch { /* noop */ }
+}
+
+/** Build a fresh state for the given riddle level, reusing best score / max level. */
+function freshRiddleState(
+  level: number,
+  bestScore: number,
+  riddleMaxLevel: number
+): GameState {
+  const clamped = clampRiddleLevel(level);
+  const { board, tray, target } = generateRiddle({ level: clamped });
+  return {
+    board,
+    tray,
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    difficulty: 'riddle',
+    riddleResult: null,
+    riddleTarget: target,
+    riddleLevel: clamped,
+    riddleMaxLevel,
+  };
+}
+
 export function createInitialState(): GameState {
   const difficulty = loadDifficulty();
+  const riddleLevel = loadRiddleLevel();
+  const riddleMaxLevel = loadRiddleMaxLevel();
+
   if (difficulty === 'riddle') {
-    const { board, tray, target } = generateRiddle();
-    return {
-      board,
-      tray,
-      score: 0,
-      bestScore: loadBestScore(difficulty),
-      combo: 0,
-      isGameOver: false,
-      difficulty,
-      riddleResult: null,
-      riddleTarget: target,
-    };
+    return freshRiddleState(riddleLevel, loadBestScore(difficulty), riddleMaxLevel);
   }
+
   const board = createEmptyBoard();
   return {
     board,
@@ -103,6 +160,8 @@ export function createInitialState(): GameState {
     difficulty,
     riddleResult: null,
     riddleTarget: null,
+    riddleLevel,
+    riddleMaxLevel,
   };
 }
 
@@ -150,11 +209,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         const target = state.riddleTarget;
         if (allPlaced) {
           const solved = target !== null && boardMatchesTarget(board, target);
-          if (solved) {
-            score += RIDDLE_SOLVE_BONUS;
-          }
+          if (solved) score += RIDDLE_SOLVE_BONUS;
+
           const bestScore = Math.max(score, state.bestScore);
           if (bestScore > state.bestScore) saveBestScore(state.difficulty, bestScore);
+
+          // Solving unlocks the next level (up to the max).
+          let riddleMaxLevel = state.riddleMaxLevel;
+          if (solved && state.riddleLevel + 1 > riddleMaxLevel && state.riddleLevel < RIDDLE_MAX_LEVEL) {
+            riddleMaxLevel = state.riddleLevel + 1;
+            saveRiddleMaxLevel(riddleMaxLevel);
+          }
+
           return {
             ...state,
             board,
@@ -164,6 +230,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             combo: solved ? combo : 0,
             isGameOver: true,
             riddleResult: solved ? 'solved' : 'failed',
+            riddleMaxLevel,
           };
         }
         const isGameOver = !hasValidMoves(board, newTray);
@@ -204,18 +271,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveDifficulty(action.difficulty);
       const difficulty = action.difficulty;
       if (difficulty === 'riddle') {
-        const { board, tray, target } = generateRiddle();
-        return {
-          board,
-          tray,
-          score: 0,
-          bestScore: loadBestScore(difficulty),
-          combo: 0,
-          isGameOver: false,
-          difficulty,
-          riddleResult: null,
-          riddleTarget: target,
-        };
+        return freshRiddleState(
+          state.riddleLevel,
+          loadBestScore(difficulty),
+          state.riddleMaxLevel
+        );
       }
       const freshBoard = createEmptyBoard();
       return {
@@ -228,11 +288,30 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         difficulty,
         riddleResult: null,
         riddleTarget: null,
+        riddleLevel: state.riddleLevel,
+        riddleMaxLevel: state.riddleMaxLevel,
       };
     }
 
-    case 'RESTART':
+    case 'SET_RIDDLE_LEVEL': {
+      const target = clampRiddleLevel(action.level);
+      if (target > state.riddleMaxLevel) return state; // locked
+      saveRiddleLevel(target);
+      if (state.difficulty !== 'riddle') {
+        // Just remember the selection; picking the riddle difficulty loads it.
+        return { ...state, riddleLevel: target };
+      }
+      return freshRiddleState(target, state.bestScore, state.riddleMaxLevel);
+    }
+
+    case 'RESTART': {
+      // In riddle mode, restart the CURRENT level (not a random one) so players
+      // can retry the same challenge or replay after solving.
+      if (state.difficulty === 'riddle') {
+        return freshRiddleState(state.riddleLevel, state.bestScore, state.riddleMaxLevel);
+      }
       return { ...createInitialState(), bestScore: state.bestScore };
+    }
 
     default:
       return state;

@@ -9,6 +9,7 @@ import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
+import { RIDDLE_MAX_LEVEL } from './game/riddleGenerator';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -434,6 +435,30 @@ export default function App() {
           ))}
         </div>
         <ScoreBar scoreValueRef={scoreValueRef} />
+        {state.difficulty === 'riddle' && (
+          <div className="riddle-level-strip" role="tablist" aria-label="Riddle level">
+            {Array.from({ length: RIDDLE_MAX_LEVEL }, (_, i) => i + 1).map((lvl) => {
+              const locked = lvl > state.riddleMaxLevel;
+              const current = lvl === state.riddleLevel;
+              return (
+                <button
+                  key={lvl}
+                  role="tab"
+                  aria-selected={current}
+                  aria-disabled={locked}
+                  disabled={locked}
+                  className={`riddle-level-pip${current ? ' riddle-level-pip--current' : ''}${locked ? ' riddle-level-pip--locked' : ''}`}
+                  onClick={() => {
+                    if (locked || current) return;
+                    dispatch({ type: 'SET_RIDDLE_LEVEL', level: lvl });
+                  }}
+                >
+                  {lvl}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <Board
           boardRef={boardRef}
           previewCells={preview?.cells}
@@ -445,7 +470,7 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
             {state.difficulty === 'riddle'
-              ? 'Match the pattern — fill the dashed cells, clear the rest.'
+              ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>

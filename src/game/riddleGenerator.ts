@@ -13,25 +13,63 @@ import { PIECE_CATALOG } from './pieces';
  * Riddle mode: the player is shown a **target pattern** and must end the round
  * with the board's occupancy matching it exactly — every target cell filled,
  * every non-target cell empty. Row/column clears still trigger during play and
- * are a core planning tool for removing unwanted starting fill, so the puzzle
- * is about *which pieces go where and in what order*, not just jigsaw fitting.
+ * are a core planning tool: clearing a row removes unwanted starting fill, so
+ * the puzzle is about *which pieces go where and in what order*.
  *
- * Generator strategy (v1): forward-simulation.
- *   - Start from an empty board.
- *   - Place K random pieces, one at a time, in random legal positions. Normal
- *     clear rules apply during the sim.
- *   - The resulting board occupancy is the target.
- *   - The tray given to the player is those same pieces, shuffled and randomly
- *     rotated so they don't see the solution pre-baked.
- * This guarantees solvability (the sim itself is a valid solution). Quality
- * filters reject generations that land on dull targets (too small, too linear).
+ * Levels 1–10 progressively dial up difficulty by growing piece count, piece
+ * size, target size, and the amount of pre-fill that must be cleared away.
+ *
+ * Generator strategy: forward-simulation on a (possibly pre-filled) board.
+ * Because the simulation itself is a valid solution, every generated riddle
+ * is guaranteed solvable. Quality filters reject degenerate targets.
  */
 
-export const RIDDLE_TRAY_MIN = 3;
-export const RIDDLE_TRAY_MAX = 5;
+export const RIDDLE_MAX_LEVEL = 10;
+export const RIDDLE_FIRST_LEVEL = 1;
 
-const RECENT_SIGNATURE_LIMIT = 16;
-const recentSignatures: string[] = [];
+export type LevelSpec = {
+  level: number;
+  pieceCount: number;
+  minPieceCells: number;
+  maxPieceCells: number;
+  minTargetCells: number;
+  maxTargetCells: number;
+  prefillMin: number;
+  prefillMax: number;
+  /** Require at least this many pre-fill cells to NOT end up in the target
+   *  (i.e. they must actually be cleared during play). Ensures pre-fill is
+   *  meaningful, not just decoration. */
+  minPrefillCleared: number;
+};
+
+const LEVEL_SPECS: Record<number, LevelSpec> = {
+  1:  { level: 1,  pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 7,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  2:  { level: 2,  pieceCount: 3, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 6,  maxTargetCells: 9,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  3:  { level: 3,  pieceCount: 3, minPieceCells: 3, maxPieceCells: 4, minTargetCells: 8,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  4:  { level: 4,  pieceCount: 4, minPieceCells: 3, maxPieceCells: 4, minTargetCells: 10, maxTargetCells: 14, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  5:  { level: 5,  pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 12, maxTargetCells: 16, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  6:  { level: 6,  pieceCount: 5, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 13, maxTargetCells: 18, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
+  7:  { level: 7,  pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 20, prefillMin: 2, prefillMax: 3, minPrefillCleared: 2 },
+  8:  { level: 8,  pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
+  9:  { level: 9,  pieceCount: 6, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 18, maxTargetCells: 26, prefillMin: 4, prefillMax: 5, minPrefillCleared: 3 },
+  10: { level: 10, pieceCount: 6, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 20, maxTargetCells: 30, prefillMin: 6, prefillMax: 8, minPrefillCleared: 4 },
+};
+
+export function clampRiddleLevel(level: number): number {
+  if (!Number.isFinite(level)) return RIDDLE_FIRST_LEVEL;
+  const n = Math.round(level);
+  if (n < RIDDLE_FIRST_LEVEL) return RIDDLE_FIRST_LEVEL;
+  if (n > RIDDLE_MAX_LEVEL) return RIDDLE_MAX_LEVEL;
+  return n;
+}
+
+export function getLevelSpec(level: number): LevelSpec {
+  return LEVEL_SPECS[clampRiddleLevel(level)];
+}
+
+const RECENT_SIGNATURE_LIMIT = 8;
+/** Per-level history of recent signatures so replaying a level doesn't repeat. */
+const recentSignaturesByLevel = new Map<number, string[]>();
 
 type BuiltRiddle = {
   board: BoardGrid;
@@ -39,15 +77,6 @@ type BuiltRiddle = {
   target: TargetPattern;
   signature: string;
 };
-
-/**
- * Prefer mid-size pieces (3–5 cells). Pentominoes force thought; dominoes and
- * monominoes make riddles feel trivial.
- */
-const RIDDLE_SHAPE_POOL = PIECE_CATALOG.filter((p) => {
-  const n = p.cells.length;
-  return n >= 3 && n <= 5;
-});
 
 function mulberry32(seed: number): () => number {
   return () => {
@@ -75,6 +104,10 @@ function clonePiece(piece: PieceShape): PieceShape {
     ...piece,
     cells: piece.cells.map((c) => ({ ...c })),
   };
+}
+
+function cloneBoard(board: BoardGrid): BoardGrid {
+  return board.map((row) => [...row]);
 }
 
 function orientations(piece: PieceShape): PieceShape[] {
@@ -150,47 +183,74 @@ function remainingKey(pieces: PieceShape[]): string {
     .join(',');
 }
 
-/**
- * Pick K pieces favoring mid-size shapes; cap the total cell count so riddles
- * don't require covering the whole board.
- */
-function pickPieces(k: number, rng: () => number): PieceShape[] {
-  const MAX_TOTAL_CELLS = 22;
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const pool = shuffleInPlace([...RIDDLE_SHAPE_POOL], rng);
-    const picked: PieceShape[] = [];
-    let totalCells = 0;
-    for (const piece of pool) {
-      if (picked.length === k) break;
-      if (totalCells + piece.cells.length > MAX_TOTAL_CELLS) continue;
-      picked.push(piece);
-      totalCells += piece.cells.length;
-    }
-    if (picked.length === k && totalCells >= k * 3) return picked;
-  }
-  // Fallback: take first k shapes regardless of size budget.
-  return shuffleInPlace([...RIDDLE_SHAPE_POOL], rng).slice(0, k);
+/** All pieces in the catalog whose cell count falls within the spec's range. */
+function poolForSpec(spec: LevelSpec): PieceShape[] {
+  return PIECE_CATALOG.filter((p) => {
+    const n = p.cells.length;
+    return n >= spec.minPieceCells && n <= spec.maxPieceCells;
+  });
 }
 
-type SimStep = { piece: PieceShape; origin: Coord };
+function pickPieces(spec: LevelSpec, rng: () => number): PieceShape[] {
+  const pool = poolForSpec(spec);
+  if (pool.length === 0) return [];
+  // Sample with replacement: duplicate piece shapes are fair game and make
+  // tighter puzzles, especially at higher levels.
+  const picked: PieceShape[] = [];
+  for (let i = 0; i < spec.pieceCount; i++) {
+    picked.push(sample(pool, rng));
+  }
+  return picked;
+}
 
-/**
- * Try to place all pieces (in the given order) on the board, choosing a
- * random legal placement at each step. Returns the step log and final board,
- * or null if we got stuck.
- */
+/** Randomly place N pre-fill cells on an empty board. Cells are spread-out:
+ *  we bias toward cells that aren't adjacent to another pre-fill so pre-fill
+ *  doesn't clump into a single blob. */
+function seedPrefill(count: number, rng: () => number): BoardGrid {
+  const board = createEmptyBoard();
+  if (count <= 0) return board;
+
+  const PREFILL_COLOR = '#5c6b7a';
+  let placed = 0;
+  let attempts = 0;
+
+  while (placed < count && attempts < 400) {
+    attempts++;
+    const r = Math.floor(rng() * BOARD_SIZE);
+    const c = Math.floor(rng() * BOARD_SIZE);
+    if (board[r][c] !== null) continue;
+
+    // Soft spread: reject with increasing probability if there's an adjacent
+    // pre-fill already, but don't loop forever.
+    let adjacent = 0;
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
+      if (board[nr][nc] !== null) adjacent++;
+    }
+    if (adjacent > 0 && rng() < 0.65 && attempts < 200) continue;
+
+    board[r][c] = PREFILL_COLOR;
+    placed++;
+  }
+
+  return board;
+}
+
+type SimResult = { board: BoardGrid };
+
+/** Place each piece at a random legal position, applying clear rules. */
 function simulateForward(
   startBoard: BoardGrid,
   pieces: PieceShape[],
   rng: () => number
-): { board: BoardGrid; steps: SimStep[] } | null {
-  let board: BoardGrid = startBoard.map((row) => [...row]);
-  const steps: SimStep[] = [];
+): SimResult | null {
+  let board: BoardGrid = cloneBoard(startBoard);
 
   for (const template of pieces) {
-    const orientationsList = orientations(template);
     const placements: { piece: PieceShape; origin: Coord }[] = [];
-    for (const piece of orientationsList) {
+    for (const piece of orientations(template)) {
       for (let r = 0; r <= BOARD_SIZE - piece.height; r++) {
         for (let c = 0; c <= BOARD_SIZE - piece.width; c++) {
           const origin: Coord = { row: r, col: c };
@@ -203,43 +263,51 @@ function simulateForward(
     if (placements.length === 0) return null;
     const choice = sample(placements, rng);
     board = applyPlacementAndClear(board, choice.piece, choice.origin);
-    steps.push({ piece: choice.piece, origin: choice.origin });
   }
 
-  return { board, steps };
+  return { board };
 }
 
-/**
- * Reject generations where the target is uninteresting:
- * - too few filled cells (trivial)
- * - too many (fills most of the board)
- * - confined to a single row or column (looks like a stripe, boring)
- * - not well-distributed across the board
- */
-function isTargetInteresting(target: TargetPattern): boolean {
-  let count = 0;
+function countTargetCells(target: TargetPattern): number {
+  let n = 0;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (target[r][c]) n++;
+    }
+  }
+  return n;
+}
+
+/** Count starting pre-fill cells that are NOT in the target — these are the
+ *  cells the player must remove via row/column clears. */
+function countClearedPrefill(startBoard: BoardGrid, target: TargetPattern): number {
+  let n = 0;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (startBoard[r][c] !== null && !target[r][c]) n++;
+    }
+  }
+  return n;
+}
+
+function isTargetShapeOk(target: TargetPattern): boolean {
   const rowsTouched = new Set<number>();
   const colsTouched = new Set<number>();
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       if (target[r][c]) {
-        count++;
         rowsTouched.add(r);
         colsTouched.add(c);
       }
     }
   }
-  if (count < 5) return false;
-  if (count > 26) return false;
-  if (rowsTouched.size < 2) return false;
-  if (colsTouched.size < 2) return false;
-  return true;
+  return rowsTouched.size >= 2 && colsTouched.size >= 2;
 }
 
 /**
- * BFS over (occupancy, remaining multiset) checking whether the multiset of
- * pieces can be placed in some order to end with the given target pattern.
- * Exported for tests and dev-time level validation.
+ * BFS over (occupancy, remaining multiset) — checks whether the pieces can
+ * be placed in some order to match the given target. Exported for tests and
+ * future hand-authored level validation.
  */
 export function canReachTarget(
   startBoard: BoardGrid,
@@ -286,51 +354,64 @@ export function canReachTarget(
   return false;
 }
 
-function buildCandidate(rng: () => number): BuiltRiddle | null {
-  const k = RIDDLE_TRAY_MIN + Math.floor(rng() * (RIDDLE_TRAY_MAX - RIDDLE_TRAY_MIN + 1));
-  const pieces = pickPieces(k, rng);
-  const startBoard = createEmptyBoard();
+function buildCandidate(spec: LevelSpec, rng: () => number): BuiltRiddle | null {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const prefillCount = spec.prefillMin +
+      Math.floor(rng() * (spec.prefillMax - spec.prefillMin + 1));
+    const startBoard = seedPrefill(prefillCount, rng);
+    const pieces = pickPieces(spec, rng);
+    if (pieces.length !== spec.pieceCount) continue;
 
-  // A single forward simulation may get stuck or produce a boring target; try
-  // a handful of placement orders / rolls before giving up on this piece set.
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const order = shuffleInPlace([...pieces], rng);
-    const sim = simulateForward(startBoard, order, rng);
+    const sim = simulateForward(startBoard, pieces, rng);
     if (!sim) continue;
 
     const target = boardToTarget(sim.board);
-    if (!isTargetInteresting(target)) continue;
+    const targetCells = countTargetCells(target);
+    if (targetCells < spec.minTargetCells) continue;
+    if (targetCells > spec.maxTargetCells) continue;
+    if (!isTargetShapeOk(target)) continue;
 
-    // Build the player's tray: same pieces, shuffled order, random rotations.
+    // Ensure pre-fill actually contributes to the puzzle: enough of the pre-fill
+    // must have been cleared during the sim (i.e. not carried into the target).
+    if (spec.minPrefillCleared > 0) {
+      const cleared = countClearedPrefill(startBoard, target);
+      if (cleared < spec.minPrefillCleared) continue;
+    }
+
+    // Identity check: the player must not instantly solve by doing nothing.
+    // That only happens when there are no pieces AND startBoard === target,
+    // but sim implies pieces were placed, so this is just defensive.
+    if (boardMatchesTarget(startBoard, target) && spec.pieceCount > 0) continue;
+
     const trayTemplates = shuffleInPlace([...pieces], rng);
     const randomlyRotated = trayTemplates.map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4)));
     const tray = colorizeTray(randomlyRotated, rng);
 
-    const signature = `${targetKey(target)}|${remainingKey(tray)}`;
+    const signature = `${occupancyKey(startBoard)}|${targetKey(target)}|${remainingKey(tray)}`;
     return { board: startBoard, tray, target, signature };
   }
 
   return null;
 }
 
-function recordSignature(signature: string): void {
-  recentSignatures.push(signature);
-  while (recentSignatures.length > RECENT_SIGNATURE_LIMIT) {
-    recentSignatures.shift();
-  }
+function recordSignature(level: number, signature: string): void {
+  const list = recentSignaturesByLevel.get(level) ?? [];
+  list.push(signature);
+  while (list.length > RECENT_SIGNATURE_LIMIT) list.shift();
+  recentSignaturesByLevel.set(level, list);
 }
 
-/**
- * Fallback riddle used only when random generation repeatedly fails to meet
- * the quality bar. Hand-crafted so it is known to be solvable.
- */
-function buildFallbackRiddle(): BuiltRiddle {
+function isRecentlySeen(level: number, signature: string): boolean {
+  return recentSignaturesByLevel.get(level)?.includes(signature) ?? false;
+}
+
+/** Hard-coded fallback used if generation repeatedly fails to meet a spec. */
+function buildFallback(): BuiltRiddle {
   const rng = mulberry32(0xfa11ba7);
   const pieces = [
     PIECE_CATALOG.find((p) => p.id === 'h4')!,
     PIECE_CATALOG.find((p) => p.id === 'sq2')!,
     PIECE_CATALOG.find((p) => p.id === 'l1')!,
-    PIECE_CATALOG.find((p) => p.id === 'h3')!,
   ];
   const startBoard = createEmptyBoard();
   const sim = simulateForward(startBoard, pieces, rng);
@@ -340,36 +421,41 @@ function buildFallbackRiddle(): BuiltRiddle {
     shuffleInPlace([...pieces], rng).map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4))),
     rng
   );
-  const signature = `${targetKey(target)}|${remainingKey(tray)}`;
+  const signature = `fallback|${targetKey(target)}|${remainingKey(tray)}`;
   return { board: startBoard, tray, target, signature };
 }
 
-const fallbackRiddle = buildFallbackRiddle();
+const fallback = buildFallback();
 
-export function generateRiddle(seedHint?: number): {
+export function generateRiddle(options: { level?: number; seed?: number } = {}): {
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
+  level: number;
 } {
-  const seed = (seedHint ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
+  const level = clampRiddleLevel(options.level ?? RIDDLE_FIRST_LEVEL);
+  const spec = getLevelSpec(level);
+  const seed = (options.seed ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
   const rng = mulberry32(seed);
 
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const built = buildCandidate(rng);
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const built = buildCandidate(spec, rng);
     if (!built) continue;
-    if (recentSignatures.includes(built.signature)) continue;
-    recordSignature(built.signature);
+    if (isRecentlySeen(level, built.signature)) continue;
+    recordSignature(level, built.signature);
     return {
-      board: built.board.map((row) => [...row]),
+      board: cloneBoard(built.board),
       tray: built.tray.map((piece) => clonePiece(piece)),
       target: built.target.map((row) => [...row]),
+      level,
     };
   }
 
-  recordSignature(fallbackRiddle.signature);
+  // Fall back if we really can't hit the spec — rare in practice.
   return {
-    board: fallbackRiddle.board.map((row) => [...row]),
-    tray: fallbackRiddle.tray.map((piece) => clonePiece(piece)),
-    target: fallbackRiddle.target.map((row) => [...row]),
+    board: cloneBoard(fallback.board),
+    tray: fallback.tray.map((piece) => clonePiece(piece)),
+    target: fallback.target.map((row) => [...row]),
+    level,
   };
 }
