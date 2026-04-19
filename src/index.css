@@ -172,14 +172,20 @@ body {
 }
 
 .cell--will-clear {
-  /* Slower, subtler pulse — fast brightness alternation read as flicker */
-  animation: will-clear-pulse 1.4s ease-in-out infinite alternate;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  /* Clear “about to clear” read — strong white ring + visible pulse (separate from drag flicker fix) */
+  animation: will-clear-pulse 1.1s ease-in-out infinite alternate;
+  border-color: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 @keyframes will-clear-pulse {
-  0% { filter: brightness(1); }
-  100% { filter: brightness(1.35); }
+  0% {
+    filter: brightness(1);
+  }
+
+  100% {
+    filter: brightness(1.62);
+  }
 }
 
 @keyframes cell-pop {
