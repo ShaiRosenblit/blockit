@@ -1,4 +1,5 @@
 import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
+import type { LineClearAnim } from './components/LineClearOverlay';
 import { gameReducer, createInitialState } from './game/gameReducer';
 import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
@@ -43,6 +44,9 @@ export default function App() {
   } | null>(null);
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
+  const [lineClearAnim, setLineClearAnim] = useState<LineClearAnim | null>(null);
+  const lineClearAnimIdRef = useRef(0);
+  const lineClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
@@ -142,6 +146,35 @@ export default function App() {
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
         spawnScorePopup(totalPopup, origin);
+
+        if (lineClearTimerRef.current) {
+          clearTimeout(lineClearTimerRef.current);
+          lineClearTimerRef.current = null;
+        }
+        const cellColors = new Map<string, string>();
+        for (const r of rows) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const cellColor = hypothetical[r][c];
+            if (cellColor) cellColors.set(`${r},${c}`, cellColor);
+          }
+        }
+        for (const c of cols) {
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            const cellColor = hypothetical[r][c];
+            if (cellColor) cellColors.set(`${r},${c}`, cellColor);
+          }
+        }
+        const animId = ++lineClearAnimIdRef.current;
+        setLineClearAnim({
+          id: animId,
+          rows: [...rows],
+          cols: [...cols],
+          cellColors,
+        });
+        lineClearTimerRef.current = setTimeout(() => {
+          setLineClearAnim((prev) => (prev?.id === animId ? null : prev));
+          lineClearTimerRef.current = null;
+        }, 760);
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
@@ -154,6 +187,15 @@ export default function App() {
     lastTrayIndexRef.current = index;
     setPendingTray({ index, startX: e.clientX, startY: e.clientY });
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (lineClearTimerRef.current) {
+        clearTimeout(lineClearTimerRef.current);
+        lineClearTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -289,6 +331,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          lineClearAnim={lineClearAnim}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />

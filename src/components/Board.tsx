@@ -1,5 +1,7 @@
 import { useGame } from '../hooks/useGame';
 import { Cell } from './Cell';
+import { LineClearOverlay } from './LineClearOverlay';
+import type { LineClearAnim } from './LineClearOverlay';
 import type { Coord } from '../game/types';
 import { BOARD_SIZE } from '../game/types';
 
@@ -9,13 +11,21 @@ type BoardProps = {
   previewColor?: string | null;
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
+  lineClearAnim?: LineClearAnim | null;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
+export function Board({
+  boardRef,
+  previewCells,
+  previewColor,
+  placedCells,
+  clearPreviewCells,
+  lineClearAnim,
+}: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -38,8 +48,9 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
   }
 
   return (
-    <div className="board" ref={boardRef}>
-      {cells}
+    <div className={`board-wrap${lineClearAnim ? ' board-wrap--line-clear' : ''}`} ref={boardRef}>
+      <div className="board">{cells}</div>
+      {lineClearAnim ? <LineClearOverlay anim={lineClearAnim} /> : null}
     </div>
   );
 }
