@@ -15,8 +15,20 @@ import { sounds } from './sounds';
 const DRAG_THRESHOLD_PX = 10;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type ClearAnimationCell = {
+  key: string;
+  row: number;
+  col: number;
+  color: string;
+  delayMs: number;
+  driftX: number;
+};
+type ClearAnimation = { cells: ClearAnimationCell[] };
 
 let popupId = 0;
+const CLEAR_ANIMATION_STAGGER_MS = 45;
+const CLEAR_ANIMATION_CELL_MS = 800;
+const CLEAR_ANIMATION_BUFFER_MS = 80;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,6 +56,8 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [clearAnimation, setClearAnimation] = useState<ClearAnimation | null>(null);
+  const clearAnimationTimeoutRef = useRef<number | null>(null);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
@@ -115,6 +129,14 @@ export default function App() {
     }, 600);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (clearAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(clearAnimationTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handlePlace = useCallback(
     (trayIndex: number, origin: Coord) => {
       const piece = state.tray[trayIndex];
@@ -136,6 +158,51 @@ export default function App() {
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
+        const clearCellKeys = new Set<string>();
+        for (const row of rows) {
+          for (let col = 0; col < BOARD_SIZE; col++) {
+            clearCellKeys.add(`${row},${col}`);
+          }
+        }
+        for (const col of cols) {
+          for (let row = 0; row < BOARD_SIZE; row++) {
+            clearCellKeys.add(`${row},${col}`);
+          }
+        }
+
+        const animationCells: ClearAnimationCell[] = [];
+        let maxDelayMs = 0;
+        for (const key of clearCellKeys) {
+          const [row, col] = key.split(',').map(Number);
+          const color = hypothetical[row][col];
+          if (!color) continue;
+
+          const delays: number[] = [];
+          if (rows.includes(row)) delays.push(col * CLEAR_ANIMATION_STAGGER_MS);
+          if (cols.includes(col)) delays.push(row * CLEAR_ANIMATION_STAGGER_MS);
+          const delayMs = delays.length > 0 ? Math.min(...delays) : 0;
+          maxDelayMs = Math.max(maxDelayMs, delayMs);
+
+          animationCells.push({
+            key,
+            row,
+            col,
+            color,
+            delayMs,
+            driftX: (row + col) % 2 === 0 ? 1 : -1,
+          });
+        }
+
+        if (clearAnimationTimeoutRef.current !== null) {
+          window.clearTimeout(clearAnimationTimeoutRef.current);
+          clearAnimationTimeoutRef.current = null;
+        }
+        setClearAnimation({ cells: animationCells });
+        clearAnimationTimeoutRef.current = window.setTimeout(() => {
+          setClearAnimation(null);
+          clearAnimationTimeoutRef.current = null;
+        }, CLEAR_ANIMATION_CELL_MS + maxDelayMs + CLEAR_ANIMATION_BUFFER_MS);
+
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
@@ -289,6 +356,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearAnimationCells={clearAnimation?.cells}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />

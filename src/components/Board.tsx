@@ -9,13 +9,28 @@ type BoardProps = {
   previewColor?: string | null;
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
+  clearAnimationCells?: {
+    key: string;
+    row: number;
+    col: number;
+    color: string;
+    delayMs: number;
+    driftX: number;
+  }[];
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
+export function Board({
+  boardRef,
+  previewCells,
+  previewColor,
+  placedCells,
+  clearPreviewCells,
+  clearAnimationCells,
+}: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -40,6 +55,29 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
   return (
     <div className="board" ref={boardRef}>
       {cells}
+      {clearAnimationCells && clearAnimationCells.length > 0 && (
+        <div className="board-clear-overlay" aria-hidden>
+          {clearAnimationCells.map((cell) => (
+            <div
+              key={cell.key}
+              className="clear-paper-cell"
+              style={
+                {
+                  '--row': cell.row,
+                  '--col': cell.col,
+                  '--delay-ms': `${cell.delayMs}ms`,
+                  '--paper-color': cell.color,
+                  '--drift-x': cell.driftX,
+                } as React.CSSProperties
+              }
+            >
+              <div className="clear-paper-strip clear-paper-strip--top" />
+              <div className="clear-paper-strip clear-paper-strip--middle" />
+              <div className="clear-paper-strip clear-paper-strip--bottom" />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
