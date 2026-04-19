@@ -15,8 +15,11 @@ import { sounds } from './sounds';
 const DRAG_THRESHOLD_PX = 10;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type ClearingCell = { row: number; col: number; color: string };
+type ClearAnimationEvent = { id: number; cells: ClearingCell[] };
 
 let popupId = 0;
+let clearAnimationId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,7 +47,9 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [clearAnimations, setClearAnimations] = useState<ClearAnimationEvent[]>([]);
   const [muted, setMuted] = useState(() => sounds.isMuted());
+  const clearAnimationTimersRef = useRef<number[]>([]);
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -136,6 +141,29 @@ export default function App() {
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
+        const clearingSet = new Set<string>();
+        for (const r of rows) {
+          for (let c = 0; c < BOARD_SIZE; c++) clearingSet.add(`${r},${c}`);
+        }
+        for (const c of cols) {
+          for (let r = 0; r < BOARD_SIZE; r++) clearingSet.add(`${r},${c}`);
+        }
+        const clearingCells: ClearingCell[] = [];
+        for (const key of clearingSet) {
+          const [row, col] = key.split(',').map(Number);
+          const color = hypothetical[row][col] ?? piece.color;
+          if (color) clearingCells.push({ row, col, color });
+        }
+        if (clearingCells.length > 0) {
+          const id = ++clearAnimationId;
+          setClearAnimations((prev) => [...prev, { id, cells: clearingCells }]);
+          const timerId = window.setTimeout(() => {
+            setClearAnimations((prev) => prev.filter((event) => event.id !== id));
+            clearAnimationTimersRef.current = clearAnimationTimersRef.current.filter((timer) => timer !== timerId);
+          }, 680);
+          clearAnimationTimersRef.current.push(timerId);
+        }
+
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
@@ -148,6 +176,15 @@ export default function App() {
     },
     [state.board, state.tray, state.combo, spawnScorePopup]
   );
+
+  useEffect(() => {
+    return () => {
+      for (const timer of clearAnimationTimersRef.current) {
+        clearTimeout(timer);
+      }
+      clearAnimationTimersRef.current = [];
+    };
+  }, []);
 
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
     e.preventDefault();
@@ -249,6 +286,8 @@ export default function App() {
   }, [drag, state.board, state.tray, computeOrigin, updatePreview, handlePlace]);
 
   const dragPiece = drag ? state.tray[drag.index] : null;
+  const latestClearAnimationId =
+    clearAnimations.length > 0 ? clearAnimations[clearAnimations.length - 1].id : 0;
 
   const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard'];
 
@@ -289,6 +328,8 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearAnimations={clearAnimations}
+          shakeTrigger={latestClearAnimationId}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
