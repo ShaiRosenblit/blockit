@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, Difficulty, TraySlot } from './types';
+import type { BoardGrid, Coord, Difficulty, TargetPattern, TraySlot } from './types';
 import {
   createEmptyBoard,
   canPlacePiece,
@@ -7,7 +7,7 @@ import {
   clearLines,
   hasValidMoves,
   rotatePiece90Clockwise,
-  boardIsEmpty,
+  boardMatchesTarget,
 } from './board';
 import { generatePieces } from './pieces';
 import { generateRiddle } from './riddleGenerator';
@@ -23,6 +23,11 @@ export type GameState = {
   difficulty: Difficulty;
   /** Only set when a riddle round ends. */
   riddleResult: null | 'solved' | 'failed';
+  /**
+   * Target occupancy the player must reproduce in riddle mode. `null` in
+   * non-riddle modes.
+   */
+  riddleTarget: TargetPattern | null;
 };
 
 export type GameAction =
@@ -74,7 +79,7 @@ function saveDifficulty(difficulty: Difficulty) {
 export function createInitialState(): GameState {
   const difficulty = loadDifficulty();
   if (difficulty === 'riddle') {
-    const { board, tray } = generateRiddle();
+    const { board, tray, target } = generateRiddle();
     return {
       board,
       tray,
@@ -84,6 +89,7 @@ export function createInitialState(): GameState {
       isGameOver: false,
       difficulty,
       riddleResult: null,
+      riddleTarget: target,
     };
   }
   const board = createEmptyBoard();
@@ -96,6 +102,7 @@ export function createInitialState(): GameState {
     isGameOver: false,
     difficulty,
     riddleResult: null,
+    riddleTarget: null,
   };
 }
 
@@ -140,8 +147,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const allPlaced = newTray.every((s) => s === null);
 
       if (state.difficulty === 'riddle') {
+        const target = state.riddleTarget;
         if (allPlaced) {
-          const solved = boardIsEmpty(board);
+          const solved = target !== null && boardMatchesTarget(board, target);
           if (solved) {
             score += RIDDLE_SOLVE_BONUS;
           }
@@ -196,7 +204,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveDifficulty(action.difficulty);
       const difficulty = action.difficulty;
       if (difficulty === 'riddle') {
-        const { board, tray } = generateRiddle();
+        const { board, tray, target } = generateRiddle();
         return {
           board,
           tray,
@@ -206,6 +214,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           isGameOver: false,
           difficulty,
           riddleResult: null,
+          riddleTarget: target,
         };
       }
       const freshBoard = createEmptyBoard();
@@ -218,6 +227,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         isGameOver: false,
         difficulty,
         riddleResult: null,
+        riddleTarget: null,
       };
     }
 

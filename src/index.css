@@ -193,6 +193,22 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
+/*
+ * Riddle-mode target hints. The target pattern is always visible so players
+ * can plan ahead. Empty-but-wanted cells get a dashed teal outline (“fill
+ * here”); filled-but-unwanted cells get a soft red tint (“this must go”).
+ * Cells already matching the target render neutrally so the eye can focus on
+ * the remaining work.
+ */
+.cell--target-needs-fill {
+  border: 1px dashed rgba(120, 220, 210, 0.6);
+  background: rgba(120, 220, 210, 0.08);
+}
+
+.cell--target-needs-clear {
+  box-shadow: inset 0 0 0 2px rgba(255, 110, 110, 0.55);
+}
+
 @keyframes will-clear-pulse {
   0% {
     filter: brightness(1);

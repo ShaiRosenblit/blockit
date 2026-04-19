@@ -17,6 +17,7 @@ function coordKey(r: number, c: number): string {
 
 export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
   const { state } = useGame();
+  const target = state.riddleTarget;
 
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -25,6 +26,16 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
       const preview = previewCells?.get(key) ?? null;
       const justPlaced = placedCells?.has(key) ?? false;
       const willClear = clearPreviewCells?.has(key) ?? false;
+
+      let targetState: 'needs-fill' | 'needs-clear' | 'match' | undefined;
+      if (target) {
+        const want = target[r][c];
+        const filled = state.board[r][c] !== null;
+        if (want && !filled) targetState = 'needs-fill';
+        else if (!want && filled) targetState = 'needs-clear';
+        else targetState = 'match';
+      }
+
       cells.push(
         <Cell
           key={key}
@@ -32,6 +43,7 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
           preview={preview}
           justPlaced={justPlaced}
           willClear={willClear}
+          targetState={targetState}
         />
       );
     }

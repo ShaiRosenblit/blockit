@@ -18,14 +18,14 @@ export function GameOverOverlay() {
   const isRiddle = state.difficulty === 'riddle';
   const headline =
     isRiddle && state.riddleResult === 'solved'
-      ? 'Riddle solved!'
+      ? 'Pattern matched!'
       : isRiddle && state.riddleResult === 'failed'
-        ? 'Puzzle over'
+        ? 'Pattern not matched'
         : 'Game Over';
   const subline = isRiddle
     ? state.riddleResult === 'solved'
-      ? 'You cleared every cell.'
-      : 'Tip: each full row or column vanishes — place so nothing is left.'
+      ? 'You reproduced the target exactly.'
+      : 'Tip: row/column clears can remove unwanted cells — plan the order.'
     : null;
 
   return (

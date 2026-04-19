@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, PieceShape } from './types';
+import type { BoardGrid, Coord, PieceShape, TargetPattern } from './types';
 import { BOARD_SIZE } from './types';
 
 export function createEmptyBoard(): BoardGrid {
@@ -75,6 +75,20 @@ export function clearLines(
     }
   }
   return newBoard;
+}
+
+/**
+ * True when the board's occupancy exactly matches the target pattern:
+ * every target cell is filled and every non-target cell is empty.
+ */
+export function boardMatchesTarget(board: BoardGrid, target: TargetPattern): boolean {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const filled = board[r][c] !== null;
+      if (filled !== target[r][c]) return false;
+    }
+  }
+  return true;
 }
 
 /** True when every cell is empty. */
