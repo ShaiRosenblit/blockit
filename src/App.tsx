@@ -397,6 +397,9 @@ export default function App() {
     drag && dragPiece
       ? dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY)
       : null;
+  const dragFloatCellSize = boardRef.current
+    ? boardRef.current.getBoundingClientRect().width / BOARD_SIZE
+    : 40;
 
   const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard', 'riddle'];
 
@@ -447,7 +450,12 @@ export default function App() {
           </p>
         </div>
         {drag && dragPiece && dragFloatPos && (
-          <FloatingPiece piece={dragPiece} x={dragFloatPos.x} y={dragFloatPos.y} />
+          <FloatingPiece
+            piece={dragPiece}
+            x={dragFloatPos.x}
+            y={dragFloatPos.y}
+            cellSize={dragFloatCellSize}
+          />
         )}
         {scorePopups.map((popup) => (
           <div

@@ -74,12 +74,13 @@ export function FloatingPiece({
   piece,
   x,
   y,
+  cellSize,
 }: {
   piece: PieceShape;
   x: number;
   y: number;
+  cellSize: number;
 }) {
-  const cellSize = 40;
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < piece.height; r++) {
     for (let c = 0; c < piece.width; c++) {
