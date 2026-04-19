@@ -1,5 +1,6 @@
 import { useGame } from '../hooks/useGame';
 import type { PieceShape } from '../game/types';
+import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from '../dragConstants';
 
 type PieceTrayProps = {
   onTrayPointerDown: (index: number, e: React.PointerEvent) => void;
@@ -92,13 +93,16 @@ export function FloatingPiece({
     }
   }
 
+  const left = x + DRAG_POINTER_OFFSET_X - (piece.width * cellSize) / 2;
+  const top = y + DRAG_POINTER_OFFSET_Y - (piece.height * cellSize) / 2;
+
   return (
     <div
       className="floating-piece"
       style={{
         position: 'fixed',
-        left: x - (piece.width * cellSize) / 2,
-        top: y - (piece.height * cellSize) / 2 - 40,
+        left,
+        top,
         gridTemplateColumns: `repeat(${piece.width}, ${cellSize}px)`,
         gridTemplateRows: `repeat(${piece.height}, ${cellSize}px)`,
         pointerEvents: 'none',

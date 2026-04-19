@@ -11,6 +11,7 @@ import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
+import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from './dragConstants';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -77,8 +78,10 @@ export default function App() {
       if (!boardRef.current) return null;
       const rect = boardRef.current.getBoundingClientRect();
       const cellSize = rect.width / BOARD_SIZE;
-      const centerCol = (clientX - rect.left) / cellSize - piece.width / 2;
-      const centerRow = (clientY - rect.top - 40) / cellSize - piece.height / 2;
+      const lx = clientX + DRAG_POINTER_OFFSET_X;
+      const ly = clientY + DRAG_POINTER_OFFSET_Y;
+      const centerCol = (lx - rect.left) / cellSize - piece.width / 2;
+      const centerRow = (ly - rect.top) / cellSize - piece.height / 2;
       const col = Math.round(centerCol);
       const row = Math.round(centerRow);
       return { row, col };
