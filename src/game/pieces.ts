@@ -257,6 +257,7 @@ function pieceWeight(cellCount: number, difficulty: Difficulty): number {
       if (cellCount <= 4) return 1;
       return 0;
     case 'normal':
+    case 'riddle':
       return 1;
     case 'hard':
       if (cellCount <= 2) return 0;

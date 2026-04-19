@@ -77,6 +77,30 @@ export function clearLines(
   return newBoard;
 }
 
+/** True when every cell is empty. */
+export function boardIsEmpty(board: BoardGrid): boolean {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== null) return false;
+    }
+  }
+  return true;
+}
+
+/** Place piece, then clear any completed full rows/columns (same rules as gameplay). */
+export function applyPlacementAndClear(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): BoardGrid {
+  let next = placePiece(board, piece, origin);
+  const { rows, cols } = detectCompletedLines(next);
+  if (rows.length > 0 || cols.length > 0) {
+    next = clearLines(next, rows, cols);
+  }
+  return next;
+}
+
 export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
   const rotated = piece.cells.map(({ row, col }) => ({
     row: col,

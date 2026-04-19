@@ -398,7 +398,7 @@ export default function App() {
       ? dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY)
       : null;
 
-  const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard'];
+  const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard', 'riddle'];
 
   return (
     <GameContext value={{ state, dispatch }}>
@@ -440,7 +440,11 @@ export default function App() {
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
-          <p className="piece-tray-hint">Tap to rotate · drag to place · R</p>
+          <p className="piece-tray-hint">
+            {state.difficulty === 'riddle'
+              ? 'Clear the grid with these three pieces — no blocks left.'
+              : 'Tap to rotate · drag to place · R'}
+          </p>
         </div>
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece piece={dragPiece} x={dragFloatPos.x} y={dragFloatPos.y} />

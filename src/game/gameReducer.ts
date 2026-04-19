@@ -7,9 +7,11 @@ import {
   clearLines,
   hasValidMoves,
   rotatePiece90Clockwise,
+  boardIsEmpty,
 } from './board';
 import { generatePieces } from './pieces';
-import { calculatePlacementScore, calculateClearScore } from './scoring';
+import { generateRiddle } from './riddleGenerator';
+import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
 
 export type GameState = {
   board: BoardGrid;
@@ -19,6 +21,8 @@ export type GameState = {
   combo: number;
   isGameOver: boolean;
   difficulty: Difficulty;
+  /** Only set when a riddle round ends. */
+  riddleResult: null | 'solved' | 'failed';
 };
 
 export type GameAction =
@@ -48,7 +52,15 @@ function saveBestScore(difficulty: Difficulty, score: number) {
 function loadDifficulty(): Difficulty {
   try {
     const stored = localStorage.getItem('blockit-difficulty');
-    if (stored === 'easy' || stored === 'normal' || stored === 'hard' || stored === 'zen') return stored;
+    if (
+      stored === 'easy' ||
+      stored === 'normal' ||
+      stored === 'hard' ||
+      stored === 'zen' ||
+      stored === 'riddle'
+    ) {
+      return stored;
+    }
   } catch { /* noop */ }
   return 'normal';
 }
@@ -61,6 +73,19 @@ function saveDifficulty(difficulty: Difficulty) {
 
 export function createInitialState(): GameState {
   const difficulty = loadDifficulty();
+  if (difficulty === 'riddle') {
+    const { board, tray } = generateRiddle();
+    return {
+      board,
+      tray,
+      score: 0,
+      bestScore: loadBestScore(difficulty),
+      combo: 0,
+      isGameOver: false,
+      difficulty,
+      riddleResult: null,
+    };
+  }
   const board = createEmptyBoard();
   return {
     board,
@@ -70,6 +95,7 @@ export function createInitialState(): GameState {
     combo: 0,
     isGameOver: false,
     difficulty,
+    riddleResult: null,
   };
 }
 
@@ -83,7 +109,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const newTray = [...state.tray] as [TraySlot, TraySlot, TraySlot];
       newTray[trayIndex] = rotatePiece90Clockwise(piece);
       const isGameOver = !hasValidMoves(state.board, newTray);
-      return { ...state, tray: newTray, isGameOver };
+      const riddleResult =
+        state.difficulty === 'riddle' && isGameOver ? 'failed' : state.riddleResult;
+      return { ...state, tray: newTray, isGameOver, riddleResult };
     }
 
     case 'PLACE_PIECE': {
@@ -110,6 +138,41 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       newTray[action.trayIndex] = null;
 
       const allPlaced = newTray.every((s) => s === null);
+
+      if (state.difficulty === 'riddle') {
+        if (allPlaced) {
+          const solved = boardIsEmpty(board);
+          if (solved) {
+            score += RIDDLE_SOLVE_BONUS;
+          }
+          const bestScore = Math.max(score, state.bestScore);
+          if (bestScore > state.bestScore) saveBestScore(state.difficulty, bestScore);
+          return {
+            ...state,
+            board,
+            tray: newTray,
+            score,
+            bestScore,
+            combo: solved ? combo : 0,
+            isGameOver: true,
+            riddleResult: solved ? 'solved' : 'failed',
+          };
+        }
+        const isGameOver = !hasValidMoves(board, newTray);
+        const bestScore = Math.max(score, state.bestScore);
+        if (bestScore > state.bestScore) saveBestScore(state.difficulty, bestScore);
+        return {
+          ...state,
+          board,
+          tray: newTray,
+          score,
+          bestScore,
+          combo,
+          isGameOver,
+          riddleResult: isGameOver ? 'failed' : null,
+        };
+      }
+
       const finalTray = allPlaced ? generatePieces(state.difficulty, board) : newTray;
 
       const bestScore = Math.max(score, state.bestScore);
@@ -117,12 +180,34 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       if (bestScore > state.bestScore) saveBestScore(state.difficulty, bestScore);
 
-      return { ...state, board, tray: finalTray, score, bestScore, combo, isGameOver };
+      return {
+        ...state,
+        board,
+        tray: finalTray,
+        score,
+        bestScore,
+        combo,
+        isGameOver,
+        riddleResult: null,
+      };
     }
 
     case 'SET_DIFFICULTY': {
       saveDifficulty(action.difficulty);
       const difficulty = action.difficulty;
+      if (difficulty === 'riddle') {
+        const { board, tray } = generateRiddle();
+        return {
+          board,
+          tray,
+          score: 0,
+          bestScore: loadBestScore(difficulty),
+          combo: 0,
+          isGameOver: false,
+          difficulty,
+          riddleResult: null,
+        };
+      }
       const freshBoard = createEmptyBoard();
       return {
         board: freshBoard,
@@ -132,6 +217,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         combo: 0,
         isGameOver: false,
         difficulty,
+        riddleResult: null,
       };
     }
 

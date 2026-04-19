@@ -304,6 +304,14 @@ body {
   letter-spacing: 1px;
 }
 
+.game-over-sub {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  max-width: 280px;
+  margin: 0 auto;
+}
+
 .game-over-score {
   font-size: 20px;
   font-weight: 600;

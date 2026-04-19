@@ -13,7 +13,7 @@ export type TraySlot = PieceShape | null;
 export type BoardCell = string | null;
 export type BoardGrid = BoardCell[][];
 
-export type Difficulty = 'easy' | 'normal' | 'hard' | 'zen';
+export type Difficulty = 'easy' | 'normal' | 'hard' | 'zen' | 'riddle';
 
 export const BOARD_SIZE = 8;
 
