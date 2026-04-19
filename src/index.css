@@ -18,8 +18,9 @@
 }
 
 html, body {
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 body {
@@ -31,23 +32,26 @@ body {
 }
 
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 .app {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 16px;
-  height: 100%;
+  min-height: 100dvh;
   padding: 12px;
 }
 
 .header-row {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 12px;
+  width: 100%;
 }
 
 .title {
@@ -75,15 +79,18 @@ body {
 
 /* Difficulty selector */
 .difficulty-selector {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0;
   background: var(--surface);
   border-radius: 8px;
   overflow: hidden;
+  width: min(100%, 440px);
 }
 
 .difficulty-btn {
-  padding: 5px 16px;
+  min-width: 0;
+  padding: 5px 10px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -92,6 +99,7 @@ body {
   text-transform: capitalize;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 
 .difficulty-btn:hover {
@@ -107,10 +115,12 @@ body {
 .score-bar {
   display: flex;
   gap: 24px;
+  width: min(100%, 260px);
 }
 
 .score-item {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   background: var(--surface);
@@ -208,6 +218,7 @@ body {
   color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.02em;
+  text-align: center;
 }
 
 .piece-tray {
@@ -517,5 +528,11 @@ body {
   }
   .score-value--collect-pulse {
     animation: none;
+  }
+}
+
+@media (min-height: 760px) {
+  .app {
+    justify-content: center;
   }
 }
