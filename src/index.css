@@ -17,6 +17,11 @@
   --text-muted: #8899aa;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 html, body {
   min-height: 100dvh;
   overflow-x: hidden;
