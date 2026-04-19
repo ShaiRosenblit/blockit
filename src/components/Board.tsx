@@ -2,6 +2,7 @@ import { useGame } from '../hooks/useGame';
 import { Cell } from './Cell';
 import type { Coord } from '../game/types';
 import { BOARD_SIZE } from '../game/types';
+import type { ClearAnim } from '../App';
 
 type BoardProps = {
   boardRef: React.RefObject<HTMLDivElement | null>;
@@ -9,13 +10,14 @@ type BoardProps = {
   previewColor?: string | null;
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
+  clearAnim?: ClearAnim;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
+export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells, clearAnim }: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -40,6 +42,22 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
   return (
     <div className="board" ref={boardRef}>
       {cells}
+      {clearAnim && (
+        <div className="topple-overlay">
+          {clearAnim.cells.map(({ r, c, color, delay }) => (
+            <div
+              key={`${clearAnim.id}-${r}-${c}`}
+              className="topple-cell"
+              style={{
+                left: `calc(var(--gap) + ${c} * (var(--cell-size) + var(--gap)))`,
+                top: `calc(var(--gap) + ${r} * (var(--cell-size) + var(--gap)))`,
+                backgroundColor: color,
+                animationDelay: `${delay}ms`,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

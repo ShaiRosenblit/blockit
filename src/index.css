@@ -140,6 +140,33 @@ body {
   background: var(--surface);
   border-radius: 8px;
   padding: var(--gap);
+  position: relative;
+  perspective: 600px;
+}
+
+/* Line-clear topple overlay */
+.topple-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.topple-cell {
+  position: absolute;
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transform-origin: center bottom;
+  opacity: 0;
+  animation: topple-cell 280ms cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes topple-cell {
+  0%   { transform: rotateX(0deg);              opacity: 1; }
+  100% { transform: rotateX(90deg) translateY(6%); opacity: 0; }
 }
 
 .cell {

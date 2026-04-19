@@ -15,8 +15,11 @@ import { sounds } from './sounds';
 const DRAG_THRESHOLD_PX = 10;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type AnimCell = { r: number; c: number; color: string; delay: number };
+export type ClearAnim = { id: number; cells: AnimCell[] };
 
 let popupId = 0;
+let animId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,6 +47,7 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [clearAnim, setClearAnim] = useState<ClearAnim | null>(null);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
@@ -142,6 +146,28 @@ export default function App() {
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
         spawnScorePopup(totalPopup, origin);
+
+        // Capture clearing cells for topple animation
+        const cellMap = new Map<string, AnimCell>();
+        for (const r of rows) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const delay = c * 25;
+            const key = `${r},${c}`;
+            if (!cellMap.has(key) || cellMap.get(key)!.delay > delay)
+              cellMap.set(key, { r, c, color: hypothetical[r][c] ?? '#fff', delay });
+          }
+        }
+        for (const col of cols) {
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            const delay = r * 25;
+            const key = `${r},${col}`;
+            if (!cellMap.has(key) || cellMap.get(key)!.delay > delay)
+              cellMap.set(key, { r, c: col, color: hypothetical[r][col] ?? '#fff', delay });
+          }
+        }
+        const id = ++animId;
+        setClearAnim({ id, cells: [...cellMap.values()] });
+        setTimeout(() => setClearAnim((prev) => (prev?.id === id ? null : prev)), 500);
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
@@ -289,6 +315,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearAnim={clearAnim ?? undefined}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
