@@ -146,6 +146,8 @@ body {
   width: var(--cell-size);
   height: var(--cell-size);
   border-radius: 4px;
+  /* Reserve border width so preview / filled borders never pop from 0→1px (white flash) */
+  border: 1px solid transparent;
   background: var(--cell-empty);
   transition: background-color 0.1s ease;
 }
@@ -159,14 +161,14 @@ body {
 }
 
 .cell--preview-valid {
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  /* Soft rgba fill in JS (not element opacity) — matches invalid’s calm overlay; ease edge changes */
-  transition: background-color 0.14s ease-out, border-color 0.14s ease-out;
+  border-color: rgba(255, 255, 255, 0.22);
+  /* Only ease fill; animating border-color caused a brief bright frame */
+  transition: background-color 0.14s ease-out;
 }
 
 .cell--preview-invalid {
   background: rgba(255, 60, 60, 0.25);
-  transition: background-color 0.14s ease-out, border-color 0.14s ease-out;
+  transition: background-color 0.14s ease-out;
 }
 
 .cell--will-clear {
