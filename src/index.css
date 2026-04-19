@@ -133,6 +133,7 @@ body {
 
 /* Board */
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(8, var(--cell-size));
   grid-template-rows: repeat(8, var(--cell-size));
@@ -140,6 +141,69 @@ body {
   background: var(--surface);
   border-radius: 8px;
   padding: var(--gap);
+}
+
+.clear-burst-overlay {
+  position: absolute;
+  inset: var(--gap);
+  display: grid;
+  grid-template-columns: repeat(8, var(--cell-size));
+  grid-template-rows: repeat(8, var(--cell-size));
+  gap: var(--gap);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.clear-burst-cell {
+  position: relative;
+  overflow: visible;
+}
+
+.clear-burst-cell__flash {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.92) 28%, color-mix(in srgb, var(--burst-color) 72%, white) 58%, rgba(255, 255, 255, 0) 100%);
+  box-shadow:
+    0 0 10px rgba(255, 255, 255, 0.65),
+    0 0 18px color-mix(in srgb, var(--burst-color) 70%, white);
+  animation: clear-cell-flash 0.28s ease-out forwards;
+}
+
+.clear-burst-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cell-size) * var(--particle-size));
+  height: calc(var(--cell-size) * var(--particle-size));
+  margin-left: calc(var(--cell-size) * var(--particle-size) * -0.5);
+  margin-top: calc(var(--cell-size) * var(--particle-size) * -0.5);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: clear-particle-flight var(--duration) cubic-bezier(0.15, 0.75, 0.25, 1) var(--delay) forwards;
+}
+
+.clear-burst-particle__shape {
+  width: 100%;
+  height: 100%;
+  background: var(--particle-color);
+  will-change: transform, opacity;
+  animation: clear-particle-spin var(--duration) linear var(--delay) forwards;
+}
+
+.clear-burst-particle__shape--confetti {
+  border-radius: 2px;
+  box-shadow:
+    0 0 6px color-mix(in srgb, var(--particle-color) 80%, white 20%),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.clear-burst-particle__shape--spark {
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
+  box-shadow:
+    0 0 10px rgba(255, 248, 196, 0.85),
+    0 0 4px rgba(255, 255, 255, 0.9);
 }
 
 .cell {
@@ -181,6 +245,54 @@ body {
   0% { transform: scale(0.5); opacity: 0.6; }
   60% { transform: scale(1.1); }
   100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes clear-cell-flash {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.9);
+    filter: brightness(1.25);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.06);
+    filter: brightness(2.1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.25);
+    filter: brightness(1.4);
+  }
+}
+
+@keyframes clear-particle-flight {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(0.35);
+  }
+  10% {
+    opacity: 1;
+    transform: translate3d(calc(var(--cell-size) * var(--dx) * 0.12), calc(var(--cell-size) * var(--dy) * 0.12), 0) scale(1);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(calc(var(--cell-size) * var(--dx) * 0.72), calc(var(--cell-size) * (var(--dy) * 0.72 + var(--fall) * 0.34)), 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(var(--cell-size) * var(--dx)), calc(var(--cell-size) * (var(--dy) + var(--fall))), 0) scale(0.72);
+  }
+}
+
+@keyframes clear-particle-spin {
+  0% {
+    transform: rotate(0deg) scale(0.75, calc(var(--particle-stretch) * 0.82));
+    opacity: 0.95;
+  }
+  100% {
+    transform: rotate(var(--spin)) scale(1, var(--particle-stretch));
+    opacity: 0;
+  }
 }
 
 /* Piece tray */

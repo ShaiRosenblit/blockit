@@ -4,6 +4,7 @@ import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
+import { createClearBurstEvent, type ClearBurstEvent } from './components/ClearBurstOverlay';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
@@ -13,10 +14,12 @@ import { haptics } from './haptics';
 import { sounds } from './sounds';
 
 const DRAG_THRESHOLD_PX = 10;
+const CLEAR_BURST_LINGER_MS = 120;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
 let popupId = 0;
+let clearBurstId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -43,8 +46,10 @@ export default function App() {
   } | null>(null);
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
+  const [clearBursts, setClearBursts] = useState<ClearBurstEvent[]>([]);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
   const [muted, setMuted] = useState(() => sounds.isMuted());
+  const clearBurstTimeoutsRef = useRef<number[]>([]);
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -115,6 +120,15 @@ export default function App() {
     }, 600);
   }, []);
 
+  useEffect(
+    () => () => {
+      for (const timeoutId of clearBurstTimeoutsRef.current) {
+        window.clearTimeout(timeoutId);
+      }
+    },
+    []
+  );
+
   const handlePlace = useCallback(
     (trayIndex: number, origin: Coord) => {
       const piece = state.tray[trayIndex];
@@ -134,6 +148,7 @@ export default function App() {
       const hypothetical = placePiece(state.board, piece, origin);
       const { rows, cols } = detectCompletedLines(hypothetical);
       const linesCleared = rows.length + cols.length;
+      const clearBurst = linesCleared > 0 ? createClearBurstEvent(++clearBurstId, hypothetical, rows, cols) : null;
 
       if (linesCleared > 0) {
         haptics.lineClear(linesCleared);
@@ -145,6 +160,15 @@ export default function App() {
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
+
+      if (clearBurst) {
+        setClearBursts((prev) => [...prev, clearBurst]);
+        const timeoutId = window.setTimeout(() => {
+          clearBurstTimeoutsRef.current = clearBurstTimeoutsRef.current.filter((id) => id !== timeoutId);
+          setClearBursts((prev) => prev.filter((burst) => burst.id !== clearBurst.id));
+        }, clearBurst.durationMs + CLEAR_BURST_LINGER_MS);
+        clearBurstTimeoutsRef.current.push(timeoutId);
+      }
     },
     [state.board, state.tray, state.combo, spawnScorePopup]
   );
@@ -289,6 +313,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearBursts={clearBursts}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
