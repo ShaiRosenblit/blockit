@@ -11,7 +11,7 @@ import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
-import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from './dragConstants';
+import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -41,6 +41,9 @@ export default function App() {
 
   const [drag, setDrag] = useState<{
     index: number;
+    /** Pointer when drag started (after threshold); deltas are scaled from here. */
+    anchorX: number;
+    anchorY: number;
     x: number;
     y: number;
   } | null>(null);
@@ -298,9 +301,11 @@ export default function App() {
       const dy = e.clientY - startY;
       if (dx * dx + dy * dy > thresh2) {
         becameDrag = true;
-        setDrag({ index, x: e.clientX, y: e.clientY });
+        const ax = e.clientX;
+        const ay = e.clientY;
+        setDrag({ index, anchorX: ax, anchorY: ay, x: ax, y: ay });
         setPendingTray(null);
-        updatePreview(e.clientX, e.clientY, index);
+        updatePreview(ax, ay, index);
         haptics.pickup();
         sounds.pickup();
       }
@@ -342,7 +347,8 @@ export default function App() {
 
   useEffect(() => {
     if (drag === null) return;
-    updatePreview(drag.x, drag.y, drag.index);
+    const { x: ex, y: ey } = dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY);
+    updatePreview(ex, ey, drag.index);
   }, [state.tray, drag, updatePreview]);
 
   useEffect(() => {
@@ -350,14 +356,16 @@ export default function App() {
 
     const onMove = (e: PointerEvent) => {
       setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : null));
-      updatePreview(e.clientX, e.clientY, drag.index);
+      const { x: ex, y: ey } = dragPointerToEffective(e.clientX, e.clientY, drag.anchorX, drag.anchorY);
+      updatePreview(ex, ey, drag.index);
     };
 
     const onUp = (e: PointerEvent) => {
       const piece = state.tray[drag.index];
       let placed = false;
       if (piece && boardRef.current) {
-        const origin = computeOrigin(e.clientX, e.clientY, piece);
+        const { x: ex, y: ey } = dragPointerToEffective(e.clientX, e.clientY, drag.anchorX, drag.anchorY);
+        const origin = computeOrigin(ex, ey, piece);
         if (origin && canPlacePiece(state.board, piece, origin)) {
           handlePlace(drag.index, origin);
           placed = true;
@@ -380,6 +388,10 @@ export default function App() {
   }, [drag, state.board, state.tray, computeOrigin, updatePreview, handlePlace]);
 
   const dragPiece = drag ? state.tray[drag.index] : null;
+  const dragFloatPos =
+    drag && dragPiece
+      ? dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY)
+      : null;
 
   const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard'];
 
@@ -425,8 +437,8 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">Tap to rotate · drag to place · R</p>
         </div>
-        {drag && dragPiece && (
-          <FloatingPiece piece={dragPiece} x={drag.x} y={drag.y} />
+        {drag && dragPiece && dragFloatPos && (
+          <FloatingPiece piece={dragPiece} x={dragFloatPos.x} y={dragFloatPos.y} />
         )}
         {scorePopups.map((popup) => (
           <div
