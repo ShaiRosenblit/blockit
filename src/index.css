@@ -159,15 +159,14 @@ body {
 }
 
 .cell--preview-valid {
-  opacity: 0.5;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  /* Snap instantly while dragging — inherited .cell transition caused flicker */
-  transition: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  /* Soft rgba fill in JS (not element opacity) — matches invalid’s calm overlay; ease edge changes */
+  transition: background-color 0.14s ease-out, border-color 0.14s ease-out;
 }
 
 .cell--preview-invalid {
   background: rgba(255, 60, 60, 0.25);
-  transition: none;
+  transition: background-color 0.14s ease-out, border-color 0.14s ease-out;
 }
 
 .cell--will-clear {
