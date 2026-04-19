@@ -3,19 +3,29 @@ import { Cell } from './Cell';
 import type { Coord } from '../game/types';
 import { BOARD_SIZE } from '../game/types';
 
+type StampLineClearCell = { row: number; col: number; color: string; delayMs: number };
+
 type BoardProps = {
   boardRef: React.RefObject<HTMLDivElement | null>;
   previewCells?: Map<string, 'valid' | 'invalid'>;
   previewColor?: string | null;
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
+  lineClearAnim?: { id: number; cells: StampLineClearCell[] } | null;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
+export function Board({
+  boardRef,
+  previewCells,
+  previewColor,
+  placedCells,
+  clearPreviewCells,
+  lineClearAnim,
+}: BoardProps) {
   const { state } = useGame();
 
   const cells: React.ReactNode[] = [];
@@ -40,6 +50,22 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
   return (
     <div className="board" ref={boardRef}>
       {cells}
+      {lineClearAnim && (
+        <div className="board-line-clear-overlay" key={lineClearAnim.id} aria-hidden>
+          {lineClearAnim.cells.map((cell) => (
+            <div
+              key={`${cell.row},${cell.col}`}
+              className="line-clear-stamp"
+              style={{
+                gridColumn: cell.col + 1,
+                gridRow: cell.row + 1,
+                ['--stamp-base' as string]: cell.color,
+                ['--stamp-delay' as string]: `${cell.delayMs}ms`,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

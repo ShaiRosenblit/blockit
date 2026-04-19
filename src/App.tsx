@@ -7,7 +7,7 @@ import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
-import type { Coord, Difficulty } from './game/types';
+import type { BoardGrid, Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
@@ -17,6 +17,34 @@ const DRAG_THRESHOLD_PX = 10;
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
 let popupId = 0;
+let lineClearAnimSeq = 0;
+
+const STAMP_STAGGER_MS = 18;
+const STAMP_DURATION_MS = 230;
+const STAMP_CLEANUP_PAD_MS = 40;
+
+type StampClearCell = { row: number; col: number; color: string; delayMs: number };
+
+function stampClearCells(hypothetical: BoardGrid, rows: number[], cols: number[]): StampClearCell[] {
+  const keys = new Set<string>();
+  for (const r of rows) for (let c = 0; c < BOARD_SIZE; c++) keys.add(`${r},${c}`);
+  for (const c of cols) for (let r = 0; r < BOARD_SIZE; r++) keys.add(`${r},${c}`);
+  const rs = [...rows].sort((a, b) => a - b);
+  const cs = [...cols].sort((a, b) => a - b);
+  const seen = new Set<string>();
+  const out: StampClearCell[] = [];
+  let i = 0;
+  const push = (r: number, c: number) => {
+    const k = `${r},${c}`;
+    if (!keys.has(k) || seen.has(k)) return;
+    seen.add(k);
+    const color = hypothetical[r][c];
+    if (color) out.push({ row: r, col: c, color, delayMs: i++ * STAMP_STAGGER_MS });
+  };
+  for (const r of rs) for (let c = 0; c < BOARD_SIZE; c++) push(r, c);
+  for (const c of cs) for (let r = 0; r < BOARD_SIZE; r++) push(r, c);
+  return out;
+}
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,6 +72,10 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [lineClearAnim, setLineClearAnim] = useState<{
+    id: number;
+    cells: StampClearCell[];
+  } | null>(null);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
@@ -142,6 +174,14 @@ export default function App() {
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
         spawnScorePopup(totalPopup, origin);
+
+        const cells = stampClearCells(hypothetical, rows, cols);
+        const animId = ++lineClearAnimSeq;
+        setLineClearAnim({ id: animId, cells });
+        const maxDelay = cells.reduce((m, x) => Math.max(m, x.delayMs), 0);
+        setTimeout(() => {
+          setLineClearAnim((a) => (a?.id === animId ? null : a));
+        }, maxDelay + STAMP_DURATION_MS + STAMP_CLEANUP_PAD_MS);
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
@@ -289,6 +329,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          lineClearAnim={lineClearAnim}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
