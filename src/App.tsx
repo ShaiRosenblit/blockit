@@ -152,7 +152,7 @@ export default function App() {
       }));
       withDistance.sort((a, b) => a._dist - b._dist);
 
-      const STAGGER = 45;
+      const STAGGER = 22;
       const newOrbs: FlyingOrb[] = withDistance.map((cell, i) => {
         const startX = boardRect.left + (cell.col + 0.5) * cellSize;
         const startY = boardRect.top + (cell.row + 0.5) * cellSize;
@@ -161,24 +161,20 @@ export default function App() {
         const dy = endY - startY;
         const distance = Math.hypot(dx, dy);
 
-        // Perpendicular unit vector to bend the bezier arc away from the line.
         const invLen = distance > 0 ? 1 / distance : 0;
         const perpX = -dy * invLen;
         const perpY = dx * invLen;
 
-        // Bias the arc so it always bows "outward" from the score bar
-        // (upward/outward looks magical rather than crossing itself).
         const bias = endY < startY ? 1 : -1;
-        const arc = (0.18 + Math.random() * 0.22) * distance * bias;
-        const jitter = (Math.random() - 0.5) * 40;
+        const arc = (0.16 + Math.random() * 0.18) * distance * bias;
+        const jitter = (Math.random() - 0.5) * 32;
 
         const midX = startX + dx * 0.5 + perpX * arc + jitter;
         const midY = startY + dy * 0.5 + perpY * arc;
 
         const path = `M ${startX.toFixed(2)} ${startY.toFixed(2)} Q ${midX.toFixed(2)} ${midY.toFixed(2)} ${endX.toFixed(2)} ${endY.toFixed(2)}`;
 
-        // Farther cells travel slightly longer so everything feels weighty.
-        const duration = Math.round(620 + Math.min(distance, 600) * 0.4);
+        const duration = Math.round(320 + Math.min(distance, 600) * 0.22);
         const delay = i * STAGGER;
 
         return {
@@ -193,12 +189,12 @@ export default function App() {
       setFlyingOrbs((prev) => [...prev, ...newOrbs]);
 
       for (const orb of newOrbs) {
-        const arrivalMs = orb.delay + Math.round(orb.duration * 0.92);
+        const arrivalMs = orb.delay + Math.round(orb.duration * 0.88);
         window.setTimeout(() => {
           setScorePulseTick((n) => n + 1);
         }, arrivalMs);
 
-        const removeMs = orb.delay + orb.duration + 160;
+        const removeMs = orb.delay + orb.duration + 100;
         window.setTimeout(() => {
           setFlyingOrbs((prev) => prev.filter((o) => o.id !== orb.id));
         }, removeMs);
@@ -458,7 +454,7 @@ export default function App() {
                       className={`magnet-sparkle magnet-sparkle--${i}`}
                       style={{
                         ...baseStyle,
-                        animationDelay: `${orb.delay + i * 55}ms`,
+                        animationDelay: `${orb.delay + i * 32}ms`,
                       }}
                     />
                   ))}

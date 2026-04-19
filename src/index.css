@@ -368,7 +368,7 @@ body {
   offset-rotate: 0deg;
   offset-anchor: center;
   animation-name: magnet-orb-fly;
-  animation-timing-function: cubic-bezier(0.45, 0, 0.85, 0.55);
+  animation-timing-function: cubic-bezier(0.35, 0, 0.7, 0.4);
   animation-fill-mode: both;
   animation-iteration-count: 1;
   will-change: offset-distance, transform, opacity, filter;
@@ -419,35 +419,29 @@ body {
     opacity: 0;
     filter: brightness(2.4) saturate(0.4);
   }
-  6% {
-    offset-distance: 1.5%;
-    transform: scale(1.7);
+  8% {
+    offset-distance: 2%;
+    transform: scale(1.5);
     opacity: 1;
-    filter: brightness(2.6) saturate(0.3);
+    filter: brightness(2.4) saturate(0.35);
   }
-  16% {
-    offset-distance: 4%;
-    transform: scale(1.1);
+  22% {
+    offset-distance: 8%;
+    transform: scale(1.05);
     opacity: 1;
     filter: brightness(1.5) saturate(1.15);
   }
-  55% {
-    offset-distance: 38%;
-    transform: scale(0.95);
-    opacity: 1;
-    filter: brightness(1.5) saturate(1.1);
-  }
-  88% {
-    offset-distance: 88%;
-    transform: scale(0.8);
+  85% {
+    offset-distance: 86%;
+    transform: scale(0.75);
     opacity: 1;
     filter: brightness(1.9) saturate(1.2);
   }
   100% {
     offset-distance: 100%;
-    transform: scale(0.15);
+    transform: scale(0.1);
     opacity: 0;
-    filter: brightness(2.6);
+    filter: brightness(2.8);
   }
 }
 
@@ -458,7 +452,7 @@ body {
 }
 
 .score-value--collect-pulse {
-  animation: score-collect-pulse 320ms cubic-bezier(0.22, 1.4, 0.4, 1);
+  animation: score-collect-pulse 240ms cubic-bezier(0.22, 1.4, 0.4, 1);
 }
 
 @keyframes score-collect-pulse {
