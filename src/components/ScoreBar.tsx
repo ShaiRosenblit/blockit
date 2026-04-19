@@ -1,13 +1,22 @@
 import { useGame } from '../hooks/useGame';
 
-export function ScoreBar() {
+type ScoreBarProps = {
+  scoreValueRef?: React.RefObject<HTMLSpanElement | null>;
+};
+
+export function ScoreBar({ scoreValueRef }: ScoreBarProps) {
   const { state } = useGame();
 
   return (
     <div className="score-bar">
       <div className="score-item">
         <span className="score-label">Score</span>
-        <span className="score-value">{state.score}</span>
+        <span
+          ref={scoreValueRef}
+          className="score-value score-value--primary"
+        >
+          {state.score}
+        </span>
       </div>
       <div className="score-item">
         <span className="score-label">Best</span>
