@@ -15,6 +15,13 @@ export type BoardGrid = BoardCell[][];
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'zen';
 
+export type ClearAnimCell = {
+  row: number;
+  col: number;
+  color: string;
+  delay: number; // ms
+};
+
 export const BOARD_SIZE = 8;
 
 export const COLORS = [

@@ -7,16 +7,20 @@ import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
-import type { Coord, Difficulty } from './game/types';
+import type { ClearAnimCell, Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 
 const DRAG_THRESHOLD_PX = 10;
+const CLEAR_STAGGER_MS = 40;
+const CLEAR_ANIM_TOTAL_MS = 750;
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
+type ClearAnim = { id: number; cells: ClearAnimCell[] };
 
 let popupId = 0;
+let clearAnimId = 0;
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -44,6 +48,7 @@ export default function App() {
 
   const [placedCells, setPlacedCells] = useState<Set<string> | null>(null);
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [clearAnim, setClearAnim] = useState<ClearAnim | null>(null);
   const [muted, setMuted] = useState(() => sounds.isMuted());
 
   const computeOrigin = useCallback(
@@ -142,6 +147,36 @@ export default function App() {
         const clearScore = calculateClearScore(linesCleared, state.combo);
         const totalPopup = calculatePlacementScore(piece) + clearScore;
         spawnScorePopup(totalPopup, origin);
+
+        // Build overlay cells for the light-sweep animation
+        const rowSet = new Set(rows);
+        const colSet = new Set(cols);
+        const animCells: ClearAnimCell[] = [];
+
+        for (const r of rows) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const color = hypothetical[r][c];
+            if (!color) continue;
+            // Intersection with a clearing col: use min of both wave delays
+            const rowDelay = c * CLEAR_STAGGER_MS;
+            const colDelay = colSet.has(c) ? r * CLEAR_STAGGER_MS : Infinity;
+            animCells.push({ row: r, col: c, color, delay: Math.min(rowDelay, colDelay) });
+          }
+        }
+        for (const c of cols) {
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            if (rowSet.has(r)) continue; // already added above
+            const color = hypothetical[r][c];
+            if (!color) continue;
+            animCells.push({ row: r, col: c, color, delay: r * CLEAR_STAGGER_MS });
+          }
+        }
+
+        const id = ++clearAnimId;
+        setClearAnim({ id, cells: animCells });
+        setTimeout(() => {
+          setClearAnim((prev) => (prev?.id === id ? null : prev));
+        }, CLEAR_ANIM_TOTAL_MS);
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
@@ -289,6 +324,7 @@ export default function App() {
           previewColor={preview?.color}
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
+          clearAnimCells={clearAnim?.cells}
         />
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
