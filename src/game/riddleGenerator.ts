@@ -110,7 +110,7 @@ function cloneBoard(board: BoardGrid): BoardGrid {
   return board.map((row) => [...row]);
 }
 
-export function orientations(piece: PieceShape): PieceShape[] {
+function orientations(piece: PieceShape): PieceShape[] {
   const seen = new Set<string>();
   const out: PieceShape[] = [];
   let p = piece;

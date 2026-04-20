@@ -1,6 +1,6 @@
-import { useReducer, useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
 import { gameReducer, createInitialState } from './game/gameReducer';
-import { canPlacePiece, placePiece, detectCompletedLines, rotatePiece90Clockwise } from './game/board';
+import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
@@ -10,7 +10,6 @@ import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { RIDDLE_MAX_LEVEL } from './game/riddleGenerator';
-import { findNextRiddleHint, RIDDLE_HINT_MIN_LEVEL } from './game/riddleHint';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -51,8 +50,6 @@ export default function App() {
   } | null>(null);
 
   const lastTrayIndexRef = useRef<number | null>(null);
-  const stateRef = useRef(state);
-  const hintTimerRef = useRef<number | null>(null);
 
   const [preview, setPreview] = useState<{
     cells: Map<string, 'valid' | 'invalid'>;
@@ -65,26 +62,6 @@ export default function App() {
   const [flyingOrbs, setFlyingOrbs] = useState<FlyingOrb[]>([]);
   const [scorePulseTick, setScorePulseTick] = useState(0);
   const [muted, setMuted] = useState(() => sounds.isMuted());
-  const [hintBusy, setHintBusy] = useState(false);
-
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
-  useEffect(() => {
-    return () => {
-      if (hintTimerRef.current !== null) {
-        window.clearTimeout(hintTimerRef.current);
-      }
-    };
-  }, []);
-
-  const hintAvailable = useMemo(() => {
-    if (state.difficulty !== 'riddle' || state.isGameOver) return false;
-    if (state.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return false;
-    if (!state.riddleTarget) return false;
-    return findNextRiddleHint(state.board, state.tray, state.riddleTarget) !== null;
-  }, [state.difficulty, state.isGameOver, state.riddleLevel, state.board, state.tray, state.riddleTarget]);
 
   useEffect(() => {
     if (scorePulseTick === 0) return;
@@ -307,113 +284,8 @@ export default function App() {
     [state.board, state.tray, state.combo, spawnScorePopup, spawnCollectOrbs]
   );
 
-  const handleRiddleHint = useCallback(() => {
-    const s = stateRef.current;
-    if (s.difficulty !== 'riddle' || s.isGameOver || s.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return;
-    const hint = findNextRiddleHint(s.board, s.tray, s.riddleTarget);
-    if (!hint) return;
-
-    if (hintTimerRef.current !== null) {
-      window.clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = null;
-    }
-
-    setHintBusy(true);
-    let oriented = s.tray[hint.trayIndex]!;
-    for (let i = 0; i < hint.rotations; i++) {
-      oriented = rotatePiece90Clockwise(oriented);
-    }
-    const cells = new Map<string, 'valid' | 'invalid'>();
-    for (const cell of oriented.cells) {
-      const r = hint.origin.row + cell.row;
-      const c = hint.origin.col + cell.col;
-      cells.set(`${r},${c}`, 'valid');
-    }
-    setPreview({ cells, color: oriented.color, clearCells: null });
-
-    hintTimerRef.current = window.setTimeout(() => {
-      hintTimerRef.current = null;
-      setPreview(null);
-
-      const cur = stateRef.current;
-      const h2 = findNextRiddleHint(cur.board, cur.tray, cur.riddleTarget);
-      if (
-        !h2 ||
-        h2.trayIndex !== hint.trayIndex ||
-        h2.origin.row !== hint.origin.row ||
-        h2.origin.col !== hint.origin.col ||
-        h2.rotations !== hint.rotations
-      ) {
-        setHintBusy(false);
-        return;
-      }
-
-      let s2 = cur;
-      for (let i = 0; i < hint.rotations; i++) {
-        s2 = gameReducer(s2, { type: 'ROTATE_TRAY_PIECE', trayIndex: hint.trayIndex });
-      }
-      const piece = s2.tray[hint.trayIndex];
-      if (!piece) {
-        setHintBusy(false);
-        return;
-      }
-
-      const hypothetical = placePiece(s2.board, piece, hint.origin);
-      const { rows, cols } = detectCompletedLines(hypothetical);
-      const linesCleared = rows.length + cols.length;
-
-      const placed = new Set<string>();
-      for (const cell of piece.cells) {
-        placed.add(`${hint.origin.row + cell.row},${hint.origin.col + cell.col}`);
-      }
-      setPlacedCells(placed);
-      window.setTimeout(() => setPlacedCells(null), 200);
-      haptics.place();
-      sounds.place();
-
-      if (linesCleared > 0) {
-        haptics.lineClear(linesCleared);
-        sounds.lineClear(linesCleared);
-        const clearScore = calculateClearScore(linesCleared, cur.combo);
-        const totalPopup = calculatePlacementScore(piece) + clearScore;
-        spawnScorePopup(totalPopup, hint.origin);
-
-        const clearSet = new Set<string>();
-        const cellsToClear: Array<{ row: number; col: number; color: string }> = [];
-        for (const r of rows) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const key = `${r},${c}`;
-            if (clearSet.has(key)) continue;
-            clearSet.add(key);
-            const color = hypothetical[r][c];
-            if (color) cellsToClear.push({ row: r, col: c, color });
-          }
-        }
-        for (const c of cols) {
-          for (let r = 0; r < BOARD_SIZE; r++) {
-            const key = `${r},${c}`;
-            if (clearSet.has(key)) continue;
-            clearSet.add(key);
-            const color = hypothetical[r][c];
-            if (color) cellsToClear.push({ row: r, col: c, color });
-          }
-        }
-        spawnCollectOrbs(cellsToClear, hint.origin.row, hint.origin.col);
-      }
-
-      dispatch({ type: 'RIDDLE_APPLY_HINT', hint });
-      setHintBusy(false);
-    }, 650);
-  }, [dispatch, spawnCollectOrbs, spawnScorePopup]);
-
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
     e.preventDefault();
-    if (hintTimerRef.current !== null) {
-      window.clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = null;
-      setPreview(null);
-      setHintBusy(false);
-    }
     lastTrayIndexRef.current = index;
     setPendingTray({ index, startX: e.clientX, startY: e.clientY });
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -587,30 +459,15 @@ export default function App() {
                 );
               })}
             </div>
-            <div className="riddle-action-btns">
-              {state.riddleLevel >= RIDDLE_HINT_MIN_LEVEL && (
-                <button
-                  type="button"
-                  className="riddle-hint-btn"
-                  aria-label="Hint: preview then place one correct piece"
-                  title="Shows where a good piece goes, then places it"
-                  disabled={state.isGameOver || hintBusy || !hintAvailable}
-                  onClick={handleRiddleHint}
-                >
-                  Hint
-                </button>
-              )}
-              <button
-                type="button"
-                className="riddle-restart-btn"
-                aria-label="Restart this level"
-                title="Restart this level"
-                onClick={() => dispatch({ type: 'RESTART' })}
-              >
-                <span aria-hidden>{'\u21BB'}</span>
-                <span className="riddle-restart-btn__label">Restart</span>
-              </button>
-            </div>
+            <button
+              className="riddle-restart-btn"
+              aria-label="Restart this level"
+              title="Restart this level"
+              onClick={() => dispatch({ type: 'RESTART' })}
+            >
+              <span aria-hidden>{'\u21BB'}</span>
+              <span className="riddle-restart-btn__label">Restart</span>
+            </button>
           </div>
         )}
         <Board
@@ -624,9 +481,7 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
             {state.difficulty === 'riddle'
-              ? state.riddleLevel >= RIDDLE_HINT_MIN_LEVEL
-                ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest. Hint previews a good move.`
-                : `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest.`
+              ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>
