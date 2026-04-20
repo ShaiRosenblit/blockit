@@ -165,6 +165,10 @@ body {
  * as an onboarding option rather than "level 0".
  */
 .difficulty-btn--tutorial {
+  /* The label "Tutorial" is much longer than the numeric "1..5" buttons.
+   * Giving it two grid tracks keeps it legible on narrow phone viewports
+   * without shrinking the numeric buttons. */
+  grid-column: span 2;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
