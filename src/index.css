@@ -301,7 +301,9 @@ body {
   visibility: hidden;
 }
 
-.cell--target-needs-fill::before {
+/* Specificity note: must match the broad ".board--riddle .cell:not(...)"
+ * rule above (0-3-1) so `visibility: visible` actually wins. */
+.board--riddle .cell.cell--target-needs-fill::before {
   visibility: visible;
 }
 
