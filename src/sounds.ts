@@ -9,6 +9,7 @@ const SOUND_FILES = [
   'combo.mp3',
   'invalid-drop.mp3',
   'game-over.mp3',
+  'celebrate.mp3',
 ] as const;
 
 let muted = localStorage.getItem(STORAGE_KEY) !== 'on';
@@ -88,20 +89,13 @@ export const sounds = {
   invalidDrop: () => play('invalid-drop.mp3', 0.35),
   gameOver: () => play('game-over.mp3', 0.6),
   /**
-   * Riddle-solve celebration. Louder base chime + optional echo for harder
-   * riddles so the audio reward scales with difficulty without adding a
-   * bespoke asset.
+   * Riddle-solve celebration. A bespoke ascending arpeggio + bell-chord
+   * fanfare; volume scales with intensity so tutorial solves stay gentle and
+   * the hardest riddle lands with a full, ringing reward.
    */
   celebrate: (intensity: number) => {
     const clamped = Math.max(0, Math.min(1, intensity));
-    const volume = 0.55 + clamped * 0.35;
-    play('combo.mp3', volume);
-    // Harder riddles: a second, slightly delayed chime gives a "double bloom".
-    if (clamped >= 0.55) {
-      window.setTimeout(() => play('line-clear.mp3', 0.5 + clamped * 0.3), 180);
-    }
-    if (clamped >= 0.85) {
-      window.setTimeout(() => play('combo.mp3', 0.6), 420);
-    }
+    const volume = 0.5 + clamped * 0.4;
+    play('celebrate.mp3', volume);
   },
 };
