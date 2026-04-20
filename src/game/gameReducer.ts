@@ -17,6 +17,7 @@ import {
   RIDDLE_FIRST_LEVEL,
   RIDDLE_MAX_LEVEL,
 } from './riddleGenerator';
+import { RIDDLE_HINT_MIN_LEVEL, type RiddleHintPayload } from './riddleHint';
 import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
 
 export type GameState = {
@@ -54,7 +55,9 @@ export type GameAction =
   | { type: 'SET_DIFFICULTY'; difficulty: Difficulty }
   | { type: 'SET_RIDDLE_LEVEL'; level: number }
   /** Discard the active riddle puzzle and generate a fresh one at the current level. */
-  | { type: 'NEW_RIDDLE' };
+  | { type: 'NEW_RIDDLE' }
+  /** Riddle hard levels: apply a computed good move (rotate tray slot + place). */
+  | { type: 'RIDDLE_APPLY_HINT'; hint: RiddleHintPayload };
 
 function bestScoreKey(difficulty: Difficulty): string {
   return `blockit-best-${difficulty}`;
@@ -429,6 +432,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };
+    }
+
+    case 'RIDDLE_APPLY_HINT': {
+      if (state.difficulty !== 'riddle' || state.isGameOver || !state.riddleTarget) return state;
+      if (state.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return state;
+      const { trayIndex, origin, rotations } = action.hint;
+      if (trayIndex < 0 || trayIndex >= state.tray.length) return state;
+      let s: GameState = state;
+      for (let i = 0; i < rotations; i++) {
+        s = gameReducer(s, { type: 'ROTATE_TRAY_PIECE', trayIndex });
+      }
+      const piece = s.tray[trayIndex];
+      if (!piece || !canPlacePiece(s.board, piece, origin)) return state;
+      return gameReducer(s, { type: 'PLACE_PIECE', trayIndex, origin });
     }
 
     default:
