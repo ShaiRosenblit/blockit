@@ -165,6 +165,8 @@ body {
   border: 1px solid transparent;
   background: var(--cell-empty);
   transition: background-color 0.1s ease;
+  /* Anchor for target-met marker pseudo-element. */
+  position: relative;
 }
 
 .cell--filled {
@@ -210,13 +212,23 @@ body {
 }
 
 /*
- * Filled cell that belongs to the target pattern. We keep the dashed teal
- * outline visible so players can still read the target shape through the
- * pieces they've already placed — otherwise the pattern "disappears" as the
- * board fills up.
+ * Filled cell that belongs to the target pattern. A colored border would
+ * clash with some piece colors (especially teal/green ones), so we render a
+ * small centered diamond marker instead — white core with a dark halo so it
+ * stays readable on any piece color.
  */
-.cell--target-met {
-  border: 1px dashed rgba(120, 220, 210, 0.75);
+.cell--target-met::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26%;
+  height: 26%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  border-radius: 1px;
+  pointer-events: none;
 }
 
 /*
