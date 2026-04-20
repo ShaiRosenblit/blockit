@@ -1,25 +1,61 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { haptics } from '../haptics';
 import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
 
+/**
+ * How long to keep the overlay hidden after game-over so the player can look
+ * at their finished board. Longer on a solve so the celebration lands first;
+ * shorter on a failure because there's nothing to watch beyond the board
+ * itself.
+ */
+const OVERLAY_DELAY_SOLVED_MS = 2100;
+const OVERLAY_DELAY_FAILED_MS = 1400;
+const OVERLAY_DELAY_CLASSIC_MS = 1400;
+
 export function GameOverOverlay() {
   const { state, dispatch } = useGame();
-
-  useEffect(() => {
-    if (!state.isGameOver) return;
-    if (state.mode === 'riddle' && state.riddleResult === 'solved') return;
-    haptics.gameOver();
-    sounds.gameOver();
-  }, [state.isGameOver, state.mode, state.riddleResult]);
-
-  if (!state.isGameOver) return null;
+  const [visible, setVisible] = useState(false);
 
   const isRiddle = state.mode === 'riddle';
-  const isTutorial = isRiddle && state.riddleDifficulty === 'tutorial';
   const solved = isRiddle && state.riddleResult === 'solved';
   const failed = isRiddle && state.riddleResult === 'failed';
+
+  // Delay overlay so the player can inspect the final board (win or lose)
+  // before the retry / new-puzzle buttons cover it up. We set `visible` via
+  // a timer here, and reset it via the cleanup function when deps change
+  // (e.g. RESTART flips isGameOver back to false) — avoids calling setState
+  // synchronously in the effect body.
+  useEffect(() => {
+    if (!state.isGameOver) return;
+    const delay = solved
+      ? OVERLAY_DELAY_SOLVED_MS
+      : failed
+        ? OVERLAY_DELAY_FAILED_MS
+        : OVERLAY_DELAY_CLASSIC_MS;
+    const t = window.setTimeout(() => setVisible(true), delay);
+    return () => {
+      window.clearTimeout(t);
+      setVisible(false);
+    };
+  }, [state.isGameOver, solved, failed]);
+
+  // Loss feedback (haptic + sound). Hold it slightly so it doesn't collide
+  // with the place / line-clear audio fired in the same tick.
+  useEffect(() => {
+    if (!state.isGameOver) return;
+    if (solved) return;
+    const t = window.setTimeout(() => {
+      haptics.gameOver();
+      sounds.gameOver();
+    }, 380);
+    return () => window.clearTimeout(t);
+  }, [state.isGameOver, solved]);
+
+  if (!state.isGameOver || !visible) return null;
+
+  const isTutorial = isRiddle && state.riddleDifficulty === 'tutorial';
 
   const isLastTutorialStep =
     isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;

@@ -873,6 +873,134 @@ body {
   }
 }
 
+/* ───────────────────── Riddle-solve celebration ───────────────────── */
+
+.celebration-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* Above the game-over overlay (2000) so confetti keeps flying when the
+   * win card appears — otherwise the dim backdrop would swallow it. */
+  z-index: 2100;
+  overflow: hidden;
+}
+
+/*
+ * Confetti piece. Positioned at the burst origin (left/top from inline
+ * style); the animation carries it outward, then lets it fall under a fake
+ * gravity (extra downward offset at the end keyframe). Custom properties
+ * (set inline) let each piece land in a different direction.
+ */
+.celebration-piece {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  animation-name: celebration-confetti;
+  animation-timing-function: cubic-bezier(0.22, 0.8, 0.32, 1);
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.25);
+}
+
+.celebration-piece--rect {
+  border-radius: 1px;
+}
+
+.celebration-piece--circle {
+  border-radius: 50%;
+}
+
+@keyframes celebration-confetti {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) scale(0.4);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+    transform:
+      translate(
+        calc(-50% + var(--end-x) * 0.28),
+        calc(-50% + var(--end-y) * 0.28)
+      )
+      rotate(calc(var(--rot) * 0.2))
+      scale(1);
+  }
+  55% {
+    opacity: 1;
+    transform:
+      translate(
+        calc(-50% + var(--end-x) * 0.88),
+        calc(-50% + var(--end-y) * 0.88 + var(--fall) * 0.25)
+      )
+      rotate(calc(var(--rot) * 0.7))
+      scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(-50% + var(--end-x)),
+        calc(-50% + var(--end-y) + var(--fall))
+      )
+      rotate(var(--rot))
+      scale(0.7);
+  }
+}
+
+/*
+ * Firework burst. A single dot expands into a bright ring, then fades.
+ * We stack a couple of radial gradients via a box-shadow halo for cheap
+ * "sparkle" without extra DOM nodes.
+ */
+.celebration-firework {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(
+    circle,
+    #fff 0%,
+    var(--fw-color, #fff) 55%,
+    transparent 72%
+  );
+  box-shadow:
+    0 0 18px 4px color-mix(in srgb, var(--fw-color, #fff) 70%, transparent),
+    0 0 44px 12px color-mix(in srgb, var(--fw-color, #fff) 35%, transparent);
+  animation-name: celebration-firework;
+  animation-duration: 900ms;
+  animation-timing-function: cubic-bezier(0.1, 0.6, 0.2, 1);
+  animation-fill-mode: forwards;
+  opacity: 0;
+}
+
+@keyframes celebration-firework {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(calc(var(--fw-scale, 1) * 0.6));
+  }
+  55% {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(calc(var(--fw-scale, 1) * 4.5));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(calc(var(--fw-scale, 1) * 7));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration-piece {
+    animation-duration: 420ms !important;
+  }
+  .celebration-firework {
+    animation-duration: 240ms !important;
+  }
+}
+
 @media (min-height: 760px) {
   .app {
     justify-content: center;

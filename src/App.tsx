@@ -13,8 +13,10 @@ import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
 import { buildShareUrl, clearShareHash, decodeRiddle, parseSharePayload } from './game/sharing';
-import { TUTORIAL_STEPS } from './game/tutorial';
+import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT } from './game/tutorial';
 import { TutorialBanner } from './components/TutorialBanner';
+import { Celebration } from './components/Celebration';
+import type { RiddleDifficulty } from './game/types';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -30,6 +32,25 @@ type FlyingOrb = {
 
 let popupId = 0;
 let orbId = 0;
+let celebrationRunId = 0;
+
+/**
+ * Map a riddle difficulty to a 0..1 celebration intensity. Tutorial steps
+ * get a modest cheer (with the final step bumped a bit for graduation);
+ * numeric riddles ramp linearly so Riddle 5 feels genuinely triumphant.
+ */
+function difficultyToCelebrationIntensity(
+  difficulty: RiddleDifficulty,
+  tutorialStep: number
+): number {
+  if (difficulty === 'tutorial') {
+    const isLast = tutorialStep >= TUTORIAL_STEP_COUNT - 1;
+    return isLast ? 0.55 : 0.2;
+  }
+  // Riddle levels 1..5 map to 0.32..1.0 — noticeable escalation between steps.
+  const t = (difficulty - 1) / 4;
+  return 0.32 + t * 0.68;
+}
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
@@ -65,6 +86,12 @@ export default function App() {
   const [scorePulseTick, setScorePulseTick] = useState(0);
   const [muted, setMuted] = useState(() => sounds.isMuted());
   const [shareStatus, setShareStatus] = useState<null | 'copied' | 'failed'>(null);
+  const [celebration, setCelebration] = useState<{
+    intensity: number;
+    centerX: number;
+    centerY: number;
+    runId: number;
+  } | null>(null);
 
   useEffect(() => {
     if (scorePulseTick === 0) return;
@@ -331,6 +358,35 @@ export default function App() {
     const t = window.setTimeout(() => setShareStatus(null), 1800);
     return () => window.clearTimeout(t);
   }, [shareStatus]);
+
+  // Riddle-solve celebration. Wait one frame after riddleResult flips to
+  // 'solved' so the board has painted its final cleared state underneath —
+  // otherwise the confetti lands on the board mid-clear animation.
+  const lastSolveKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.mode !== 'riddle') return;
+    if (state.riddleResult !== 'solved') {
+      // Reset tracker so the next solve of the same puzzle re-fires.
+      lastSolveKeyRef.current = null;
+      return;
+    }
+    const key = `${state.riddleDifficulty}:${state.tutorialStep}`;
+    if (lastSolveKeyRef.current === key) return;
+    lastSolveKeyRef.current = key;
+
+    const rect = boardRef.current?.getBoundingClientRect();
+    const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+
+    const intensity = difficultyToCelebrationIntensity(
+      state.riddleDifficulty,
+      state.tutorialStep
+    );
+
+    setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
+    haptics.celebrate(intensity);
+    sounds.celebrate(intensity);
+  }, [state.mode, state.riddleResult, state.riddleDifficulty, state.tutorialStep]);
 
   // A hash-based share link arriving while the app is already open (e.g.
   // the browser focuses an existing tab instead of reloading) only triggers
@@ -674,6 +730,15 @@ export default function App() {
               );
             })}
           </div>
+        )}
+        {celebration && (
+          <Celebration
+            key={celebration.runId}
+            intensity={celebration.intensity}
+            centerX={celebration.centerX}
+            centerY={celebration.centerY}
+            onComplete={() => setCelebration(null)}
+          />
         )}
         <GameOverOverlay />
       </div>
