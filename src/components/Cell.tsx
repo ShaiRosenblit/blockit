@@ -46,6 +46,9 @@ export function Cell({ color, preview, justPlaced, willClear, targetState }: Cel
 
   // Suppress target hint while a preview is showing on this cell — the preview
   // is a stronger signal and stacking both reads as visual noise.
+  if (!preview && (targetState === 'needs-fill' || targetState === 'target-met')) {
+    className += ' cell--target-family';
+  }
   if (!preview && targetState === 'needs-fill') className += ' cell--target-needs-fill';
   if (!preview && targetState === 'needs-clear') className += ' cell--target-needs-clear';
   if (!preview && targetState === 'target-met') className += ' cell--target-met';

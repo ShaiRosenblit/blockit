@@ -167,7 +167,6 @@ body {
   transition: background-color 0.1s ease;
   /* Anchor for target-met marker pseudo-element. */
   position: relative;
-  overflow: hidden;
 }
 
 .cell--filled {
@@ -196,164 +195,131 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
-/* ───────────────────── Riddle mode — "Blueprint Nodes" ─────────────────────
+/*
+ * ---- Riddle-mode "Blueprint" target hints -----------------------------------
  *
- * Metaphor: the riddle board is an architect's blueprint. Every target cell
- * is a node: dashed sockets where a piece is expected, solid studs where one
- * has been locked in. Mistakes read as hazard tape so the error signal never
- * relies on hue alone.
+ * Metaphor: architect's blueprint -- target cells are "drawn" onto the board.
+ * Every state uses 2+ independent visual channels (shape + motion/brightness/
+ * pattern) so hints are legible on any piece hue, in greyscale, and under CVD.
  *
- * Color-independent legibility (each state uses 2+ channels; grayscale/CVD
- * safe):
- *   needs-fill   dashed outline + hollow pulsing ring     (shape + pattern + motion)
- *   target-met   solid concentric stud with white core    (shape + brightness)
- *   needs-clear  red hazard stripes + ring + white ×      (shape + pattern + brightness)
- *   neutral      no decoration at all
+ *   needs-fill  -- empty, target requires fill   -> sonar-ring pulse + faint wash
+ *   target-met  -- filled, correct               -> corner confirmation dot
+ *   needs-clear -- filled, must vacate (error)   -> hazard stripes + X bars
+ *   neutral     -- no decoration
  *
- * needs-fill and target-met share the same centered-circle footprint, so the
- * eye reads the pair as one family ("hollow ring" → "solid stud"). The error
- * state uses a fundamentally different visual language so it can never be
- * confused with in-progress pattern.
- *
- * All overlays are pure CSS (::before / ::after + gradients) so no per-cell
- * SVG is needed; every dimension is a percentage of --cell-size.
+ * All rules are scoped to .board--riddle or .cell--target-* classes that are
+ * never emitted outside riddle mode -- zero visual diff for other difficulties.
  */
 
+/* Board-level riddle chrome -- cyan halo frames the puzzle board */
 .board--riddle {
-  background:
-    radial-gradient(120% 100% at 50% 0%, rgba(120, 220, 210, 0.10), transparent 60%),
-    var(--surface);
   box-shadow:
-    0 0 0 1px rgba(120, 220, 210, 0.22),
-    0 0 0 3px rgba(120, 220, 210, 0.06),
-    0 10px 28px rgba(0, 0, 0, 0.35);
+    0 0 0 2px rgba(78, 205, 196, 0.40),
+    0 0 20px rgba(78, 205, 196, 0.14);
 }
 
-/* ── needs-fill — dashed socket waiting for a pin ───────────────────────── */
+/*
+ * Shared family tint: needs-fill and target-met both carry a faint cyan wash
+ * so the whole target pattern reads as one group at a glance.
+ */
+.cell--target-family {
+  background: rgba(78, 205, 196, 0.09);
+}
+
+/* -- needs-fill ---------------------------------------------------------------
+ * Pulsing sonar ring anchored at centre of the empty cell.
+ * Channels: shape (circle), motion (scale pulse), brightness (white on dark).
+ */
 .cell--target-needs-fill {
-  border: 1px dashed rgba(140, 230, 220, 0.7);
-  background:
-    radial-gradient(circle at center,
-      rgba(120, 220, 210, 0.18) 0%,
-      rgba(120, 220, 210, 0.06) 55%,
-      rgba(120, 220, 210, 0) 100%),
-    var(--cell-empty);
-  box-shadow:
-    inset 0 0 0 1px rgba(120, 220, 210, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-color: rgba(78, 205, 196, 0.38);
 }
 
-.cell--target-needs-fill::after {
+.cell--target-needs-fill::before {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 34%;
-  height: 34%;
-  transform: translate(-50%, -50%);
+  /* Percentage dimensions scale automatically with --cell-size */
+  width: 38%;
+  height: 38%;
   border-radius: 50%;
-  border: 1.5px dashed rgba(205, 250, 244, 0.92);
-  background: transparent;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.38);
+  transform: translate(-50%, -50%);
+  animation: riddle-sonar 2.4s ease-in-out infinite;
   pointer-events: none;
-  animation: riddle-node-breathe 2.6s ease-in-out infinite;
 }
 
-/* ── target-met — solid "locked-in" stud, readable on any piece color ───── */
+@keyframes riddle-sonar {
+  0%   { transform: translate(-50%, -50%) scale(0.62); opacity: 0.90; }
+  55%  { transform: translate(-50%, -50%) scale(1.18); opacity: 0.20; }
+  100% { transform: translate(-50%, -50%) scale(0.62); opacity: 0.90; }
+}
+
+/* -- target-met ---------------------------------------------------------------
+ * Small filled dot in the top-right corner -- white + dark halo so it reads
+ * on every piece colour (no hue dependency).
+ * Channels: shape (circle), position (corner badge), brightness contrast.
+ */
 .cell--target-met::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 30%;
-  height: 30%;
-  transform: translate(-50%, -50%);
+  top: 11%;
+  right: 11%;
+  width: 22%;
+  height: 22%;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 34% 30%,
-      #ffffff 0%,
-      #f4fffd 30%,
-      rgba(150, 235, 225, 0.98) 60%,
-      rgba(40, 120, 112, 0.95) 100%);
-  box-shadow:
-    0 0 0 1.5px rgba(0, 0, 0, 0.6),
-    0 0 0 2.5px rgba(255, 255, 255, 0.22),
-    0 1px 2px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.38);
   pointer-events: none;
 }
 
-/* ── needs-clear — hazard stripes + red ring + white × + pulse ──────────── */
+/* -- needs-clear --------------------------------------------------------------
+ * Three independent channels: diagonal hazard stripes (pattern), crimson tint
+ * (brightness), and an X formed by two crossing bars (shape).
+ * Readable in greyscale and under all common CVD types.
+ */
 .cell--target-needs-clear {
-  background-image:
-    repeating-linear-gradient(
-      45deg,
-      rgba(255, 70, 70, 0) 0,
-      rgba(255, 70, 70, 0) 5px,
-      rgba(255, 70, 70, 0.55) 5px,
-      rgba(255, 70, 70, 0.55) 9px
-    );
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 90, 90, 0.9),
-    inset 0 0 0 3px rgba(0, 0, 0, 0.35);
-  animation: riddle-error-breathe 1.35s ease-in-out infinite;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(210, 38, 38, 0.30) 0px,
+    rgba(210, 38, 38, 0.30) 3px,
+    transparent 3px,
+    transparent 9px
+  );
 }
 
+/* Two bars that cross to form a bold X */
+.cell--target-needs-clear::before,
 .cell--target-needs-clear::after {
   content: '';
   position: absolute;
-  inset: 28%;
-  background:
-    linear-gradient(
-      45deg,
-      transparent calc(50% - 1.5px),
-      rgba(255, 255, 255, 0.98) calc(50% - 1.5px),
-      rgba(255, 255, 255, 0.98) calc(50% + 1.5px),
-      transparent calc(50% + 1.5px)
-    ),
-    linear-gradient(
-      -45deg,
-      transparent calc(50% - 1.5px),
-      rgba(255, 255, 255, 0.98) calc(50% - 1.5px),
-      rgba(255, 255, 255, 0.98) calc(50% + 1.5px),
-      transparent calc(50% + 1.5px)
-    );
-  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
+  top: 50%;
+  left: 50%;
+  width: 58%;
+  height: 13%;
+  background: rgba(255, 52, 52, 0.88);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.50);
+  border-radius: 2px;
   pointer-events: none;
 }
 
-@keyframes riddle-node-breathe {
-  0%, 100% {
-    opacity: 0.88;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.14);
-  }
+.cell--target-needs-clear::before {
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
-@keyframes riddle-error-breathe {
-  0%, 100% {
-    box-shadow:
-      inset 0 0 0 2px rgba(255, 90, 90, 0.9),
-      inset 0 0 0 3px rgba(0, 0, 0, 0.35);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 0 2px rgba(255, 140, 140, 1),
-      inset 0 0 0 3px rgba(255, 210, 210, 0.45);
-  }
+.cell--target-needs-clear::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
+/* Reduced-motion: replace sonar pulse with a static ring */
 @media (prefers-reduced-motion: reduce) {
-  .cell--target-needs-fill::after,
-  .cell--target-needs-clear {
+  .cell--target-needs-fill::before {
     animation: none;
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.72;
   }
 }
-
 /*
  * Riddle-mode controls row: level selector on the left, restart button on the
  * right. Wraps on narrow viewports so nothing gets clipped on phones.
