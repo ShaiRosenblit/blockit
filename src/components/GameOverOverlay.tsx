@@ -1,24 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useGame } from '../hooks/useGame';
 import { haptics } from '../haptics';
 import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
 
 /**
- * How long after game-over to hold the "show options" pill offscreen, so the
- * celebration / final-board moment lands without a UI nudge in the corner.
- * Solves get a longer hold because the celebration itself runs longer.
+ * Renders inline (in place of the piece tray) when the round ends — no dim
+ * backdrop, no modal. The board stays fully visible above it so the player
+ * can screenshot "board + result" in one frame, and the retry / new-puzzle
+ * buttons live in the panel itself so there's nothing else to dismiss.
  */
-const PILL_REVEAL_SOLVED_MS = 1700;
-const PILL_REVEAL_FAILED_MS = 900;
-const PILL_REVEAL_CLASSIC_MS = 900;
-
 export function GameOverOverlay() {
   const { state, dispatch } = useGame();
-  /** The player has tapped the pill and wants the full results card. */
-  const [revealed, setRevealed] = useState(false);
-  /** The pill itself has fully shown up (post-celebration nudge). */
-  const [pillReady, setPillReady] = useState(false);
 
   const isRiddle = state.mode === 'riddle';
   const solved = isRiddle && state.riddleResult === 'solved';
@@ -27,26 +20,8 @@ export function GameOverOverlay() {
   const isLastTutorialStep =
     isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;
 
-  // Reveal the pill after a short hold so the celebration / final board has
-  // the spotlight first. Cleanup fires when isGameOver / result changes
-  // (e.g. RESTART), which also flips both flags back to their closed state.
-  useEffect(() => {
-    if (!state.isGameOver) return;
-    const delay = solved
-      ? PILL_REVEAL_SOLVED_MS
-      : failed
-        ? PILL_REVEAL_FAILED_MS
-        : PILL_REVEAL_CLASSIC_MS;
-    const t = window.setTimeout(() => setPillReady(true), delay);
-    return () => {
-      window.clearTimeout(t);
-      setPillReady(false);
-      setRevealed(false);
-    };
-  }, [state.isGameOver, solved, failed]);
-
-  // Loss feedback (haptic + sound). Hold briefly so it doesn't collide with
-  // place / line-clear audio fired in the same tick.
+  // Loss feedback (haptic + sound). Held briefly so it doesn't collide
+  // with the place / line-clear audio fired in the same tick.
   useEffect(() => {
     if (!state.isGameOver) return;
     if (solved) return;
@@ -56,17 +31,6 @@ export function GameOverOverlay() {
     }, 380);
     return () => window.clearTimeout(t);
   }, [state.isGameOver, solved]);
-
-  // ESC dismisses the full card back to the pill, matching the common modal
-  // contract and keeping the board-view escape hatch one keystroke away.
-  useEffect(() => {
-    if (!revealed) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setRevealed(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [revealed]);
 
   if (!state.isGameOver) return null;
 
@@ -93,7 +57,7 @@ export function GameOverOverlay() {
       : 'Use Retry to reset this step and give it another go.'
     : isRiddle
       ? solved
-        ? 'Great solve. Retry for a tighter score, or roll a new puzzle.'
+        ? 'Nicely done.'
         : 'Tip: row/column clears can remove unwanted cells — plan the order.'
       : null;
 
@@ -110,108 +74,96 @@ export function GameOverOverlay() {
         ? null
         : `Best (Riddle ${state.riddleDifficulty})`;
 
-  // Stage 1: game is over but the player hasn't asked for options yet.
-  // Show nothing over the board — just a small pill at the bottom they can
-  // tap when they're done admiring / screenshotting the final state.
-  if (!revealed) {
-    if (!pillReady) return null;
-    const pillLabel = solved
-      ? 'Solved — show options'
-      : failed
-        ? 'Done — show options'
-        : 'Round over — show options';
-    const pillClass = solved
-      ? 'game-over-pill game-over-pill--solved'
-      : 'game-over-pill';
-    return (
-      <button
-        type="button"
-        className={pillClass}
-        onClick={() => setRevealed(true)}
-        aria-label={pillLabel}
-      >
-        <span className="game-over-pill__dot" aria-hidden />
-        <span className="game-over-pill__label">{pillLabel}</span>
-      </button>
-    );
-  }
+  const variant = solved
+    ? 'game-over-panel--solved'
+    : failed
+      ? 'game-over-panel--failed'
+      : 'game-over-panel--classic';
 
-  // Stage 2: the player tapped the pill — show the full card with actions.
-  // Clicking the dim backdrop (but not the card itself) dismisses back to
-  // pill view so the board is visible again.
   return (
     <div
-      className="game-over-overlay"
-      role="dialog"
-      aria-modal="true"
+      className={`game-over-panel ${variant}`}
+      role="region"
+      aria-live="polite"
       aria-label={headline}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setRevealed(false);
-      }}
     >
-      <div className="game-over-card">
-        <button
-          type="button"
-          className="game-over-close"
-          aria-label="Back to board"
-          onClick={() => setRevealed(false)}
-        >
-          {'\u00D7'}
-        </button>
-        <h2>{headline}</h2>
-        <p className="game-over-difficulty">{selectionLabel}</p>
-        {subline && <p className="game-over-sub">{subline}</p>}
-        {/* Tutorials are about the concept, not the score — hide the number
-            to keep focus on the lesson. */}
-        {!isTutorial && <p className="game-over-score">Score: {state.score}</p>}
-        {bestLabel && <p className="game-over-best">{bestLabel}: {state.bestScore}</p>}
+      <div className="game-over-panel__head">
+        <span className="game-over-panel__mark" aria-hidden>
+          {solved ? '\u2728' : failed ? '\u25CB' : '\u25CB'}
+        </span>
+        <div className="game-over-panel__headings">
+          <h2 className="game-over-panel__title">{headline}</h2>
+          <p className="game-over-panel__meta">{selectionLabel}</p>
+        </div>
+      </div>
 
-        <div className="game-over-actions">
-          {isTutorial ? (
-            <>
-              {solved ? (
-                <button
-                  className="restart-btn"
-                  onClick={() => dispatch({ type: 'TUTORIAL_NEXT' })}
-                >
-                  {isLastTutorialStep ? 'Start Riddle 1' : 'Next step'}
-                </button>
-              ) : (
-                <button
-                  className="restart-btn"
-                  onClick={() => dispatch({ type: 'RESTART' })}
-                >
-                  Retry
-                </button>
-              )}
+      {subline && <p className="game-over-panel__sub">{subline}</p>}
+
+      {(!isTutorial || bestLabel) && (
+        <div className="game-over-panel__stats">
+          {!isTutorial && (
+            <span className="game-over-panel__stat">
+              <span className="game-over-panel__stat-label">Score</span>
+              <span className="game-over-panel__stat-value">{state.score}</span>
+            </span>
+          )}
+          {bestLabel && (
+            <span className="game-over-panel__stat">
+              <span className="game-over-panel__stat-label">{bestLabel}</span>
+              <span className="game-over-panel__stat-value">{state.bestScore}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="game-over-panel__actions">
+        {isTutorial ? (
+          <>
+            {solved ? (
               <button
-                className="restart-btn restart-btn--ghost"
-                onClick={() => dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: 1 })}
+                className="game-over-panel__btn game-over-panel__btn--primary"
+                onClick={() => dispatch({ type: 'TUTORIAL_NEXT' })}
               >
-                Skip tutorial
+                {isLastTutorialStep ? 'Start Riddle 1' : 'Next step'}
               </button>
-            </>
-          ) : isRiddle ? (
-            <>
+            ) : (
               <button
-                className="restart-btn"
+                className="game-over-panel__btn game-over-panel__btn--primary"
                 onClick={() => dispatch({ type: 'RESTART' })}
               >
                 Retry
               </button>
-              <button
-                className="restart-btn restart-btn--ghost"
-                onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
-              >
-                New puzzle
-              </button>
-            </>
-          ) : (
-            <button className="restart-btn" onClick={() => dispatch({ type: 'RESTART' })}>
-              Play Again
+            )}
+            <button
+              className="game-over-panel__btn"
+              onClick={() => dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: 1 })}
+            >
+              Skip tutorial
             </button>
-          )}
-        </div>
+          </>
+        ) : isRiddle ? (
+          <>
+            <button
+              className="game-over-panel__btn game-over-panel__btn--primary"
+              onClick={() => dispatch({ type: 'RESTART' })}
+            >
+              Retry
+            </button>
+            <button
+              className="game-over-panel__btn"
+              onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+            >
+              New puzzle
+            </button>
+          </>
+        ) : (
+          <button
+            className="game-over-panel__btn game-over-panel__btn--primary"
+            onClick={() => dispatch({ type: 'RESTART' })}
+          >
+            Play Again
+          </button>
+        )}
       </div>
     </div>
   );

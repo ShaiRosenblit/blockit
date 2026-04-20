@@ -675,16 +675,20 @@ export default function App() {
           placedCells={placedCells ?? undefined}
           clearPreviewCells={preview?.clearCells ?? undefined}
         />
-        <div className="piece-tray-wrap">
-          <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
-          <p className="piece-tray-hint">
-            {state.mode === 'riddle'
-              ? state.riddleDifficulty === 'tutorial'
-                ? 'Tap to rotate · drag to place'
-                : `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
-              : 'Tap to rotate · drag to place'}
-          </p>
-        </div>
+        {state.isGameOver ? (
+          <GameOverOverlay />
+        ) : (
+          <div className="piece-tray-wrap">
+            <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
+            <p className="piece-tray-hint">
+              {state.mode === 'riddle'
+                ? state.riddleDifficulty === 'tutorial'
+                  ? 'Tap to rotate · drag to place'
+                  : `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
+                : 'Tap to rotate · drag to place'}
+            </p>
+          </div>
+        )}
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece
             piece={dragPiece}
@@ -740,7 +744,6 @@ export default function App() {
             onComplete={() => setCelebration(null)}
           />
         )}
-        <GameOverOverlay />
       </div>
     </GameContext>
   );
