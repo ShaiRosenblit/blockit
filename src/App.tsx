@@ -10,7 +10,7 @@ import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord, Difficulty } from './game/types';
 import { BOARD_SIZE } from './game/types';
 import { RIDDLE_MAX_LEVEL } from './game/riddleGenerator';
-import { findNextRiddleHint } from './game/riddleHint';
+import { findNextRiddleHint, RIDDLE_HINT_MIN_LEVEL } from './game/riddleHint';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -81,6 +81,7 @@ export default function App() {
 
   const hintAvailable = useMemo(() => {
     if (state.difficulty !== 'riddle' || state.isGameOver) return false;
+    if (state.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return false;
     if (!state.riddleTarget) return false;
     return findNextRiddleHint(state.board, state.tray, state.riddleTarget) !== null;
   }, [state.difficulty, state.isGameOver, state.riddleLevel, state.board, state.tray, state.riddleTarget]);
@@ -308,7 +309,7 @@ export default function App() {
 
   const handleRiddleHint = useCallback(() => {
     const s = stateRef.current;
-    if (s.difficulty !== 'riddle' || s.isGameOver) return;
+    if (s.difficulty !== 'riddle' || s.isGameOver || s.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return;
     const hint = findNextRiddleHint(s.board, s.tray, s.riddleTarget);
     if (!hint) return;
 
@@ -587,16 +588,18 @@ export default function App() {
               })}
             </div>
             <div className="riddle-action-btns">
-              <button
-                type="button"
-                className="riddle-hint-btn"
-                aria-label="Hint: preview then place one correct piece"
-                title="Shows where a good piece goes, then places it"
-                disabled={state.isGameOver || hintBusy || !hintAvailable}
-                onClick={handleRiddleHint}
-              >
-                Hint
-              </button>
+              {state.riddleLevel >= RIDDLE_HINT_MIN_LEVEL && (
+                <button
+                  type="button"
+                  className="riddle-hint-btn"
+                  aria-label="Hint: preview then place one correct piece"
+                  title="Shows where a good piece goes, then places it"
+                  disabled={state.isGameOver || hintBusy || !hintAvailable}
+                  onClick={handleRiddleHint}
+                >
+                  Hint
+                </button>
+              )}
               <button
                 type="button"
                 className="riddle-restart-btn"
@@ -621,7 +624,9 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
             {state.difficulty === 'riddle'
-              ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest. Hint previews a good move.`
+              ? state.riddleLevel >= RIDDLE_HINT_MIN_LEVEL
+                ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest. Hint previews a good move.`
+                : `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>

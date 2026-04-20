@@ -17,7 +17,7 @@ import {
   RIDDLE_FIRST_LEVEL,
   RIDDLE_MAX_LEVEL,
 } from './riddleGenerator';
-import { type RiddleHintPayload } from './riddleHint';
+import { RIDDLE_HINT_MIN_LEVEL, type RiddleHintPayload } from './riddleHint';
 import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
 
 export type GameState = {
@@ -436,6 +436,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'RIDDLE_APPLY_HINT': {
       if (state.difficulty !== 'riddle' || state.isGameOver || !state.riddleTarget) return state;
+      if (state.riddleLevel < RIDDLE_HINT_MIN_LEVEL) return state;
       const { trayIndex, origin, rotations } = action.hint;
       if (trayIndex < 0 || trayIndex >= state.tray.length) return state;
       let s: GameState = state;

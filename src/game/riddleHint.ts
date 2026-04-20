@@ -3,6 +3,9 @@ import { BOARD_SIZE } from './types';
 import { canPlacePiece, applyPlacementAndClear, rotatePiece90Clockwise } from './board';
 import { canReachTarget, orientations } from './riddleGenerator';
 
+/** Riddle levels >= this show a Hint control (harder puzzles only). */
+export const RIDDLE_HINT_MIN_LEVEL = 8;
+
 function pieceShapeKey(p: PieceShape): string {
   return p.cells
     .map((c) => `${c.row},${c.col}`)
