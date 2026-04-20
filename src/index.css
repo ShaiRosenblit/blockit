@@ -210,6 +210,16 @@ body {
 }
 
 /*
+ * Filled cell that belongs to the target pattern. We keep the dashed teal
+ * outline visible so players can still read the target shape through the
+ * pieces they've already placed — otherwise the pattern "disappears" as the
+ * board fills up.
+ */
+.cell--target-met {
+  border: 1px dashed rgba(120, 220, 210, 0.75);
+}
+
+/*
  * Riddle-mode controls row: level selector on the left, restart button on the
  * right. Wraps on narrow viewports so nothing gets clipped on phones.
  */

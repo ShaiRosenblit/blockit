@@ -27,13 +27,14 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
       const justPlaced = placedCells?.has(key) ?? false;
       const willClear = clearPreviewCells?.has(key) ?? false;
 
-      let targetState: 'needs-fill' | 'needs-clear' | 'match' | undefined;
+      let targetState: 'needs-fill' | 'needs-clear' | 'target-met' | 'neutral' | undefined;
       if (target) {
         const want = target[r][c];
         const filled = state.board[r][c] !== null;
         if (want && !filled) targetState = 'needs-fill';
         else if (!want && filled) targetState = 'needs-clear';
-        else targetState = 'match';
+        else if (want && filled) targetState = 'target-met';
+        else targetState = 'neutral';
       }
 
       cells.push(
