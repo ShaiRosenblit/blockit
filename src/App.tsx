@@ -682,7 +682,7 @@ export default function App() {
               ? state.riddleDifficulty === 'tutorial'
                 ? 'Tap to rotate · drag to place'
                 : `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
-              : 'Tap to rotate · drag to place · R'}
+              : 'Tap to rotate · drag to place'}
           </p>
         </div>
         {drag && dragPiece && dragFloatPos && (
