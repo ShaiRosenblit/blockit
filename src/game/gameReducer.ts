@@ -87,7 +87,9 @@ function loadDifficulty(): Difficulty {
       return stored;
     }
   } catch { /* noop */ }
-  return 'normal';
+  // Dev servers: land in riddle mode first so target-hint bake-offs and all
+  // modes stay one click away; production default stays casual.
+  return import.meta.env.DEV ? 'riddle' : 'normal';
 }
 
 function saveDifficulty(difficulty: Difficulty) {
@@ -157,6 +159,9 @@ function cloneTray(t: PieceShape[]): PieceShape[] {
 }
 
 function loadRiddleLevel(): number {
+  if (import.meta.env.DEV) {
+    return RIDDLE_MAX_LEVEL;
+  }
   try {
     const stored = Number(localStorage.getItem(RIDDLE_LEVEL_KEY));
     if (Number.isFinite(stored) && stored > 0) return clampRiddleLevel(stored);
@@ -171,6 +176,9 @@ function saveRiddleLevel(level: number) {
 }
 
 function loadRiddleMaxLevel(): number {
+  if (import.meta.env.DEV) {
+    return RIDDLE_MAX_LEVEL;
+  }
   try {
     const stored = Number(localStorage.getItem(RIDDLE_MAX_LEVEL_KEY));
     if (Number.isFinite(stored) && stored > 0) return clampRiddleLevel(stored);
