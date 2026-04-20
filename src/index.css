@@ -167,6 +167,7 @@ body {
   transition: background-color 0.1s ease;
   /* Anchor for target-met marker pseudo-element. */
   position: relative;
+  overflow: hidden;
 }
 
 .cell--filled {
@@ -195,40 +196,162 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
-/*
- * Riddle-mode target hints. The target pattern is always visible so players
- * can plan ahead. Empty-but-wanted cells get a dashed teal outline (“fill
- * here”); filled-but-unwanted cells get a soft red tint (“this must go”).
- * Cells already matching the target render neutrally so the eye can focus on
- * the remaining work.
+/* ───────────────────── Riddle mode — "Blueprint Nodes" ─────────────────────
+ *
+ * Metaphor: the riddle board is an architect's blueprint. Every target cell
+ * is a node: dashed sockets where a piece is expected, solid studs where one
+ * has been locked in. Mistakes read as hazard tape so the error signal never
+ * relies on hue alone.
+ *
+ * Color-independent legibility (each state uses 2+ channels; grayscale/CVD
+ * safe):
+ *   needs-fill   dashed outline + hollow pulsing ring     (shape + pattern + motion)
+ *   target-met   solid concentric stud with white core    (shape + brightness)
+ *   needs-clear  red hazard stripes + ring + white ×      (shape + pattern + brightness)
+ *   neutral      no decoration at all
+ *
+ * needs-fill and target-met share the same centered-circle footprint, so the
+ * eye reads the pair as one family ("hollow ring" → "solid stud"). The error
+ * state uses a fundamentally different visual language so it can never be
+ * confused with in-progress pattern.
+ *
+ * All overlays are pure CSS (::before / ::after + gradients) so no per-cell
+ * SVG is needed; every dimension is a percentage of --cell-size.
  */
+
+.board--riddle {
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(120, 220, 210, 0.10), transparent 60%),
+    var(--surface);
+  box-shadow:
+    0 0 0 1px rgba(120, 220, 210, 0.22),
+    0 0 0 3px rgba(120, 220, 210, 0.06),
+    0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+/* ── needs-fill — dashed socket waiting for a pin ───────────────────────── */
 .cell--target-needs-fill {
-  border: 1px dashed rgba(120, 220, 210, 0.6);
-  background: rgba(120, 220, 210, 0.08);
+  border: 1px dashed rgba(140, 230, 220, 0.7);
+  background:
+    radial-gradient(circle at center,
+      rgba(120, 220, 210, 0.18) 0%,
+      rgba(120, 220, 210, 0.06) 55%,
+      rgba(120, 220, 210, 0) 100%),
+    var(--cell-empty);
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 220, 210, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.cell--target-needs-clear {
-  box-shadow: inset 0 0 0 2px rgba(255, 110, 110, 0.55);
+.cell--target-needs-fill::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34%;
+  height: 34%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1.5px dashed rgba(205, 250, 244, 0.92);
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  animation: riddle-node-breathe 2.6s ease-in-out infinite;
 }
 
-/*
- * Filled cell that belongs to the target pattern. A colored border would
- * clash with some piece colors (especially teal/green ones), so we render a
- * small centered diamond marker instead — white core with a dark halo so it
- * stays readable on any piece color.
- */
+/* ── target-met — solid "locked-in" stud, readable on any piece color ───── */
 .cell--target-met::after {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 26%;
-  height: 26%;
-  transform: translate(-50%, -50%) rotate(45deg);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
-  border-radius: 1px;
+  width: 30%;
+  height: 30%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%,
+      #ffffff 0%,
+      #f4fffd 30%,
+      rgba(150, 235, 225, 0.98) 60%,
+      rgba(40, 120, 112, 0.95) 100%);
+  box-shadow:
+    0 0 0 1.5px rgba(0, 0, 0, 0.6),
+    0 0 0 2.5px rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.35);
   pointer-events: none;
+}
+
+/* ── needs-clear — hazard stripes + red ring + white × + pulse ──────────── */
+.cell--target-needs-clear {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 70, 70, 0) 0,
+      rgba(255, 70, 70, 0) 5px,
+      rgba(255, 70, 70, 0.55) 5px,
+      rgba(255, 70, 70, 0.55) 9px
+    );
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 90, 90, 0.9),
+    inset 0 0 0 3px rgba(0, 0, 0, 0.35);
+  animation: riddle-error-breathe 1.35s ease-in-out infinite;
+}
+
+.cell--target-needs-clear::after {
+  content: '';
+  position: absolute;
+  inset: 28%;
+  background:
+    linear-gradient(
+      45deg,
+      transparent calc(50% - 1.5px),
+      rgba(255, 255, 255, 0.98) calc(50% - 1.5px),
+      rgba(255, 255, 255, 0.98) calc(50% + 1.5px),
+      transparent calc(50% + 1.5px)
+    ),
+    linear-gradient(
+      -45deg,
+      transparent calc(50% - 1.5px),
+      rgba(255, 255, 255, 0.98) calc(50% - 1.5px),
+      rgba(255, 255, 255, 0.98) calc(50% + 1.5px),
+      transparent calc(50% + 1.5px)
+    );
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
+  pointer-events: none;
+}
+
+@keyframes riddle-node-breathe {
+  0%, 100% {
+    opacity: 0.88;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.14);
+  }
+}
+
+@keyframes riddle-error-breathe {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 90, 90, 0.9),
+      inset 0 0 0 3px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 140, 140, 1),
+      inset 0 0 0 3px rgba(255, 210, 210, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell--target-needs-fill::after,
+  .cell--target-needs-clear {
+    animation: none;
+  }
 }
 
 /*
