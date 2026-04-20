@@ -159,6 +159,22 @@ body {
   color: #1a1a2e;
 }
 
+/*
+ * Tutorial tab sits first in the riddle difficulty row. Slightly different
+ * typographic treatment (letter-spacing, subtle left divider) so it reads
+ * as an onboarding option rather than "level 0".
+ */
+.difficulty-btn--tutorial {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.difficulty-btn--tutorial:not(.difficulty-btn--active) {
+  color: #c8d4e0;
+}
+
 /* Score bar */
 .score-bar {
   display: flex;
@@ -446,6 +462,101 @@ body {
   0% { transform: scale(0.5); opacity: 0.6; }
   60% { transform: scale(1.1); }
   100% { transform: scale(1); opacity: 1; }
+}
+
+/*
+ * ---- Tutorial banner -----------------------------------------------------
+ *
+ * Shown above the board whenever the player is inside the guided tutorial.
+ * The box is intentionally calm visually (soft cyan tint, same surface
+ * family as the rest of the UI) so it teaches without stealing attention
+ * from the board.
+ */
+.tutorial-banner {
+  width: min(100%, 460px);
+  padding: 12px 16px 10px;
+  background: linear-gradient(
+    135deg,
+    rgba(78, 205, 196, 0.12),
+    rgba(78, 205, 196, 0.04)
+  );
+  border: 1px solid rgba(78, 205, 196, 0.32);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 0 18px rgba(78, 205, 196, 0.08);
+}
+
+.tutorial-banner__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tutorial-banner__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #4ECDC4;
+}
+
+.tutorial-banner__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.tutorial-banner__text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.tutorial-banner__hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tutorial-banner__dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tutorial-banner__dot {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tutorial-banner__dot-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.tutorial-banner__dot:hover .tutorial-banner__dot-inner {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.tutorial-banner__dot--current .tutorial-banner__dot-inner {
+  background: #4ECDC4;
+  transform: scale(1.35);
+  box-shadow: 0 0 8px rgba(78, 205, 196, 0.6);
 }
 
 /* Piece tray */

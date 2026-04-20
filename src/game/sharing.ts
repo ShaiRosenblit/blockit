@@ -1,7 +1,7 @@
 import type {
   BoardGrid,
   PieceShape,
-  RiddleDifficulty,
+  RiddleLevel,
   TargetPattern,
 } from './types';
 import { BOARD_SIZE, COLORS } from './types';
@@ -72,7 +72,7 @@ function base64UrlToBytes(encoded: string): number[] | null {
 }
 
 export type EncodableRiddle = {
-  difficulty: RiddleDifficulty;
+  difficulty: RiddleLevel;
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;

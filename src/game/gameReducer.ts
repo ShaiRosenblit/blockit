@@ -5,10 +5,11 @@ import type {
   GameMode,
   PieceShape,
   RiddleDifficulty,
+  RiddleLevel,
   TargetPattern,
   TraySlot,
 } from './types';
-import { BOARD_SIZE, CLASSIC_DIFFICULTIES } from './types';
+import { BOARD_SIZE, CLASSIC_DIFFICULTIES, isRiddleLevel } from './types';
 import {
   createEmptyBoard,
   canPlacePiece,
@@ -24,10 +25,10 @@ import {
   generateRiddle,
   clampRiddleDifficulty,
   RIDDLE_MAX_DIFFICULTY,
-  RIDDLE_MIN_DIFFICULTY,
 } from './riddleGenerator';
 import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
 import { decodeRiddle, parseSharePayload } from './sharing';
+import { TUTORIAL_STEP_COUNT, clampTutorialStep, getTutorialStep } from './tutorial';
 
 export type GameState = {
   board: BoardGrid;
@@ -55,6 +56,12 @@ export type GameState = {
    */
   riddleInitialBoard: BoardGrid | null;
   riddleInitialTray: PieceShape[] | null;
+  /**
+   * Zero-based index into `TUTORIAL_STEPS`. Only meaningful when
+   * `riddleDifficulty === 'tutorial'`; otherwise retains the last tutorial
+   * step the player was on (so returning to the tutorial resumes there).
+   */
+  tutorialStep: number;
 };
 
 export type GameAction =
@@ -73,30 +80,35 @@ export type GameAction =
    */
   | {
       type: 'LOAD_SHARED_RIDDLE';
-      difficulty: RiddleDifficulty;
+      difficulty: RiddleLevel;
       board: BoardGrid;
       tray: PieceShape[];
       target: TargetPattern;
-    };
+    }
+  /** Advance to the next tutorial step; graduate to Riddle 1 after the last step. */
+  | { type: 'TUTORIAL_NEXT' }
+  /** Jump to a specific tutorial step (for dot-indicator navigation). */
+  | { type: 'TUTORIAL_GOTO'; step: number };
 
 const MODE_KEY = 'blockit-mode';
 const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
 const RIDDLE_DIFFICULTY_KEY = 'blockit-riddle-difficulty';
+const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 
 const LEGACY_DIFFICULTY_KEY = 'blockit-difficulty';
 const LEGACY_RIDDLE_LEVEL_KEY = 'blockit-riddle-level';
 const LEGACY_RIDDLE_MAX_LEVEL_KEY = 'blockit-riddle-max-level';
 const LEGACY_RIDDLE_PUZZLE_KEY = 'blockit-riddle-puzzle';
 
-function bestScoreKey(mode: GameMode, difficulty: ClassicDifficulty | RiddleDifficulty): string {
+function bestScoreKey(mode: GameMode, difficulty: ClassicDifficulty | RiddleLevel): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
 
-function riddlePuzzleKey(difficulty: RiddleDifficulty): string {
+function riddlePuzzleKey(difficulty: RiddleLevel): string {
   return `blockit-riddle-puzzle-${difficulty}`;
 }
 
-function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | RiddleDifficulty): number {
+function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | RiddleLevel): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
   } catch {
@@ -106,11 +118,27 @@ function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | RiddleDif
 
 function saveBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | RiddleDifficulty,
+  difficulty: ClassicDifficulty | RiddleLevel,
   score: number
 ) {
   try {
     localStorage.setItem(bestScoreKey(mode, difficulty), String(score));
+  } catch { /* noop */ }
+}
+
+function loadTutorialStep(): number {
+  try {
+    const raw = localStorage.getItem(TUTORIAL_STEP_KEY);
+    if (raw === null) return 0;
+    return clampTutorialStep(Number(raw));
+  } catch {
+    return 0;
+  }
+}
+
+function saveTutorialStep(step: number) {
+  try {
+    localStorage.setItem(TUTORIAL_STEP_KEY, String(clampTutorialStep(step)));
   } catch { /* noop */ }
 }
 
@@ -211,15 +239,22 @@ function loadRiddleDifficulty(): RiddleDifficulty {
     return RIDDLE_MAX_DIFFICULTY;
   }
   try {
-    const stored = Number(localStorage.getItem(RIDDLE_DIFFICULTY_KEY));
+    const raw = localStorage.getItem(RIDDLE_DIFFICULTY_KEY);
+    if (raw === 'tutorial') return 'tutorial';
+    const stored = Number(raw);
     if (Number.isFinite(stored) && stored > 0) return clampRiddleDifficulty(stored);
   } catch { /* noop */ }
-  return RIDDLE_MIN_DIFFICULTY;
+  // First-time riddle visitors land on the tutorial so the rules are obvious.
+  return 'tutorial';
 }
 
 function saveRiddleDifficulty(difficulty: RiddleDifficulty) {
   try {
-    localStorage.setItem(RIDDLE_DIFFICULTY_KEY, String(clampRiddleDifficulty(difficulty)));
+    if (difficulty === 'tutorial') {
+      localStorage.setItem(RIDDLE_DIFFICULTY_KEY, 'tutorial');
+    } else {
+      localStorage.setItem(RIDDLE_DIFFICULTY_KEY, String(clampRiddleDifficulty(difficulty)));
+    }
   } catch { /* noop */ }
 }
 
@@ -229,13 +264,13 @@ function saveRiddleDifficulty(difficulty: RiddleDifficulty) {
  * same challenge, and Restart returns to this exact beginning.
  */
 type StoredRiddle = {
-  difficulty: RiddleDifficulty;
+  difficulty: RiddleLevel;
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
 };
 
-function isValidStoredRiddle(p: unknown, expected: RiddleDifficulty): p is StoredRiddle {
+function isValidStoredRiddle(p: unknown, expected: RiddleLevel): p is StoredRiddle {
   if (!p || typeof p !== 'object') return false;
   const r = p as Partial<StoredRiddle>;
   if (r.difficulty !== expected) return false;
@@ -251,7 +286,7 @@ function isValidStoredRiddle(p: unknown, expected: RiddleDifficulty): p is Store
   return true;
 }
 
-function loadRiddlePuzzle(expected: RiddleDifficulty): StoredRiddle | null {
+function loadRiddlePuzzle(expected: RiddleLevel): StoredRiddle | null {
   try {
     const raw = localStorage.getItem(riddlePuzzleKey(expected));
     if (!raw) return null;
@@ -288,9 +323,10 @@ function cloneTray(t: PieceShape[]): PieceShape[] {
  * persisted.
  */
 function freshRiddleState(
-  difficulty: RiddleDifficulty,
+  difficulty: RiddleLevel,
   classicDifficulty: ClassicDifficulty,
   bestScore: number,
+  tutorialStep: number,
   options: { forceNew?: boolean } = {}
 ): GameState {
   const clamped = clampRiddleDifficulty(difficulty);
@@ -316,6 +352,37 @@ function freshRiddleState(
     riddleTarget: cloneTarget(stored.target),
     riddleInitialBoard: cloneBoard(stored.board),
     riddleInitialTray: cloneTray(stored.tray),
+    tutorialStep,
+  };
+}
+
+/**
+ * Build a state for the given tutorial step. Unlike numeric riddles we do
+ * not persist the puzzle — step content is authored in `tutorial.ts` and
+ * always reloaded fresh. Best-score tracking is skipped so tutorial plays
+ * don't pollute the leaderboard.
+ */
+function freshTutorialState(
+  step: number,
+  classicDifficulty: ClassicDifficulty
+): GameState {
+  const safeStep = clampTutorialStep(step);
+  const data = getTutorialStep(safeStep);
+  return {
+    board: cloneBoard(data.board),
+    tray: cloneTray(data.tray),
+    score: 0,
+    bestScore: 0,
+    combo: 0,
+    isGameOver: false,
+    mode: 'riddle',
+    classicDifficulty,
+    riddleDifficulty: 'tutorial',
+    riddleResult: null,
+    riddleTarget: cloneTarget(data.target),
+    riddleInitialBoard: cloneBoard(data.board),
+    riddleInitialTray: cloneTray(data.tray),
+    tutorialStep: safeStep,
   };
 }
 
@@ -326,9 +393,10 @@ function freshRiddleState(
  * puzzle is still used for Restart via `riddleInitialBoard/Tray`.
  */
 function freshRiddleStateFromShared(
-  shared: { difficulty: RiddleDifficulty; board: BoardGrid; tray: PieceShape[]; target: TargetPattern },
+  shared: { difficulty: RiddleLevel; board: BoardGrid; tray: PieceShape[]; target: TargetPattern },
   classicDifficulty: ClassicDifficulty,
-  bestScore: number
+  bestScore: number,
+  tutorialStep: number
 ): GameState {
   return {
     board: cloneBoard(shared.board),
@@ -344,13 +412,15 @@ function freshRiddleStateFromShared(
     riddleTarget: cloneTarget(shared.target),
     riddleInitialBoard: cloneBoard(shared.board),
     riddleInitialTray: cloneTray(shared.tray),
+    tutorialStep,
   };
 }
 
 function freshClassicState(
   difficulty: ClassicDifficulty,
   riddleDifficulty: RiddleDifficulty,
-  bestScore: number
+  bestScore: number,
+  tutorialStep: number
 ): GameState {
   const board = createEmptyBoard();
   return {
@@ -367,6 +437,7 @@ function freshClassicState(
     riddleTarget: null,
     riddleInitialBoard: null,
     riddleInitialTray: null,
+    tutorialStep,
   };
 }
 
@@ -374,6 +445,7 @@ export function createInitialState(): GameState {
   migrateLegacyKeys();
   const classicDifficulty = loadClassicDifficulty();
   const riddleDifficulty = loadRiddleDifficulty();
+  const tutorialStep = loadTutorialStep();
 
   // A share link in the URL hash takes precedence over saved state so the
   // recipient lands directly on the shared riddle. We intentionally do NOT
@@ -387,24 +459,30 @@ export function createInitialState(): GameState {
       return freshRiddleStateFromShared(
         decoded,
         classicDifficulty,
-        loadBestScore('riddle', decoded.difficulty)
+        loadBestScore('riddle', decoded.difficulty),
+        tutorialStep
       );
     }
   }
 
   const mode = loadMode();
   if (mode === 'riddle') {
+    if (riddleDifficulty === 'tutorial') {
+      return freshTutorialState(tutorialStep, classicDifficulty);
+    }
     return freshRiddleState(
       riddleDifficulty,
       classicDifficulty,
-      loadBestScore('riddle', riddleDifficulty)
+      loadBestScore('riddle', riddleDifficulty),
+      tutorialStep
     );
   }
 
   return freshClassicState(
     classicDifficulty,
     riddleDifficulty,
-    loadBestScore('classic', classicDifficulty)
+    loadBestScore('classic', classicDifficulty),
+    tutorialStep
   );
 }
 
@@ -450,13 +528,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       if (state.mode === 'riddle') {
         const target = state.riddleTarget;
+        const riddleDifficulty = state.riddleDifficulty;
+        const isTutorial = riddleDifficulty === 'tutorial';
+        // Tutorial plays don't count toward best-score tracking: the steps
+        // are authored and the "score" number isn't meaningful here.
+        const trackableDifficulty: RiddleLevel | null =
+          isRiddleLevel(riddleDifficulty) ? riddleDifficulty : null;
+
         if (allPlaced) {
           const solved = target !== null && boardMatchesTarget(board, target);
-          if (solved) score += RIDDLE_SOLVE_BONUS;
+          if (solved && !isTutorial) score += RIDDLE_SOLVE_BONUS;
 
           const bestScore = Math.max(score, state.bestScore);
-          if (bestScore > state.bestScore) {
-            saveBestScore('riddle', state.riddleDifficulty, bestScore);
+          if (trackableDifficulty !== null && bestScore > state.bestScore) {
+            saveBestScore('riddle', trackableDifficulty, bestScore);
           }
 
           return {
@@ -472,8 +557,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         }
         const isGameOver = !hasValidMoves(board, newTray);
         const bestScore = Math.max(score, state.bestScore);
-        if (bestScore > state.bestScore) {
-          saveBestScore('riddle', state.riddleDifficulty, bestScore);
+        if (trackableDifficulty !== null && bestScore > state.bestScore) {
+          saveBestScore('riddle', trackableDifficulty, bestScore);
         }
         return {
           ...state,
@@ -514,16 +599,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (action.mode === 'riddle') {
         // Entering riddle mode: resume the stored puzzle at the current
         // difficulty if there is one, otherwise generate and persist a new one.
+        if (state.riddleDifficulty === 'tutorial') {
+          return freshTutorialState(state.tutorialStep, state.classicDifficulty);
+        }
         return freshRiddleState(
           state.riddleDifficulty,
           state.classicDifficulty,
-          loadBestScore('riddle', state.riddleDifficulty)
+          loadBestScore('riddle', state.riddleDifficulty),
+          state.tutorialStep
         );
       }
       return freshClassicState(
         state.classicDifficulty,
         state.riddleDifficulty,
-        loadBestScore('classic', state.classicDifficulty)
+        loadBestScore('classic', state.classicDifficulty),
+        state.tutorialStep
       );
     }
 
@@ -534,11 +624,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return freshClassicState(
         action.difficulty,
         state.riddleDifficulty,
-        loadBestScore('classic', action.difficulty)
+        loadBestScore('classic', action.difficulty),
+        state.tutorialStep
       );
     }
 
     case 'SET_RIDDLE_DIFFICULTY': {
+      if (action.difficulty === 'tutorial') {
+        saveRiddleDifficulty('tutorial');
+        saveMode('riddle');
+        return freshTutorialState(state.tutorialStep, state.classicDifficulty);
+      }
       const target = clampRiddleDifficulty(action.difficulty);
       saveRiddleDifficulty(target);
       saveMode('riddle');
@@ -548,16 +644,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         target,
         state.classicDifficulty,
         loadBestScore('riddle', target),
+        state.tutorialStep,
         { forceNew: true }
       );
     }
 
     case 'NEW_RIDDLE': {
       if (state.mode !== 'riddle') return state;
+      // Tutorial steps are authored — "new puzzle" would be meaningless, so
+      // this action is a no-op for the tutorial. (The UI also hides the button.)
+      if (state.riddleDifficulty === 'tutorial') return state;
       return freshRiddleState(
         state.riddleDifficulty,
         state.classicDifficulty,
         state.bestScore,
+        state.tutorialStep,
         { forceNew: true }
       );
     }
@@ -574,8 +675,37 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           target: action.target,
         },
         state.classicDifficulty,
-        loadBestScore('riddle', action.difficulty)
+        loadBestScore('riddle', action.difficulty),
+        state.tutorialStep
       );
+    }
+
+    case 'TUTORIAL_NEXT': {
+      const next = state.tutorialStep + 1;
+      if (next >= TUTORIAL_STEP_COUNT) {
+        // Graduation: mark the tutorial completed and drop the player into
+        // Riddle 1 — the natural next challenge.
+        saveTutorialStep(TUTORIAL_STEP_COUNT - 1);
+        saveRiddleDifficulty(1);
+        saveMode('riddle');
+        return freshRiddleState(
+          1,
+          state.classicDifficulty,
+          loadBestScore('riddle', 1),
+          TUTORIAL_STEP_COUNT - 1,
+          { forceNew: true }
+        );
+      }
+      saveTutorialStep(next);
+      return freshTutorialState(next, state.classicDifficulty);
+    }
+
+    case 'TUTORIAL_GOTO': {
+      const step = clampTutorialStep(action.step);
+      saveTutorialStep(step);
+      saveRiddleDifficulty('tutorial');
+      saveMode('riddle');
+      return freshTutorialState(step, state.classicDifficulty);
     }
 
     case 'RESTART': {

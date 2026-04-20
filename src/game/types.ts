@@ -23,7 +23,16 @@ export type GameMode = 'classic' | 'riddle';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
-export type RiddleDifficulty = 1 | 2 | 3 | 4 | 5;
+/** Numeric riddle levels — the real puzzles. */
+export type RiddleLevel = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Riddle difficulty selector value. `'tutorial'` is a guided step-by-step
+ * intro sitting in front of the numeric levels; it behaves a lot like a
+ * riddle (target pattern, predefined pieces) but its puzzles are authored
+ * rather than generated, and progression is tracked via `tutorialStep`.
+ */
+export type RiddleDifficulty = RiddleLevel | 'tutorial';
 
 export type ModeSelection =
   | { mode: 'classic'; difficulty: ClassicDifficulty }
@@ -36,7 +45,16 @@ export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'hard',
 ] as const;
 
-export const RIDDLE_DIFFICULTIES: readonly RiddleDifficulty[] = [1, 2, 3, 4, 5] as const;
+export const RIDDLE_NUMERIC_DIFFICULTIES: readonly RiddleLevel[] = [1, 2, 3, 4, 5] as const;
+
+export const RIDDLE_DIFFICULTIES: readonly RiddleDifficulty[] = [
+  'tutorial',
+  ...RIDDLE_NUMERIC_DIFFICULTIES,
+] as const;
+
+export function isRiddleLevel(d: RiddleDifficulty): d is RiddleLevel {
+  return d !== 'tutorial';
+}
 
 /** Stable key for bucketing per-selection persistence (best scores, stored puzzles). */
 export function selectionKey(sel: ModeSelection): string {

@@ -13,6 +13,8 @@ import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
 import { buildShareUrl, clearShareHash, decodeRiddle, parseSharePayload } from './game/sharing';
+import { TUTORIAL_STEPS } from './game/tutorial';
+import { TutorialBanner } from './components/TutorialBanner';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -288,6 +290,9 @@ export default function App() {
   const handleShare = useCallback(async () => {
     const { riddleInitialBoard, riddleInitialTray, riddleTarget, riddleDifficulty } = state;
     if (!riddleInitialBoard || !riddleInitialTray || !riddleTarget) return;
+    // Tutorial puzzles are authored per-step and aren't shareable — the
+    // encoder expects a numeric difficulty anyway.
+    if (riddleDifficulty === 'tutorial') return;
     let url: string;
     try {
       url = buildShareUrl({
@@ -534,24 +539,30 @@ export default function App() {
                   {d}
                 </button>
               ))
-            : RIDDLE_DIFFICULTIES.map((d) => (
-                <button
-                  key={d}
-                  role="tab"
-                  aria-selected={d === state.riddleDifficulty}
-                  className={`difficulty-btn difficulty-btn--riddle${d === state.riddleDifficulty ? ' difficulty-btn--active' : ''}`}
-                  onClick={() => {
-                    if (d !== state.riddleDifficulty) {
-                      clearShareHash();
-                      dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: d });
-                    }
-                  }}
-                >
-                  {d}
-                </button>
-              ))}
+            : RIDDLE_DIFFICULTIES.map((d) => {
+                const label = d === 'tutorial' ? 'Tutorial' : d;
+                const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
+                return (
+                  <button
+                    key={d}
+                    role="tab"
+                    aria-selected={d === state.riddleDifficulty}
+                    className={`difficulty-btn difficulty-btn--riddle${tutorialClass}${d === state.riddleDifficulty ? ' difficulty-btn--active' : ''}`}
+                    onClick={() => {
+                      if (d !== state.riddleDifficulty) {
+                        clearShareHash();
+                        dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: d });
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
         </div>
-        <ScoreBar scoreValueRef={scoreValueRef} />
+        {!(state.mode === 'riddle' && state.riddleDifficulty === 'tutorial') && (
+          <ScoreBar scoreValueRef={scoreValueRef} />
+        )}
         <div className="board-controls">
           <button
             className="board-restart-btn"
@@ -562,7 +573,7 @@ export default function App() {
             <span aria-hidden>{'\u21BB'}</span>
             <span className="board-restart-btn__label">Restart</span>
           </button>
-          {state.mode === 'riddle' && (
+          {state.mode === 'riddle' && state.riddleDifficulty !== 'tutorial' && (
             <button
               className="board-restart-btn board-restart-btn--ghost"
               aria-label="Generate a new puzzle"
@@ -576,20 +587,31 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
-          {state.mode === 'riddle' && state.riddleInitialBoard && state.riddleTarget && (
-            <button
-              className="board-restart-btn board-restart-btn--ghost"
-              aria-label="Share this riddle"
-              title="Share this riddle"
-              onClick={handleShare}
-            >
-              <span aria-hidden>{'\u{1F517}'}</span>
-              <span className="board-restart-btn__label">
-                {shareStatus === 'copied' ? 'Link copied!' : shareStatus === 'failed' ? 'Share failed' : 'Share'}
-              </span>
-            </button>
-          )}
+          {state.mode === 'riddle' &&
+            state.riddleDifficulty !== 'tutorial' &&
+            state.riddleInitialBoard &&
+            state.riddleTarget && (
+              <button
+                className="board-restart-btn board-restart-btn--ghost"
+                aria-label="Share this riddle"
+                title="Share this riddle"
+                onClick={handleShare}
+              >
+                <span aria-hidden>{'\u{1F517}'}</span>
+                <span className="board-restart-btn__label">
+                  {shareStatus === 'copied' ? 'Link copied!' : shareStatus === 'failed' ? 'Share failed' : 'Share'}
+                </span>
+              </button>
+            )}
         </div>
+        {state.mode === 'riddle' && state.riddleDifficulty === 'tutorial' && (
+          <TutorialBanner
+            stepIndex={state.tutorialStep}
+            totalSteps={TUTORIAL_STEPS.length}
+            step={TUTORIAL_STEPS[state.tutorialStep]}
+            onJump={(idx) => dispatch({ type: 'TUTORIAL_GOTO', step: idx })}
+          />
+        )}
         <Board
           boardRef={boardRef}
           previewCells={preview?.cells}
@@ -601,7 +623,9 @@ export default function App() {
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
             {state.mode === 'riddle'
-              ? `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
+              ? state.riddleDifficulty === 'tutorial'
+                ? 'Tap to rotate · drag to place'
+                : `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>

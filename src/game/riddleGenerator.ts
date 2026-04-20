@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, PieceShape, RiddleDifficulty, TargetPattern } from './types';
+import type { BoardGrid, Coord, PieceShape, RiddleLevel, TargetPattern } from './types';
 import { BOARD_SIZE, COLORS } from './types';
 import {
   createEmptyBoard,
@@ -25,11 +25,11 @@ import { PIECE_CATALOG } from './pieces';
  * is guaranteed solvable. Quality filters reject degenerate targets.
  */
 
-export const RIDDLE_MAX_DIFFICULTY: RiddleDifficulty = 5;
-export const RIDDLE_MIN_DIFFICULTY: RiddleDifficulty = 1;
+export const RIDDLE_MAX_DIFFICULTY: RiddleLevel = 5;
+export const RIDDLE_MIN_DIFFICULTY: RiddleLevel = 1;
 
 export type DifficultySpec = {
-  difficulty: RiddleDifficulty;
+  difficulty: RiddleLevel;
   pieceCount: number;
   minPieceCells: number;
   maxPieceCells: number;
@@ -43,7 +43,7 @@ export type DifficultySpec = {
   minPrefillCleared: number;
 };
 
-const DIFFICULTY_SPECS: Record<RiddleDifficulty, DifficultySpec> = {
+const DIFFICULTY_SPECS: Record<RiddleLevel, DifficultySpec> = {
   1: { difficulty: 1, pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 8,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
   2: { difficulty: 2, pieceCount: 3, minPieceCells: 2, maxPieceCells: 4, minTargetCells: 7,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
   3: { difficulty: 3, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
@@ -51,12 +51,12 @@ const DIFFICULTY_SPECS: Record<RiddleDifficulty, DifficultySpec> = {
   5: { difficulty: 5, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
 };
 
-export function clampRiddleDifficulty(difficulty: number): RiddleDifficulty {
+export function clampRiddleDifficulty(difficulty: number): RiddleLevel {
   if (!Number.isFinite(difficulty)) return RIDDLE_MIN_DIFFICULTY;
   const n = Math.round(difficulty);
   if (n < RIDDLE_MIN_DIFFICULTY) return RIDDLE_MIN_DIFFICULTY;
   if (n > RIDDLE_MAX_DIFFICULTY) return RIDDLE_MAX_DIFFICULTY;
-  return n as RiddleDifficulty;
+  return n as RiddleLevel;
 }
 
 export function getDifficultySpec(difficulty: number): DifficultySpec {
@@ -65,7 +65,7 @@ export function getDifficultySpec(difficulty: number): DifficultySpec {
 
 const RECENT_SIGNATURE_LIMIT = 8;
 /** Per-difficulty history of recent signatures so replaying at the same difficulty doesn't repeat. */
-const recentSignaturesByDifficulty = new Map<RiddleDifficulty, string[]>();
+const recentSignaturesByDifficulty = new Map<RiddleLevel, string[]>();
 
 type BuiltRiddle = {
   board: BoardGrid;
@@ -390,14 +390,14 @@ function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltRiddle | 
   return null;
 }
 
-function recordSignature(difficulty: RiddleDifficulty, signature: string): void {
+function recordSignature(difficulty: RiddleLevel, signature: string): void {
   const list = recentSignaturesByDifficulty.get(difficulty) ?? [];
   list.push(signature);
   while (list.length > RECENT_SIGNATURE_LIMIT) list.shift();
   recentSignaturesByDifficulty.set(difficulty, list);
 }
 
-function isRecentlySeen(difficulty: RiddleDifficulty, signature: string): boolean {
+function isRecentlySeen(difficulty: RiddleLevel, signature: string): boolean {
   return recentSignaturesByDifficulty.get(difficulty)?.includes(signature) ?? false;
 }
 
@@ -427,7 +427,7 @@ export function generateRiddle(options: { difficulty?: number; seed?: number } =
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
-  difficulty: RiddleDifficulty;
+  difficulty: RiddleLevel;
 } {
   const difficulty = clampRiddleDifficulty(options.difficulty ?? RIDDLE_MIN_DIFFICULTY);
   const spec = getDifficultySpec(difficulty);
