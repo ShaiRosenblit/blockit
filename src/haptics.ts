@@ -12,4 +12,18 @@ export const haptics = {
   },
   invalidDrop: () => vibrate([15, 40, 15]),
   gameOver: () => vibrate([50, 80, 100, 80, 200]),
+  /**
+   * Riddle-solve celebration. `intensity` is 0..1 (scales with difficulty).
+   * Low intensity: single short pulse; high intensity: longer cheer burst.
+   */
+  celebrate: (intensity: number) => {
+    const clamped = Math.max(0, Math.min(1, intensity));
+    const pulses = Math.round(2 + clamped * 5);
+    const pattern: number[] = [];
+    for (let i = 0; i < pulses; i++) {
+      pattern.push(Math.round(30 + clamped * 50));
+      if (i < pulses - 1) pattern.push(Math.round(30 + clamped * 30));
+    }
+    vibrate(pattern);
+  },
 };

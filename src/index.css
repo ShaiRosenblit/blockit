@@ -258,10 +258,11 @@ body {
  * ---- Riddle-mode "Blueprint" target hints -----------------------------------
  *
  * Metaphor: architect's blueprint -- target cells are "drawn" onto the board.
- * Every state uses 2+ independent visual channels (shape + motion/brightness/
- * pattern) so hints are legible on any piece hue, in greyscale, and under CVD.
+ * Every state uses 2+ independent visual channels (shape + brightness/pattern)
+ * so hints are legible on any piece hue, in greyscale, and under CVD.
+ * Design is fully static -- no animations -- for a calm, focused board.
  *
- *   needs-fill  -- empty, target requires fill   -> sonar-ring pulse + faint wash
+ *   needs-fill  -- empty, target requires fill   -> hollow centre ring + faint wash
  *   target-met  -- filled, correct               -> corner confirmation dot
  *   needs-clear -- filled, must vacate (error)   -> hazard stripes + X bars
  *   neutral     -- no decoration
@@ -286,47 +287,30 @@ body {
 }
 
 /* -- needs-fill ---------------------------------------------------------------
- * Pulsing sonar ring anchored at centre of the empty cell.
- * Channels: shape (circle), motion (scale pulse), brightness (white on dark).
- *
- * Sync trick: the ring element is attached to EVERY riddle cell (except
- * needs-clear, which reuses ::before for its X bars) from board mount and
- * kept permanently hidden. We only flip `visibility` on needs-fill cells,
- * so every ring shares one animation clock and stays phase-locked even as
- * cells transition in and out of needs-fill (preview toggles, piece
- * placement, etc.) during play.
+ * Static hollow ring anchored at centre of the empty cell. Pairs visually with
+ * target-met's filled corner dot: hollow = "needs filling", solid = "done".
+ * Channels: shape (circle), brightness (white on dark halo), family wash.
+ * No motion -- keeps the board calm and avoids any sync weirdness.
  */
 .cell--target-needs-fill {
   border-color: rgba(78, 205, 196, 0.38);
 }
 
-.board--riddle .cell:not(.cell--target-needs-clear)::before {
+.board--riddle .cell.cell--target-needs-fill::before {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
   /* Percentage dimensions scale automatically with --cell-size */
-  width: 38%;
-  height: 38%;
+  width: 42%;
+  height: 42%;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.82);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.38);
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.18);
   transform: translate(-50%, -50%);
-  animation: riddle-sonar 2.4s ease-in-out infinite;
   pointer-events: none;
-  visibility: hidden;
-}
-
-/* Specificity note: must match the broad ".board--riddle .cell:not(...)"
- * rule above (0-3-1) so `visibility: visible` actually wins. */
-.board--riddle .cell.cell--target-needs-fill::before {
-  visibility: visible;
-}
-
-@keyframes riddle-sonar {
-  0%   { transform: translate(-50%, -50%) scale(0.62); opacity: 0.90; }
-  55%  { transform: translate(-50%, -50%) scale(1.18); opacity: 0.20; }
-  100% { transform: translate(-50%, -50%) scale(0.62); opacity: 0.90; }
 }
 
 /* -- target-met ---------------------------------------------------------------
@@ -385,16 +369,6 @@ body {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-/* Reduced-motion: replace sonar pulse with a static ring.
- * Selector matches the always-on rule above so it reliably overrides the
- * animation on every riddle cell (hidden ones included - cheap no-op). */
-@media (prefers-reduced-motion: reduce) {
-  .board--riddle .cell:not(.cell--target-needs-clear)::before {
-    animation: none;
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0.72;
-  }
-}
 /*
  * Board-level action row: Restart (both modes) and New puzzle (riddle only).
  * Wraps on narrow viewports so nothing gets clipped on phones.
