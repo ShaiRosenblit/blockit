@@ -321,7 +321,7 @@ export default function App() {
   );
 
   const handleShare = useCallback(async () => {
-    const { riddleInitialBoard, riddleInitialTray, riddleTarget, riddleDifficulty } = state;
+    const { riddleInitialBoard, riddleInitialTray, riddleTarget, riddleDifficulty, riddleResult } = state;
     if (!riddleInitialBoard || !riddleInitialTray || !riddleTarget) return;
     // Tutorial puzzles are authored per-step and aren't shareable — the
     // encoder expects a numeric difficulty anyway.
@@ -342,9 +342,31 @@ export default function App() {
     haptics.pickup();
     sounds.pickup();
 
+    // Tailor the share copy to the moment: a just-solved riddle reads as a
+    // brag / dare, a just-failed one as a "beat this one for me", and any
+    // mid-game share (header button) stays neutral.
+    const { title, text } = (() => {
+      if (riddleResult === 'solved') {
+        return {
+          title: 'Blockit challenge',
+          text: `Just cracked this Blockit riddle (difficulty ${riddleDifficulty}). Your move — think you can match it?`,
+        };
+      }
+      if (riddleResult === 'failed') {
+        return {
+          title: 'Blockit challenge',
+          text: `This Blockit riddle (difficulty ${riddleDifficulty}) got me. See if you can crack it.`,
+        };
+      }
+      return {
+        title: 'Blockit riddle',
+        text: `Take a shot at this Blockit riddle (difficulty ${riddleDifficulty}).`,
+      };
+    })();
+
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Blockit riddle', text: 'Can you solve this Blockit riddle?', url });
+        await navigator.share({ title, text, url });
         return;
       } catch {
         // User cancelled or share failed — fall through to clipboard.
