@@ -710,7 +710,7 @@ export default function App() {
               {state.mode === 'riddle'
                 ? state.riddleDifficulty === 'tutorial'
                   ? 'Tap to rotate · drag to place'
-                  : `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
+                  : `Difficulty ${state.riddleDifficulty} — fill \u25CB cells, clear \u2715 cells.`
                 : 'Tap to rotate · drag to place'}
             </p>
           </div>
