@@ -637,6 +637,7 @@ body {
 }
 
 .game-over-card {
+  position: relative;
   background: var(--surface);
   border-radius: 16px;
   padding: 32px 40px;
@@ -705,6 +706,135 @@ body {
   background: transparent;
   color: var(--text, #fff);
   border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/*
+ * "Show options" pill: sits at the bottom of the viewport after a round
+ * ends and is the ONLY UI element layered over the board. Intentionally
+ * small + translucent so the final-board state (and any screenshot) stays
+ * uncluttered; the solve variant carries a soft cyan glow so wins feel
+ * distinct from losses without stealing focus from the celebration.
+ */
+.game-over-pill {
+  position: fixed;
+  /* Anchor above the iOS home indicator / address bar. */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(22, 33, 62, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  z-index: 2000;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  animation: game-over-pill-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1) 80ms forwards;
+  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.game-over-pill:hover {
+  background: rgba(22, 33, 62, 0.94);
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
+.game-over-pill:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
+.game-over-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8899aa;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.game-over-pill--solved {
+  border-color: rgba(78, 205, 196, 0.55);
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(78, 205, 196, 0.25),
+    0 0 24px rgba(78, 205, 196, 0.28);
+  animation:
+    game-over-pill-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1) 80ms forwards,
+    game-over-pill-pulse 2400ms ease-in-out 700ms infinite;
+}
+
+.game-over-pill--solved .game-over-pill__dot {
+  background: #4ECDC4;
+  box-shadow: 0 0 10px rgba(78, 205, 196, 0.85);
+}
+
+@keyframes game-over-pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes game-over-pill-pulse {
+  0%, 100% {
+    box-shadow:
+      0 6px 22px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(78, 205, 196, 0.25),
+      0 0 24px rgba(78, 205, 196, 0.28);
+  }
+  50% {
+    box-shadow:
+      0 6px 22px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(78, 205, 196, 0.55),
+      0 0 40px rgba(78, 205, 196, 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-over-pill,
+  .game-over-pill--solved {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/*
+ * Close button on the results card — lets the player return to the
+ * fully-visible board without committing to retry / new puzzle.
+ */
+.game-over-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.game-over-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
 }
 
 /* Score popup */

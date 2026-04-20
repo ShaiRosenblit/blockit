@@ -5,44 +5,48 @@ import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
 
 /**
- * How long to keep the overlay hidden after game-over so the player can look
- * at their finished board. Longer on a solve so the celebration lands first;
- * shorter on a failure because there's nothing to watch beyond the board
- * itself.
+ * How long after game-over to hold the "show options" pill offscreen, so the
+ * celebration / final-board moment lands without a UI nudge in the corner.
+ * Solves get a longer hold because the celebration itself runs longer.
  */
-const OVERLAY_DELAY_SOLVED_MS = 2100;
-const OVERLAY_DELAY_FAILED_MS = 1400;
-const OVERLAY_DELAY_CLASSIC_MS = 1400;
+const PILL_REVEAL_SOLVED_MS = 1700;
+const PILL_REVEAL_FAILED_MS = 900;
+const PILL_REVEAL_CLASSIC_MS = 900;
 
 export function GameOverOverlay() {
   const { state, dispatch } = useGame();
-  const [visible, setVisible] = useState(false);
+  /** The player has tapped the pill and wants the full results card. */
+  const [revealed, setRevealed] = useState(false);
+  /** The pill itself has fully shown up (post-celebration nudge). */
+  const [pillReady, setPillReady] = useState(false);
 
   const isRiddle = state.mode === 'riddle';
   const solved = isRiddle && state.riddleResult === 'solved';
   const failed = isRiddle && state.riddleResult === 'failed';
+  const isTutorial = isRiddle && state.riddleDifficulty === 'tutorial';
+  const isLastTutorialStep =
+    isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;
 
-  // Delay overlay so the player can inspect the final board (win or lose)
-  // before the retry / new-puzzle buttons cover it up. We set `visible` via
-  // a timer here, and reset it via the cleanup function when deps change
-  // (e.g. RESTART flips isGameOver back to false) — avoids calling setState
-  // synchronously in the effect body.
+  // Reveal the pill after a short hold so the celebration / final board has
+  // the spotlight first. Cleanup fires when isGameOver / result changes
+  // (e.g. RESTART), which also flips both flags back to their closed state.
   useEffect(() => {
     if (!state.isGameOver) return;
     const delay = solved
-      ? OVERLAY_DELAY_SOLVED_MS
+      ? PILL_REVEAL_SOLVED_MS
       : failed
-        ? OVERLAY_DELAY_FAILED_MS
-        : OVERLAY_DELAY_CLASSIC_MS;
-    const t = window.setTimeout(() => setVisible(true), delay);
+        ? PILL_REVEAL_FAILED_MS
+        : PILL_REVEAL_CLASSIC_MS;
+    const t = window.setTimeout(() => setPillReady(true), delay);
     return () => {
       window.clearTimeout(t);
-      setVisible(false);
+      setPillReady(false);
+      setRevealed(false);
     };
   }, [state.isGameOver, solved, failed]);
 
-  // Loss feedback (haptic + sound). Hold it slightly so it doesn't collide
-  // with the place / line-clear audio fired in the same tick.
+  // Loss feedback (haptic + sound). Hold briefly so it doesn't collide with
+  // place / line-clear audio fired in the same tick.
   useEffect(() => {
     if (!state.isGameOver) return;
     if (solved) return;
@@ -53,12 +57,18 @@ export function GameOverOverlay() {
     return () => window.clearTimeout(t);
   }, [state.isGameOver, solved]);
 
-  if (!state.isGameOver || !visible) return null;
+  // ESC dismisses the full card back to the pill, matching the common modal
+  // contract and keeping the board-view escape hatch one keystroke away.
+  useEffect(() => {
+    if (!revealed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRevealed(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [revealed]);
 
-  const isTutorial = isRiddle && state.riddleDifficulty === 'tutorial';
-
-  const isLastTutorialStep =
-    isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;
+  if (!state.isGameOver) return null;
 
   // Tutorial messaging is separate from the generic riddle/classic copy so
   // the overlay teaches rather than congratulates when the student solves
@@ -100,9 +110,54 @@ export function GameOverOverlay() {
         ? null
         : `Best (Riddle ${state.riddleDifficulty})`;
 
+  // Stage 1: game is over but the player hasn't asked for options yet.
+  // Show nothing over the board — just a small pill at the bottom they can
+  // tap when they're done admiring / screenshotting the final state.
+  if (!revealed) {
+    if (!pillReady) return null;
+    const pillLabel = solved
+      ? 'Solved — show options'
+      : failed
+        ? 'Done — show options'
+        : 'Round over — show options';
+    const pillClass = solved
+      ? 'game-over-pill game-over-pill--solved'
+      : 'game-over-pill';
+    return (
+      <button
+        type="button"
+        className={pillClass}
+        onClick={() => setRevealed(true)}
+        aria-label={pillLabel}
+      >
+        <span className="game-over-pill__dot" aria-hidden />
+        <span className="game-over-pill__label">{pillLabel}</span>
+      </button>
+    );
+  }
+
+  // Stage 2: the player tapped the pill — show the full card with actions.
+  // Clicking the dim backdrop (but not the card itself) dismisses back to
+  // pill view so the board is visible again.
   return (
-    <div className="game-over-overlay">
+    <div
+      className="game-over-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={headline}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setRevealed(false);
+      }}
+    >
       <div className="game-over-card">
+        <button
+          type="button"
+          className="game-over-close"
+          aria-label="Back to board"
+          onClick={() => setRevealed(false)}
+        >
+          {'\u00D7'}
+        </button>
         <h2>{headline}</h2>
         <p className="game-over-difficulty">{selectionLabel}</p>
         {subline && <p className="game-over-sub">{subline}</p>}
