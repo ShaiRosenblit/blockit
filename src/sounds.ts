@@ -95,7 +95,7 @@ export const sounds = {
    */
   celebrate: (intensity: number) => {
     const clamped = Math.max(0, Math.min(1, intensity));
-    const volume = 0.5 + clamped * 0.4;
+    const volume = 0.35 + clamped * 0.3;
     play('celebrate.mp3', volume);
   },
 };
