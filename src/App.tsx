@@ -277,41 +277,47 @@ export default function App() {
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
-        const clearScore = calculateClearScore(linesCleared, state.combo);
-        const totalPopup = calculatePlacementScore(piece) + clearScore;
-        spawnScorePopup(totalPopup, origin);
+        // Riddle mode has no score display, so skip the +N popup and the
+        // cells-flying-to-the-score-bar animation — the board's own cell
+        // clear animation is still plenty of feedback. Classic mode keeps
+        // them because the score is the primary feedback loop there.
+        if (state.mode !== 'riddle') {
+          const clearScore = calculateClearScore(linesCleared, state.combo);
+          const totalPopup = calculatePlacementScore(piece) + clearScore;
+          spawnScorePopup(totalPopup, origin);
 
-        // Build the set of cells about to be cleared, capturing their colors
-        // from the hypothetical board (which already includes the piece we
-        // just placed). This must happen BEFORE dispatch, so we can read the
-        // colors and viewport positions before the reducer wipes them.
-        const clearSet = new Set<string>();
-        const cellsToClear: Array<{ row: number; col: number; color: string }> = [];
-        for (const r of rows) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const key = `${r},${c}`;
-            if (clearSet.has(key)) continue;
-            clearSet.add(key);
-            const color = hypothetical[r][c];
-            if (color) cellsToClear.push({ row: r, col: c, color });
+          // Build the set of cells about to be cleared, capturing their
+          // colors from the hypothetical board (which already includes the
+          // piece we just placed). This must happen BEFORE dispatch, so we
+          // can read colors/positions before the reducer wipes them.
+          const clearSet = new Set<string>();
+          const cellsToClear: Array<{ row: number; col: number; color: string }> = [];
+          for (const r of rows) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+              const key = `${r},${c}`;
+              if (clearSet.has(key)) continue;
+              clearSet.add(key);
+              const color = hypothetical[r][c];
+              if (color) cellsToClear.push({ row: r, col: c, color });
+            }
           }
-        }
-        for (const c of cols) {
-          for (let r = 0; r < BOARD_SIZE; r++) {
-            const key = `${r},${c}`;
-            if (clearSet.has(key)) continue;
-            clearSet.add(key);
-            const color = hypothetical[r][c];
-            if (color) cellsToClear.push({ row: r, col: c, color });
+          for (const c of cols) {
+            for (let r = 0; r < BOARD_SIZE; r++) {
+              const key = `${r},${c}`;
+              if (clearSet.has(key)) continue;
+              clearSet.add(key);
+              const color = hypothetical[r][c];
+              if (color) cellsToClear.push({ row: r, col: c, color });
+            }
           }
-        }
 
-        spawnCollectOrbs(cellsToClear, origin.row, origin.col);
+          spawnCollectOrbs(cellsToClear, origin.row, origin.col);
+        }
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
     },
-    [state.board, state.tray, state.combo, spawnScorePopup, spawnCollectOrbs]
+    [state.board, state.tray, state.combo, state.mode, spawnScorePopup, spawnCollectOrbs]
   );
 
   const handleShare = useCallback(async () => {
@@ -616,9 +622,7 @@ export default function App() {
                 );
               })}
         </div>
-        {!(state.mode === 'riddle' && state.riddleDifficulty === 'tutorial') && (
-          <ScoreBar scoreValueRef={scoreValueRef} />
-        )}
+        {state.mode !== 'riddle' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
             className="board-restart-btn"

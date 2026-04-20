@@ -78,12 +78,11 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
       ? `Riddle · Difficulty ${state.riddleDifficulty}`
       : `Classic · ${state.classicDifficulty}`;
 
-  const bestLabel =
-    !isRiddle
-      ? `Best (${state.classicDifficulty})`
-      : isTutorial
-        ? null
-        : `Best (Riddle ${state.riddleDifficulty})`;
+  // Riddle mode is a binary solve/not-solve challenge, so numeric score
+  // and per-difficulty best aren't meaningful feedback — they're suppressed
+  // here. Classic mode still shows both.
+  const bestLabel = !isRiddle ? `Best (${state.classicDifficulty})` : null;
+  const showStats = !isRiddle;
 
   const variant = solved
     ? 'game-over-panel--solved'
@@ -110,14 +109,12 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
       {subline && <p className="game-over-panel__sub">{subline}</p>}
 
-      {(!isTutorial || bestLabel) && (
+      {showStats && (
         <div className="game-over-panel__stats">
-          {!isTutorial && (
-            <span className="game-over-panel__stat">
-              <span className="game-over-panel__stat-label">Score</span>
-              <span className="game-over-panel__stat-value">{state.score}</span>
-            </span>
-          )}
+          <span className="game-over-panel__stat">
+            <span className="game-over-panel__stat-label">Score</span>
+            <span className="game-over-panel__stat-value">{state.score}</span>
+          </span>
           {bestLabel && (
             <span className="game-over-panel__stat">
               <span className="game-over-panel__stat-label">{bestLabel}</span>
