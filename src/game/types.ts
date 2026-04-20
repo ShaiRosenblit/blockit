@@ -19,7 +19,29 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type Difficulty = 'easy' | 'normal' | 'hard' | 'zen' | 'riddle';
+export type GameMode = 'classic' | 'riddle';
+
+export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
+
+export type RiddleDifficulty = 1 | 2 | 3 | 4 | 5;
+
+export type ModeSelection =
+  | { mode: 'classic'; difficulty: ClassicDifficulty }
+  | { mode: 'riddle'; difficulty: RiddleDifficulty };
+
+export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
+  'zen',
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const RIDDLE_DIFFICULTIES: readonly RiddleDifficulty[] = [1, 2, 3, 4, 5] as const;
+
+/** Stable key for bucketing per-selection persistence (best scores, stored puzzles). */
+export function selectionKey(sel: ModeSelection): string {
+  return `${sel.mode}:${sel.difficulty}`;
+}
 
 export const BOARD_SIZE = 8;
 

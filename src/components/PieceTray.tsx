@@ -51,7 +51,7 @@ function PieceMiniGrid({ piece, slotInnerPx }: { piece: PieceShape; slotInnerPx:
 
 export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) {
   const { state } = useGame();
-  const dense = state.difficulty === 'riddle' && state.tray.length > 3;
+  const dense = state.mode === 'riddle' && state.tray.length > 3;
   const slotInnerPx = dense ? 56 : 76;
 
   return (

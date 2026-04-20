@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, PieceShape, TargetPattern } from './types';
+import type { BoardGrid, Coord, PieceShape, RiddleDifficulty, TargetPattern } from './types';
 import { BOARD_SIZE, COLORS } from './types';
 import {
   createEmptyBoard,
@@ -16,19 +16,20 @@ import { PIECE_CATALOG } from './pieces';
  * are a core planning tool: clearing a row removes unwanted starting fill, so
  * the puzzle is about *which pieces go where and in what order*.
  *
- * Levels 1–10 progressively dial up difficulty by growing piece count, piece
- * size, target size, and the amount of pre-fill that must be cleared away.
+ * Difficulties 1–5 progressively dial up the challenge by growing piece count,
+ * piece size, target size, and the amount of pre-fill that must be cleared away.
+ * Difficulty 5 is at least as hard as the old Level 10.
  *
  * Generator strategy: forward-simulation on a (possibly pre-filled) board.
  * Because the simulation itself is a valid solution, every generated riddle
  * is guaranteed solvable. Quality filters reject degenerate targets.
  */
 
-export const RIDDLE_MAX_LEVEL = 10;
-export const RIDDLE_FIRST_LEVEL = 1;
+export const RIDDLE_MAX_DIFFICULTY: RiddleDifficulty = 5;
+export const RIDDLE_MIN_DIFFICULTY: RiddleDifficulty = 1;
 
-export type LevelSpec = {
-  level: number;
+export type DifficultySpec = {
+  difficulty: RiddleDifficulty;
   pieceCount: number;
   minPieceCells: number;
   maxPieceCells: number;
@@ -42,34 +43,29 @@ export type LevelSpec = {
   minPrefillCleared: number;
 };
 
-const LEVEL_SPECS: Record<number, LevelSpec> = {
-  1:  { level: 1,  pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 7,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  2:  { level: 2,  pieceCount: 3, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 6,  maxTargetCells: 9,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  3:  { level: 3,  pieceCount: 3, minPieceCells: 3, maxPieceCells: 4, minTargetCells: 8,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  4:  { level: 4,  pieceCount: 4, minPieceCells: 3, maxPieceCells: 4, minTargetCells: 10, maxTargetCells: 14, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  5:  { level: 5,  pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 12, maxTargetCells: 16, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  6:  { level: 6,  pieceCount: 5, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 13, maxTargetCells: 18, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
-  7:  { level: 7,  pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 20, prefillMin: 2, prefillMax: 3, minPrefillCleared: 2 },
-  8:  { level: 8,  pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
-  9:  { level: 9,  pieceCount: 6, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 18, maxTargetCells: 26, prefillMin: 4, prefillMax: 5, minPrefillCleared: 3 },
-  10: { level: 10, pieceCount: 6, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 20, maxTargetCells: 30, prefillMin: 6, prefillMax: 8, minPrefillCleared: 4 },
+const DIFFICULTY_SPECS: Record<RiddleDifficulty, DifficultySpec> = {
+  1: { difficulty: 1, pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 8,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  2: { difficulty: 2, pieceCount: 3, minPieceCells: 2, maxPieceCells: 4, minTargetCells: 7,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  3: { difficulty: 3, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
+  4: { difficulty: 4, pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
+  5: { difficulty: 5, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
 };
 
-export function clampRiddleLevel(level: number): number {
-  if (!Number.isFinite(level)) return RIDDLE_FIRST_LEVEL;
-  const n = Math.round(level);
-  if (n < RIDDLE_FIRST_LEVEL) return RIDDLE_FIRST_LEVEL;
-  if (n > RIDDLE_MAX_LEVEL) return RIDDLE_MAX_LEVEL;
-  return n;
+export function clampRiddleDifficulty(difficulty: number): RiddleDifficulty {
+  if (!Number.isFinite(difficulty)) return RIDDLE_MIN_DIFFICULTY;
+  const n = Math.round(difficulty);
+  if (n < RIDDLE_MIN_DIFFICULTY) return RIDDLE_MIN_DIFFICULTY;
+  if (n > RIDDLE_MAX_DIFFICULTY) return RIDDLE_MAX_DIFFICULTY;
+  return n as RiddleDifficulty;
 }
 
-export function getLevelSpec(level: number): LevelSpec {
-  return LEVEL_SPECS[clampRiddleLevel(level)];
+export function getDifficultySpec(difficulty: number): DifficultySpec {
+  return DIFFICULTY_SPECS[clampRiddleDifficulty(difficulty)];
 }
 
 const RECENT_SIGNATURE_LIMIT = 8;
-/** Per-level history of recent signatures so replaying a level doesn't repeat. */
-const recentSignaturesByLevel = new Map<number, string[]>();
+/** Per-difficulty history of recent signatures so replaying at the same difficulty doesn't repeat. */
+const recentSignaturesByDifficulty = new Map<RiddleDifficulty, string[]>();
 
 type BuiltRiddle = {
   board: BoardGrid;
@@ -184,14 +180,14 @@ function remainingKey(pieces: PieceShape[]): string {
 }
 
 /** All pieces in the catalog whose cell count falls within the spec's range. */
-function poolForSpec(spec: LevelSpec): PieceShape[] {
+function poolForSpec(spec: DifficultySpec): PieceShape[] {
   return PIECE_CATALOG.filter((p) => {
     const n = p.cells.length;
     return n >= spec.minPieceCells && n <= spec.maxPieceCells;
   });
 }
 
-function pickPieces(spec: LevelSpec, rng: () => number): PieceShape[] {
+function pickPieces(spec: DifficultySpec, rng: () => number): PieceShape[] {
   const pool = poolForSpec(spec);
   if (pool.length === 0) return [];
   // Sample with replacement: duplicate piece shapes are fair game and make
@@ -354,7 +350,7 @@ export function canReachTarget(
   return false;
 }
 
-function buildCandidate(spec: LevelSpec, rng: () => number): BuiltRiddle | null {
+function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltRiddle | null {
   for (let attempt = 0; attempt < 60; attempt++) {
     const prefillCount = spec.prefillMin +
       Math.floor(rng() * (spec.prefillMax - spec.prefillMin + 1));
@@ -394,15 +390,15 @@ function buildCandidate(spec: LevelSpec, rng: () => number): BuiltRiddle | null 
   return null;
 }
 
-function recordSignature(level: number, signature: string): void {
-  const list = recentSignaturesByLevel.get(level) ?? [];
+function recordSignature(difficulty: RiddleDifficulty, signature: string): void {
+  const list = recentSignaturesByDifficulty.get(difficulty) ?? [];
   list.push(signature);
   while (list.length > RECENT_SIGNATURE_LIMIT) list.shift();
-  recentSignaturesByLevel.set(level, list);
+  recentSignaturesByDifficulty.set(difficulty, list);
 }
 
-function isRecentlySeen(level: number, signature: string): boolean {
-  return recentSignaturesByLevel.get(level)?.includes(signature) ?? false;
+function isRecentlySeen(difficulty: RiddleDifficulty, signature: string): boolean {
+  return recentSignaturesByDifficulty.get(difficulty)?.includes(signature) ?? false;
 }
 
 /** Hard-coded fallback used if generation repeatedly fails to meet a spec. */
@@ -427,27 +423,27 @@ function buildFallback(): BuiltRiddle {
 
 const fallback = buildFallback();
 
-export function generateRiddle(options: { level?: number; seed?: number } = {}): {
+export function generateRiddle(options: { difficulty?: number; seed?: number } = {}): {
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
-  level: number;
+  difficulty: RiddleDifficulty;
 } {
-  const level = clampRiddleLevel(options.level ?? RIDDLE_FIRST_LEVEL);
-  const spec = getLevelSpec(level);
+  const difficulty = clampRiddleDifficulty(options.difficulty ?? RIDDLE_MIN_DIFFICULTY);
+  const spec = getDifficultySpec(difficulty);
   const seed = (options.seed ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
   const rng = mulberry32(seed);
 
   for (let attempt = 0; attempt < 80; attempt++) {
     const built = buildCandidate(spec, rng);
     if (!built) continue;
-    if (isRecentlySeen(level, built.signature)) continue;
-    recordSignature(level, built.signature);
+    if (isRecentlySeen(difficulty, built.signature)) continue;
+    recordSignature(difficulty, built.signature);
     return {
       board: cloneBoard(built.board),
       tray: built.tray.map((piece) => clonePiece(piece)),
       target: built.target.map((row) => [...row]),
-      level,
+      difficulty,
     };
   }
 
@@ -456,6 +452,6 @@ export function generateRiddle(options: { level?: number; seed?: number } = {}):
     board: cloneBoard(fallback.board),
     tray: fallback.tray.map((piece) => clonePiece(piece)),
     target: fallback.target.map((row) => [...row]),
-    level,
+    difficulty,
   };
 }

@@ -82,10 +82,46 @@ body {
   opacity: 1;
 }
 
-/* Difficulty selector */
+/* Mode selector — top-level game type (Classic / Riddle / future modes). */
+.mode-selector {
+  display: inline-flex;
+  gap: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 3px;
+  align-self: center;
+}
+
+.mode-btn {
+  min-width: 0;
+  padding: 6px 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  border-radius: 8px;
+}
+
+.mode-btn:hover {
+  color: var(--text);
+}
+
+.mode-btn--active {
+  background: #4ECDC4;
+  color: #1a1a2e;
+}
+
+/* Difficulty selector — mode-scoped sub-picker underneath the mode row. */
 .difficulty-selector {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 0;
   background: var(--surface);
   border-radius: 8px;
@@ -105,6 +141,13 @@ body {
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
   white-space: nowrap;
+}
+
+.difficulty-btn--riddle {
+  /* Riddle difficulties are numeric — no capitalize needed and a touch wider
+   * glyph weight reads better centered. */
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .difficulty-btn:hover {
@@ -321,10 +364,10 @@ body {
   }
 }
 /*
- * Riddle-mode controls row: level selector on the left, restart button on the
- * right. Wraps on narrow viewports so nothing gets clipped on phones.
+ * Board-level action row: Restart (both modes) and New puzzle (riddle only).
+ * Wraps on narrow viewports so nothing gets clipped on phones.
  */
-.riddle-controls {
+.board-controls {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -335,7 +378,7 @@ body {
   max-width: min(480px, 100%);
 }
 
-.riddle-restart-btn {
+.board-restart-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -350,59 +393,27 @@ body {
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-.riddle-restart-btn:hover {
+.board-restart-btn:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.4);
 }
 
-.riddle-restart-btn:active {
+.board-restart-btn:active {
   transform: scale(0.96);
 }
 
-.riddle-restart-btn__label {
+.board-restart-btn--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.board-restart-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.board-restart-btn__label {
   letter-spacing: 0.02em;
-}
-
-/* Riddle-mode level selector — compact strip of numbered pips (1..10). */
-.riddle-level-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-}
-
-.riddle-level-pip {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-
-.riddle-level-pip:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.35);
-}
-
-.riddle-level-pip--current {
-  background: rgba(120, 220, 210, 0.22);
-  border-color: rgba(120, 220, 210, 0.85);
-  color: #fff;
-  transform: scale(1.08);
-}
-
-.riddle-level-pip--locked {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 
 @keyframes will-clear-pulse {

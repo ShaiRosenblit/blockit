@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, Difficulty, PieceShape } from './types';
+import type { BoardGrid, ClassicDifficulty, Coord, PieceShape } from './types';
 import { BOARD_SIZE, COLORS } from './types';
 import { canPlacePiece, placePiece, detectCompletedLines, clearLines } from './board';
 
@@ -249,7 +249,7 @@ export const PIECE_CATALOG: PieceShape[] = PIECE_DEFS.map((def) => {
   return { ...def, width, height, color: '' };
 });
 
-function pieceWeight(cellCount: number, difficulty: Difficulty): number {
+function pieceWeight(cellCount: number, difficulty: ClassicDifficulty): number {
   switch (difficulty) {
     case 'easy':
     case 'zen':
@@ -257,7 +257,6 @@ function pieceWeight(cellCount: number, difficulty: Difficulty): number {
       if (cellCount <= 4) return 1;
       return 0;
     case 'normal':
-    case 'riddle':
       return 1;
     case 'hard':
       if (cellCount <= 2) return 0;
@@ -268,7 +267,7 @@ function pieceWeight(cellCount: number, difficulty: Difficulty): number {
 
 type FamilyPool = { families: PieceShape[][]; cumWeights: number[] };
 
-function buildFamilyPool(difficulty: Difficulty): FamilyPool {
+function buildFamilyPool(difficulty: ClassicDifficulty): FamilyPool {
   const families: PieceShape[][] = [];
   const cumWeights: number[] = [];
   let total = 0;
@@ -289,8 +288,8 @@ function buildFamilyPool(difficulty: Difficulty): FamilyPool {
   return { families, cumWeights };
 }
 
-const poolCache = new Map<Difficulty, FamilyPool>();
-function getPool(difficulty: Difficulty) {
+const poolCache = new Map<ClassicDifficulty, FamilyPool>();
+function getPool(difficulty: ClassicDifficulty) {
   let pool = poolCache.get(difficulty);
   if (!pool) {
     pool = buildFamilyPool(difficulty);
@@ -303,7 +302,7 @@ function randomColor(): string {
   return COLORS[Math.floor(Math.random() * COLORS.length)];
 }
 
-function randomPiece(difficulty: Difficulty): PieceShape {
+function randomPiece(difficulty: ClassicDifficulty): PieceShape {
   const { families, cumWeights } = getPool(difficulty);
   const total = cumWeights[cumWeights.length - 1];
   const r = Math.random() * total;
@@ -425,7 +424,10 @@ function generateZenPieces(board: BoardGrid): PieceShape[] {
   return results;
 }
 
-export function generatePieces(difficulty: Difficulty, board?: BoardGrid): PieceShape[] {
+export function generateClassicTray(
+  difficulty: ClassicDifficulty,
+  board?: BoardGrid
+): PieceShape[] {
   if (difficulty === 'zen' && board) {
     return generateZenPieces(board);
   }

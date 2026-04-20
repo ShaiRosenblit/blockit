@@ -7,9 +7,8 @@ import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
-import type { Coord, Difficulty } from './game/types';
-import { BOARD_SIZE } from './game/types';
-import { RIDDLE_MAX_LEVEL } from './game/riddleGenerator';
+import type { Coord } from './game/types';
+import { BOARD_SIZE, CLASSIC_DIFFICULTIES, RIDDLE_DIFFICULTIES } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -402,7 +401,10 @@ export default function App() {
     ? boardRef.current.getBoundingClientRect().width / BOARD_SIZE
     : 40;
 
-  const difficulties: Difficulty[] = ['zen', 'easy', 'normal', 'hard', 'riddle'];
+  const modes: { id: 'classic' | 'riddle'; label: string }[] = [
+    { id: 'classic', label: 'Classic' },
+    { id: 'riddle', label: 'Riddle' },
+  ];
 
   return (
     <GameContext value={{ state, dispatch }}>
@@ -421,55 +423,77 @@ export default function App() {
             {muted ? '\u{1F507}' : '\u{1F50A}'}
           </button>
         </div>
-        <div className="difficulty-selector">
-          {difficulties.map((d) => (
+        <div className="mode-selector" role="tablist" aria-label="Game mode">
+          {modes.map((m) => (
             <button
-              key={d}
-              className={`difficulty-btn${d === state.difficulty ? ' difficulty-btn--active' : ''}`}
+              key={m.id}
+              role="tab"
+              aria-selected={m.id === state.mode}
+              className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
               onClick={() => {
-                if (d !== state.difficulty) dispatch({ type: 'SET_DIFFICULTY', difficulty: d });
+                if (m.id !== state.mode) dispatch({ type: 'SET_MODE', mode: m.id });
               }}
             >
-              {d}
+              {m.label}
             </button>
           ))}
         </div>
+        <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
+          {state.mode === 'classic'
+            ? CLASSIC_DIFFICULTIES.map((d) => (
+                <button
+                  key={d}
+                  role="tab"
+                  aria-selected={d === state.classicDifficulty}
+                  className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
+                  onClick={() => {
+                    if (d !== state.classicDifficulty) {
+                      dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
+                    }
+                  }}
+                >
+                  {d}
+                </button>
+              ))
+            : RIDDLE_DIFFICULTIES.map((d) => (
+                <button
+                  key={d}
+                  role="tab"
+                  aria-selected={d === state.riddleDifficulty}
+                  className={`difficulty-btn difficulty-btn--riddle${d === state.riddleDifficulty ? ' difficulty-btn--active' : ''}`}
+                  onClick={() => {
+                    if (d !== state.riddleDifficulty) {
+                      dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: d });
+                    }
+                  }}
+                >
+                  {d}
+                </button>
+              ))}
+        </div>
         <ScoreBar scoreValueRef={scoreValueRef} />
-        {state.difficulty === 'riddle' && (
-          <div className="riddle-controls">
-            <div className="riddle-level-strip" role="tablist" aria-label="Riddle level">
-              {Array.from({ length: RIDDLE_MAX_LEVEL }, (_, i) => i + 1).map((lvl) => {
-                const locked = lvl > state.riddleMaxLevel;
-                const current = lvl === state.riddleLevel;
-                return (
-                  <button
-                    key={lvl}
-                    role="tab"
-                    aria-selected={current}
-                    aria-disabled={locked}
-                    disabled={locked}
-                    className={`riddle-level-pip${current ? ' riddle-level-pip--current' : ''}${locked ? ' riddle-level-pip--locked' : ''}`}
-                    onClick={() => {
-                      if (locked || current) return;
-                      dispatch({ type: 'SET_RIDDLE_LEVEL', level: lvl });
-                    }}
-                  >
-                    {lvl}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="board-controls">
+          <button
+            className="board-restart-btn"
+            aria-label="Restart this round"
+            title="Restart this round"
+            onClick={() => dispatch({ type: 'RESTART' })}
+          >
+            <span aria-hidden>{'\u21BB'}</span>
+            <span className="board-restart-btn__label">Restart</span>
+          </button>
+          {state.mode === 'riddle' && (
             <button
-              className="riddle-restart-btn"
-              aria-label="Restart this level"
-              title="Restart this level"
-              onClick={() => dispatch({ type: 'RESTART' })}
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new puzzle"
+              title="Generate a new puzzle"
+              onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
             >
-              <span aria-hidden>{'\u21BB'}</span>
-              <span className="riddle-restart-btn__label">Restart</span>
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
         <Board
           boardRef={boardRef}
           previewCells={preview?.cells}
@@ -480,8 +504,8 @@ export default function App() {
         <div className="piece-tray-wrap">
           <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
           <p className="piece-tray-hint">
-            {state.difficulty === 'riddle'
-              ? `Level ${state.riddleLevel} / ${RIDDLE_MAX_LEVEL} — fill the dashed cells, clear the rest.`
+            {state.mode === 'riddle'
+              ? `Difficulty ${state.riddleDifficulty} — fill the dashed cells, clear the rest.`
               : 'Tap to rotate · drag to place · R'}
           </p>
         </div>
