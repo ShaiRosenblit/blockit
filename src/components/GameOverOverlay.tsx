@@ -4,13 +4,24 @@ import { haptics } from '../haptics';
 import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
 
+type Props = {
+  /**
+   * Called when the player taps "Challenge a friend". Only relevant in
+   * riddle mode; tutorial steps aren't shareable. Parent owns the share
+   * flow so behaviour stays consistent with the header's Share button.
+   */
+  onShare?: () => void;
+  /** Mirror of the parent's share-status so the button can show feedback. */
+  shareStatus?: null | 'copied' | 'failed';
+};
+
 /**
  * Renders inline (in place of the piece tray) when the round ends — no dim
  * backdrop, no modal. The board stays fully visible above it so the player
  * can screenshot "board + result" in one frame, and the retry / new-puzzle
  * buttons live in the panel itself so there's nothing else to dismiss.
  */
-export function GameOverOverlay() {
+export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const { state, dispatch } = useGame();
 
   const isRiddle = state.mode === 'riddle';
@@ -155,6 +166,20 @@ export function GameOverOverlay() {
             >
               New puzzle
             </button>
+            {onShare && state.riddleInitialBoard && state.riddleTarget && (
+              <button
+                className="game-over-panel__btn game-over-panel__btn--wide"
+                onClick={onShare}
+                title="Share this riddle as a challenge"
+              >
+                <span aria-hidden>{'\u{1F3AF}'}</span>{' '}
+                {shareStatus === 'copied'
+                  ? 'Link copied!'
+                  : shareStatus === 'failed'
+                    ? 'Share failed'
+                    : 'Challenge a friend'}
+              </button>
+            )}
           </>
         ) : (
           <button

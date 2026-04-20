@@ -676,7 +676,7 @@ export default function App() {
           clearPreviewCells={preview?.clearCells ?? undefined}
         />
         {state.isGameOver ? (
-          <GameOverOverlay />
+          <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
             <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />

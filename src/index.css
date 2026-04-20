@@ -804,6 +804,23 @@ body {
   border-color: transparent;
 }
 
+/*
+ * "Challenge a friend" sits on its own row so Retry + New puzzle keep
+ * their comfortable tap targets on the first row and the share action
+ * reads as a related-but-separate affordance.
+ */
+.game-over-panel__btn--wide {
+  flex-basis: 100%;
+  background: rgba(78, 205, 196, 0.08);
+  border-color: rgba(78, 205, 196, 0.45);
+  color: #e6fffb;
+}
+
+.game-over-panel__btn--wide:hover {
+  background: rgba(78, 205, 196, 0.18);
+  border-color: rgba(78, 205, 196, 0.7);
+}
+
 @keyframes game-over-panel-in {
   from {
     opacity: 0;
