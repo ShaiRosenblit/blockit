@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
 import { gameReducer, createInitialState } from './game/gameReducer';
 import { canPlacePiece, placePiece, detectCompletedLines, rotatePiece90Clockwise } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
@@ -79,11 +79,11 @@ export default function App() {
     };
   }, []);
 
-  const hintAvailable = useMemo(() => {
-    if (state.difficulty !== 'riddle' || state.isGameOver) return false;
-    if (!state.riddleTarget) return false;
-    return findNextRiddleHint(state.board, state.tray, state.riddleTarget) !== null;
-  }, [state.difficulty, state.isGameOver, state.riddleLevel, state.board, state.tray, state.riddleTarget]);
+  /** Cheap only — never run findNextRiddleHint here (BFS is too heavy for render). */
+  const hintButtonEnabled =
+    state.difficulty === 'riddle' &&
+    !state.isGameOver &&
+    state.tray.some((p) => p !== null);
 
   useEffect(() => {
     if (scorePulseTick === 0) return;
@@ -592,7 +592,7 @@ export default function App() {
                 className="riddle-hint-btn"
                 aria-label="Hint: preview then place one correct piece"
                 title="Shows where a good piece goes, then places it"
-                disabled={state.isGameOver || hintBusy || !hintAvailable}
+                disabled={!hintButtonEnabled || hintBusy}
                 onClick={handleRiddleHint}
               >
                 Hint
