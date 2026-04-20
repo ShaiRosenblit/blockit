@@ -65,7 +65,19 @@ export type GameAction =
   | { type: 'SET_CLASSIC_DIFFICULTY'; difficulty: ClassicDifficulty }
   | { type: 'SET_RIDDLE_DIFFICULTY'; difficulty: RiddleDifficulty }
   /** Discard the active riddle puzzle and generate a fresh one at the current difficulty. */
-  | { type: 'NEW_RIDDLE' };
+  | { type: 'NEW_RIDDLE' }
+  /**
+   * Swap the currently-visible puzzle for a shared riddle (e.g. when the URL
+   * hash changes without a full page reload). Does not touch localStorage —
+   * the shared puzzle is ephemeral.
+   */
+  | {
+      type: 'LOAD_SHARED_RIDDLE';
+      difficulty: RiddleDifficulty;
+      board: BoardGrid;
+      tray: PieceShape[];
+      target: TargetPattern;
+    };
 
 const MODE_KEY = 'blockit-mode';
 const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
@@ -547,6 +559,22 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.classicDifficulty,
         state.bestScore,
         { forceNew: true }
+      );
+    }
+
+    case 'LOAD_SHARED_RIDDLE': {
+      // Preserve the per-difficulty best score for the incoming difficulty so
+      // the display stays meaningful. Do NOT persist anything about the
+      // shared puzzle itself.
+      return freshRiddleStateFromShared(
+        {
+          difficulty: action.difficulty,
+          board: action.board,
+          tray: action.tray,
+          target: action.target,
+        },
+        state.classicDifficulty,
+        loadBestScore('riddle', action.difficulty)
       );
     }
 

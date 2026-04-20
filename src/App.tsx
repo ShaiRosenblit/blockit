@@ -12,7 +12,7 @@ import { BOARD_SIZE, CLASSIC_DIFFICULTIES, RIDDLE_DIFFICULTIES } from './game/ty
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
-import { buildShareUrl, clearShareHash } from './game/sharing';
+import { buildShareUrl, clearShareHash, decodeRiddle, parseSharePayload } from './game/sharing';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -326,6 +326,37 @@ export default function App() {
     const t = window.setTimeout(() => setShareStatus(null), 1800);
     return () => window.clearTimeout(t);
   }, [shareStatus]);
+
+  // A hash-based share link arriving while the app is already open (e.g.
+  // the browser focuses an existing tab instead of reloading) only triggers
+  // `hashchange` — the initial-load code path in createInitialState won't
+  // run. We also cover `popstate` for back/forward navigation. Internal
+  // hash cleanup uses history.replaceState, which does not fire either of
+  // these, so there's no feedback loop to worry about.
+  useEffect(() => {
+    const loadFromHash = () => {
+      const payload = parseSharePayload();
+      if (!payload) return;
+      const decoded = decodeRiddle(payload);
+      if (!decoded) return;
+      dispatch({
+        type: 'LOAD_SHARED_RIDDLE',
+        difficulty: decoded.difficulty,
+        board: decoded.board,
+        tray: decoded.tray,
+        target: decoded.target,
+      });
+      setDrag(null);
+      setPendingTray(null);
+      setPreview(null);
+    };
+    window.addEventListener('hashchange', loadFromHash);
+    window.addEventListener('popstate', loadFromHash);
+    return () => {
+      window.removeEventListener('hashchange', loadFromHash);
+      window.removeEventListener('popstate', loadFromHash);
+    };
+  }, []);
 
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
     e.preventDefault();
