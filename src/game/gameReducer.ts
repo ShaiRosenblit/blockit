@@ -27,6 +27,7 @@ import {
   RIDDLE_MIN_DIFFICULTY,
 } from './riddleGenerator';
 import { calculatePlacementScore, calculateClearScore, RIDDLE_SOLVE_BONUS } from './scoring';
+import { decodeRiddle, parseSharePayload } from './sharing';
 
 export type GameState = {
   board: BoardGrid;
@@ -306,6 +307,34 @@ function freshRiddleState(
   };
 }
 
+/**
+ * Build a riddle state from an inbound share link's decoded payload. Does
+ * NOT touch localStorage — the shared puzzle is ephemeral, so it must not
+ * clobber whatever puzzle the player already had at this difficulty. The
+ * puzzle is still used for Restart via `riddleInitialBoard/Tray`.
+ */
+function freshRiddleStateFromShared(
+  shared: { difficulty: RiddleDifficulty; board: BoardGrid; tray: PieceShape[]; target: TargetPattern },
+  classicDifficulty: ClassicDifficulty,
+  bestScore: number
+): GameState {
+  return {
+    board: cloneBoard(shared.board),
+    tray: cloneTray(shared.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'riddle',
+    classicDifficulty,
+    riddleDifficulty: shared.difficulty,
+    riddleResult: null,
+    riddleTarget: cloneTarget(shared.target),
+    riddleInitialBoard: cloneBoard(shared.board),
+    riddleInitialTray: cloneTray(shared.tray),
+  };
+}
+
 function freshClassicState(
   difficulty: ClassicDifficulty,
   riddleDifficulty: RiddleDifficulty,
@@ -331,10 +360,27 @@ function freshClassicState(
 
 export function createInitialState(): GameState {
   migrateLegacyKeys();
-  const mode = loadMode();
   const classicDifficulty = loadClassicDifficulty();
   const riddleDifficulty = loadRiddleDifficulty();
 
+  // A share link in the URL hash takes precedence over saved state so the
+  // recipient lands directly on the shared riddle. We intentionally do NOT
+  // call saveMode / saveRiddleDifficulty / saveRiddlePuzzle here — the
+  // shared puzzle is ephemeral and must not overwrite whatever the user
+  // had going on at that difficulty.
+  const sharedPayload = parseSharePayload();
+  if (sharedPayload) {
+    const decoded = decodeRiddle(sharedPayload);
+    if (decoded) {
+      return freshRiddleStateFromShared(
+        decoded,
+        classicDifficulty,
+        loadBestScore('riddle', decoded.difficulty)
+      );
+    }
+  }
+
+  const mode = loadMode();
   if (mode === 'riddle') {
     return freshRiddleState(
       riddleDifficulty,

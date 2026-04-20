@@ -12,6 +12,7 @@ import { BOARD_SIZE, CLASSIC_DIFFICULTIES, RIDDLE_DIFFICULTIES } from './game/ty
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
+import { buildShareUrl, clearShareHash } from './game/sharing';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -61,6 +62,7 @@ export default function App() {
   const [flyingOrbs, setFlyingOrbs] = useState<FlyingOrb[]>([]);
   const [scorePulseTick, setScorePulseTick] = useState(0);
   const [muted, setMuted] = useState(() => sounds.isMuted());
+  const [shareStatus, setShareStatus] = useState<null | 'copied' | 'failed'>(null);
 
   useEffect(() => {
     if (scorePulseTick === 0) return;
@@ -283,6 +285,48 @@ export default function App() {
     [state.board, state.tray, state.combo, spawnScorePopup, spawnCollectOrbs]
   );
 
+  const handleShare = useCallback(async () => {
+    const { riddleInitialBoard, riddleInitialTray, riddleTarget, riddleDifficulty } = state;
+    if (!riddleInitialBoard || !riddleInitialTray || !riddleTarget) return;
+    let url: string;
+    try {
+      url = buildShareUrl({
+        difficulty: riddleDifficulty,
+        board: riddleInitialBoard,
+        tray: riddleInitialTray,
+        target: riddleTarget,
+      });
+    } catch {
+      setShareStatus('failed');
+      return;
+    }
+
+    haptics.pickup();
+    sounds.pickup();
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Blockit riddle', text: 'Can you solve this Blockit riddle?', url });
+        return;
+      } catch {
+        // User cancelled or share failed — fall through to clipboard.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareStatus('copied');
+    } catch {
+      const ok = window.prompt('Copy this link to share the riddle:', url);
+      setShareStatus(ok === null ? null : 'copied');
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (shareStatus === null) return;
+    const t = window.setTimeout(() => setShareStatus(null), 1800);
+    return () => window.clearTimeout(t);
+  }, [shareStatus]);
+
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
     e.preventDefault();
     lastTrayIndexRef.current = index;
@@ -431,7 +475,10 @@ export default function App() {
               aria-selected={m.id === state.mode}
               className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
               onClick={() => {
-                if (m.id !== state.mode) dispatch({ type: 'SET_MODE', mode: m.id });
+                if (m.id !== state.mode) {
+                  clearShareHash();
+                  dispatch({ type: 'SET_MODE', mode: m.id });
+                }
               }}
             >
               {m.label}
@@ -448,6 +495,7 @@ export default function App() {
                   className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
                   onClick={() => {
                     if (d !== state.classicDifficulty) {
+                      clearShareHash();
                       dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
                     }
                   }}
@@ -463,6 +511,7 @@ export default function App() {
                   className={`difficulty-btn difficulty-btn--riddle${d === state.riddleDifficulty ? ' difficulty-btn--active' : ''}`}
                   onClick={() => {
                     if (d !== state.riddleDifficulty) {
+                      clearShareHash();
                       dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: d });
                     }
                   }}
@@ -487,10 +536,26 @@ export default function App() {
               className="board-restart-btn board-restart-btn--ghost"
               aria-label="Generate a new puzzle"
               title="Generate a new puzzle"
-              onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+              onClick={() => {
+                clearShareHash();
+                dispatch({ type: 'NEW_RIDDLE' });
+              }}
             >
               <span aria-hidden>{'\u2728'}</span>
               <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
+          {state.mode === 'riddle' && state.riddleInitialBoard && state.riddleTarget && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Share this riddle"
+              title="Share this riddle"
+              onClick={handleShare}
+            >
+              <span aria-hidden>{'\u{1F517}'}</span>
+              <span className="board-restart-btn__label">
+                {shareStatus === 'copied' ? 'Link copied!' : shareStatus === 'failed' ? 'Share failed' : 'Share'}
+              </span>
             </button>
           )}
         </div>
