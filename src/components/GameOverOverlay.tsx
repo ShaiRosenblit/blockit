@@ -151,18 +151,41 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           </>
         ) : isRiddle ? (
           <>
-            <button
-              className="game-over-panel__btn game-over-panel__btn--primary"
-              onClick={() => dispatch({ type: 'RESTART' })}
-            >
-              Retry
-            </button>
-            <button
-              className="game-over-panel__btn"
-              onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
-            >
-              New puzzle
-            </button>
+            {/* Primary action depends on outcome: after a solve the natural
+                next step is a fresh puzzle, not replaying the one you just
+                beat; after a failure the player most often wants another go
+                at the same board. */}
+            {solved ? (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+                >
+                  New puzzle
+                </button>
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Replay
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Retry
+                </button>
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+                >
+                  New puzzle
+                </button>
+              </>
+            )}
             {onShare && state.riddleInitialBoard && state.riddleTarget && (
               <button
                 className="game-over-panel__btn game-over-panel__btn--wide"
