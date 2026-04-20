@@ -259,9 +259,13 @@ function pieceWeight(cellCount: number, difficulty: ClassicDifficulty): number {
     case 'normal':
       return 1;
     case 'hard':
+      // Bias strongly toward 5+-cell pieces. Trominoes stay rare as a mild
+      // escape valve, tetrominoes are the baseline, and pentominoes (plus the
+      // 2x3 rectangle and 3x3 square) dominate the tray.
       if (cellCount <= 2) return 0;
       if (cellCount <= 3) return 1;
-      return 3;
+      if (cellCount <= 4) return 3;
+      return 5;
   }
 }
 
