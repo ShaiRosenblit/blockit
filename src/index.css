@@ -73,6 +73,17 @@ body {
   width: 100%;
 }
 
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand__mark {
+  display: block;
+  flex-shrink: 0;
+}
+
 .title {
   font-size: 28px;
   font-weight: 800;
