@@ -576,7 +576,7 @@ export default function App() {
       <div className="app">
         <div className="header-row">
           <div className="brand">
-            <Logo size={26} className="brand__mark" />
+            <Logo size={22} className="brand__mark" />
             <h1 className="title">Blockit</h1>
           </div>
           <button
