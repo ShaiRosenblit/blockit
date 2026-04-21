@@ -17,6 +17,9 @@ import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT } from './game/tutorial';
 import { TutorialBanner } from './components/TutorialBanner';
 import { Celebration } from './components/Celebration';
 import { Wordmark } from './components/Wordmark';
+import { PuzzleLegend } from './components/PuzzleLegend';
+import { CoachMark } from './components/CoachMark';
+import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
 import type { PuzzleDifficulty } from './game/types';
 
 const DRAG_THRESHOLD_PX = 10;
@@ -93,6 +96,16 @@ export default function App() {
     centerY: number;
     runId: number;
   } | null>(null);
+
+  const { seen: coachSeen, markSeen: markCoachSeen } = useCoachMarks();
+  const [coachAnchor, setCoachAnchor] = useState<HTMLElement | null>(null);
+  const [activeCoach, setActiveCoach] = useState<CoachSymbol | null>(null);
+  // Mirror activeCoach in a ref so handlePlace can react to it without having
+  // to re-memoise (and re-subscribe drag listeners) on every coach change.
+  const activeCoachRef = useRef<CoachSymbol | null>(null);
+  useEffect(() => {
+    activeCoachRef.current = activeCoach;
+  }, [activeCoach]);
 
   useEffect(() => {
     if (scorePulseTick === 0) return;
@@ -317,8 +330,17 @@ export default function App() {
       }
 
       dispatch({ type: 'PLACE_PIECE', trayIndex, origin });
+
+      // A successful placement is the clearest possible "I got it" signal, so
+      // retire any active coach-mark immediately — no need to linger.
+      if (activeCoachRef.current) {
+        const sym = activeCoachRef.current;
+        markCoachSeen(sym);
+        setActiveCoach(null);
+        setCoachAnchor(null);
+      }
     },
-    [state.board, state.tray, state.combo, state.mode, spawnScorePopup, spawnCollectOrbs]
+    [state.board, state.tray, state.combo, state.mode, spawnScorePopup, spawnCollectOrbs, markCoachSeen]
   );
 
   const handleShare = useCallback(async () => {
@@ -417,6 +439,79 @@ export default function App() {
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
   }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep]);
+
+  // Puzzle coach-marks: the first time a player sees each symbol in a real
+  // (non-tutorial) puzzle, surface a one-line tooltip anchored to the first
+  // cell that carries it. We pick at most one active coach at a time — the
+  // "fill" hint takes precedence because it's the base rule; "clear" comes
+  // next. Dismisses on placement (handlePlace) or the CoachMark's own
+  // internal timeout. The effect queries DOM directly (boardRef) to anchor
+  // to a specific cell, so this is legitimate side-effect work — not state
+  // derivable in render. Guarding each setState with an equality check keeps
+  // React from re-rendering when nothing actually changes.
+  useEffect(() => {
+    if (state.mode !== 'puzzle' || state.puzzleDifficulty === 'tutorial') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale coach state when the user leaves puzzle mode
+      if (activeCoach !== null) setActiveCoach(null);
+      if (coachAnchor !== null) setCoachAnchor(null);
+      return;
+    }
+    if (activeCoach !== null) return;
+
+    const target = state.puzzleTarget;
+    if (!target || !boardRef.current) return;
+
+    const findFirstCellMatching = (
+      predicate: (r: number, c: number) => boolean
+    ): HTMLElement | null => {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (!predicate(r, c)) continue;
+          const selector = `[data-coord="${r},${c}"]`;
+          const el = boardRef.current?.querySelector<HTMLElement>(selector);
+          if (el) return el;
+        }
+      }
+      return null;
+    };
+
+    if (!coachSeen.fill) {
+      const anchor = findFirstCellMatching(
+        (r, c) => target[r][c] && state.board[r][c] === null
+      );
+      if (anchor) {
+        setCoachAnchor(anchor);
+        setActiveCoach('fill');
+        return;
+      }
+    }
+
+    if (!coachSeen.clear) {
+      const anchor = findFirstCellMatching(
+        (r, c) => !target[r][c] && state.board[r][c] !== null
+      );
+      if (anchor) {
+        setCoachAnchor(anchor);
+        setActiveCoach('clear');
+      }
+    }
+  }, [
+    state.mode,
+    state.puzzleDifficulty,
+    state.puzzleTarget,
+    state.board,
+    coachSeen.fill,
+    coachSeen.clear,
+    activeCoach,
+    coachAnchor,
+  ]);
+
+  const dismissCoach = useCallback(() => {
+    if (activeCoach === null) return;
+    markCoachSeen(activeCoach);
+    setActiveCoach(null);
+    setCoachAnchor(null);
+  }, [activeCoach, markCoachSeen]);
 
   // A hash-based share link arriving while the app is already open (e.g.
   // the browser focuses an existing tab instead of reloading) only triggers
@@ -698,6 +793,9 @@ export default function App() {
             onJump={(idx) => dispatch({ type: 'TUTORIAL_GOTO', step: idx })}
           />
         )}
+        {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
+          <PuzzleLegend />
+        )}
         <Board
           boardRef={boardRef}
           previewCells={preview?.cells}
@@ -711,10 +809,8 @@ export default function App() {
           <div className="piece-tray-wrap">
             <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
             <p className="piece-tray-hint">
-              {state.mode === 'puzzle'
-                ? state.puzzleDifficulty === 'tutorial'
-                  ? 'Tap to rotate · drag to place'
-                  : `${puzzleDifficultyLabel(state.puzzleDifficulty)} — fill \u25CB cells, clear \u2715 cells.`
+              {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
+                ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
                 : 'Tap to rotate · drag to place'}
             </p>
           </div>
@@ -772,6 +868,17 @@ export default function App() {
             centerX={celebration.centerX}
             centerY={celebration.centerY}
             onComplete={() => setCelebration(null)}
+          />
+        )}
+        {activeCoach && coachAnchor && (
+          <CoachMark
+            anchor={coachAnchor}
+            text={
+              activeCoach === 'fill'
+                ? 'Fill the ringed cells to win.'
+                : 'Cells marked X must be empty at the end.'
+            }
+            onDismiss={dismissCoach}
           />
         )}
       </div>

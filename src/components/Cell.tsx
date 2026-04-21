@@ -3,13 +3,16 @@ type CellProps = {
   preview?: 'valid' | 'invalid' | null;
   justPlaced?: boolean;
   willClear?: boolean;
+  /** When set, emitted as `data-coord` so coach marks can find this cell. */
+  coord?: string;
   /**
    * Puzzle-mode target hint:
    *   'needs-fill'  — this cell is empty but the target requires it filled.
    *   'needs-clear' — this cell is filled but the target requires it empty.
-   *   'target-met'  — cell is filled and is part of the target (keep the
-   *                   target tint visible so the player can still see
-   *                   which cells belong to the pattern).
+   *   'target-met'  — cell is filled and is part of the target (no dedicated
+   *                   glyph; it just reads as "filled". A subtle family tint
+   *                   groups it with needs-fill cells so the player can still
+   *                   see which cells belong to the pattern).
    *   'neutral'     — cell matches the target and is not part of it.
    * Undefined in non-puzzle modes.
    */
@@ -27,7 +30,7 @@ function hexToRgba(hex: string, alpha: number): string | undefined {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function Cell({ color, preview, justPlaced, willClear, targetState }: CellProps) {
+export function Cell({ color, preview, justPlaced, willClear, targetState, coord }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
 
@@ -51,7 +54,6 @@ export function Cell({ color, preview, justPlaced, willClear, targetState }: Cel
   }
   if (!preview && targetState === 'needs-fill') className += ' cell--target-needs-fill';
   if (!preview && targetState === 'needs-clear') className += ' cell--target-needs-clear';
-  if (!preview && targetState === 'target-met') className += ' cell--target-met';
 
-  return <div className={className} style={style} />;
+  return <div className={className} style={style} data-coord={coord} />;
 }

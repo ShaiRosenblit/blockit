@@ -87,9 +87,9 @@ const ROW_SEVEN_PREFILL: ReadonlyArray<readonly [number, number]> = [
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 1. Drag & drop: single piece onto a clearly-marked outline.
   {
-    title: 'Step 1 — Drag & drop',
-    text: 'Welcome to Blockit! Drag the piece from the tray onto the highlighted target cells.',
-    hint: 'Press and hold to pick it up, then drop it so every cell lines up with the ringed cells.',
+    title: 'Step 1 — Drag onto the ringed cells',
+    text: 'Welcome to Blockit! Drag the piece from the tray onto the ringed cells on the board.',
+    hint: 'Press and hold to pick it up, then drop it so every block lines up with a ringed cell.',
     board: createEmptyBoard(),
     tray: [buildPiece('tut1-h3', [[0, 0], [0, 1], [0, 2]], CYAN)],
     target: targetFromCells([[4, 2], [4, 3], [4, 4]]),
@@ -107,8 +107,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
   // 3. Multiple pieces filling a target.
   {
-    title: 'Step 3 — Fill the target',
-    text: 'Use both dominoes to complete the 2×2 target. You solve a puzzle when every highlighted cell is filled and nothing else is.',
+    title: 'Step 3 — Fill every ringed cell',
+    text: 'Use both dominoes to fill the 2×2 ring of target cells. A puzzle is solved when every ringed cell is filled and no extra cells remain.',
     hint: 'Pieces can be placed in any order. Try one, then the other.',
     board: createEmptyBoard(),
     tray: [
@@ -130,9 +130,9 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
   // 5. Plan the order: use a clear to remove unwanted cells, then hit the target.
   {
-    title: 'Step 5 — Plan the order',
-    text: 'The red-striped cells must go. Complete the bottom row with one piece to clear them, then fill the target with the other.',
-    hint: 'Order matters. If you fill the target first, you still have to get rid of the red stripes.',
+    title: 'Step 5 — Cells marked X must be empty',
+    text: 'The cells marked with an X must be empty when you finish. Complete the bottom row with one piece to clear them, then fill the ringed cells with the other.',
+    hint: 'Order matters. If you fill the ringed cells first, you still have to get rid of the X cells.',
     board: boardWithPrefill(ROW_SEVEN_PREFILL),
     tray: [
       buildPiece('tut5-h2', [[0, 0], [0, 1]], CYAN),

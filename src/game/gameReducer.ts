@@ -278,9 +278,11 @@ function loadMode(): GameMode {
     const stored = localStorage.getItem(MODE_KEY);
     if (stored === 'classic' || stored === 'puzzle') return stored;
   } catch { /* noop */ }
-  // Dev servers: land in puzzle mode first so target-hint bake-offs and all
-  // modes stay one click away; production default stays casual.
-  return import.meta.env.DEV ? 'puzzle' : 'classic';
+  // First-time players land in Puzzle mode; combined with loadPuzzleDifficulty's
+  // default of 'tutorial', this drops new visitors straight into the guided
+  // intro instead of leaving them to figure Classic out on their own. Anyone
+  // who has played before has MODE_KEY saved and is unaffected.
+  return 'puzzle';
 }
 
 function saveMode(mode: GameMode) {

@@ -286,13 +286,14 @@ body {
  * ---- Puzzle-mode "Blueprint" target hints -----------------------------------
  *
  * Metaphor: architect's blueprint -- target cells are "drawn" onto the board.
- * Every state uses 2+ independent visual channels (shape + brightness/pattern)
- * so hints are legible on any piece hue, in greyscale, and under CVD.
- * Design is fully static -- no animations -- for a calm, focused board.
+ * Two symbols, intentionally small vocabulary so a first-time player can hold
+ * the rule in their head. Each uses 2+ independent visual channels (shape +
+ * brightness/tint) so hints are legible on any piece hue, in greyscale, and
+ * under CVD. Design is fully static -- no animations -- for a calm board.
  *
  *   needs-fill  -- empty, target requires fill   -> hollow centre ring + faint wash
- *   target-met  -- filled, correct               -> corner confirmation dot
- *   needs-clear -- filled, must vacate (error)   -> hazard stripes + X bars
+ *   target-met  -- filled, correct               -> no glyph; family wash only
+ *   needs-clear -- filled, must vacate (error)   -> faint red tint + centre X
  *   neutral     -- no decoration
  *
  * All rules are scoped to .board--puzzle or .cell--target-* classes that are
@@ -342,49 +343,35 @@ body {
 }
 
 /* -- target-met ---------------------------------------------------------------
- * Small filled dot in the top-right corner -- white + dark halo so it reads
- * on every piece colour (no hue dependency).
- * Channels: shape (circle), position (corner badge), brightness contrast.
+ * A filled-correct cell carries only the shared family wash (via
+ * .cell--target-family above) -- no dedicated glyph. Absence of a ring or
+ * X already communicates "done", and dropping the confirmation dot removes
+ * one of three competing symbols from the board for a calmer read.
  */
-.cell--target-met::after {
-  content: '';
-  position: absolute;
-  top: 11%;
-  right: 11%;
-  width: 22%;
-  height: 22%;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.38);
-  pointer-events: none;
-}
 
 /* -- needs-clear --------------------------------------------------------------
- * Three independent channels: diagonal hazard stripes (pattern), crimson tint
- * (brightness), and an X formed by two crossing bars (shape).
- * Readable in greyscale and under all common CVD types.
+ * Two calm channels, weighted similarly to the needs-fill ring so a mixed
+ * board doesn't let needs-clear dominate:
+ *   - faint red tint (brightness channel)
+ *   - single centre X formed by two thin bars (shape channel)
+ * No diagonal hazard stripes -- they added a third, much louder channel that
+ * pulled the eye and made busy puzzles feel overwhelming. Still readable in
+ * greyscale and under all common CVD types.
  */
 .cell--target-needs-clear {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(210, 38, 38, 0.30) 0px,
-    rgba(210, 38, 38, 0.30) 3px,
-    transparent 3px,
-    transparent 9px
-  );
+  box-shadow: inset 0 0 0 1px rgba(255, 80, 80, 0.32);
 }
 
-/* Two bars that cross to form a bold X */
 .cell--target-needs-clear::before,
 .cell--target-needs-clear::after {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 58%;
-  height: 13%;
-  background: rgba(255, 52, 52, 0.88);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.50);
+  width: 46%;
+  height: 9%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   border-radius: 2px;
   pointer-events: none;
 }
@@ -395,6 +382,140 @@ body {
 
 .cell--target-needs-clear::after {
   transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/*
+ * ---- Puzzle legend ----------------------------------------------------------
+ *
+ * Always-visible, tiny key rendered above the board in numeric puzzle levels
+ * (hidden during the tutorial). Uses the real <Cell> component inside a
+ * miniature .board--puzzle wrapper so the legend glyphs and the board
+ * glyphs can never drift apart.
+ */
+.puzzle-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 0 auto 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.puzzle-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/*
+ * Override the shared --cell-size locally so the swatch renders small,
+ * independent of the actual board size (which can grow to ~56px on desktop).
+ * Scoping the override to the swatch means the real board is untouched.
+ */
+.puzzle-legend__swatch {
+  --cell-size: 22px;
+  --gap: 0px;
+  display: inline-flex;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 4px;
+}
+
+.puzzle-legend__label {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/*
+ * ---- Coach marks ------------------------------------------------------------
+ *
+ * Floating pointer bubble that explains a puzzle symbol the first time the
+ * player meets it. Position is set inline by JS (anchored to a cell); the
+ * modifier classes --below / --above pick which side the arrow sits on.
+ */
+.coach-mark {
+  position: fixed;
+  transform: translate(-50%, 0);
+  z-index: 40;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: coach-mark-in 220ms ease-out both;
+}
+
+.coach-mark--above {
+  transform: translate(-50%, -100%);
+}
+
+.coach-mark__bubble {
+  background: rgba(20, 28, 38, 0.96);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  max-width: 240px;
+  text-align: center;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(78, 205, 196, 0.45);
+}
+
+.coach-mark__arrow {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+}
+
+.coach-mark--below .coach-mark__arrow {
+  border-bottom: 8px solid rgba(20, 28, 38, 0.96);
+  filter: drop-shadow(0 -1px 0 rgba(78, 205, 196, 0.45));
+  margin-bottom: -1px;
+  order: 0;
+}
+
+.coach-mark--above .coach-mark__arrow {
+  border-top: 8px solid rgba(20, 28, 38, 0.96);
+  filter: drop-shadow(0 1px 0 rgba(78, 205, 196, 0.45));
+  margin-top: -1px;
+  order: 2;
+}
+
+.coach-mark--above .coach-mark__bubble {
+  order: 1;
+}
+
+@keyframes coach-mark-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) translateY(0);
+  }
+}
+
+.coach-mark--above {
+  animation-name: coach-mark-in-above;
+}
+
+@keyframes coach-mark-in-above {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(0);
+  }
 }
 
 /*

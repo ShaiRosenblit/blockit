@@ -41,6 +41,7 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
       cells.push(
         <Cell
           key={key}
+          coord={key}
           color={preview === 'valid' ? previewColor ?? null : state.board[r][c]}
           preview={preview}
           justPlaced={justPlaced}
