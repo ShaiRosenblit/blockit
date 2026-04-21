@@ -16,16 +16,18 @@ import { PIECE_CATALOG } from './pieces';
  * are a core planning tool: clearing a row removes unwanted starting fill, so
  * the puzzle is about *which pieces go where and in what order*.
  *
- * Difficulties 1–5 progressively dial up the challenge by growing piece count,
- * piece size, target size, and the amount of pre-fill that must be cleared away.
- * Difficulty 5 is at least as hard as the old Level 10.
+ * Difficulties 1–4 (Easy / Normal / Hard / Expert) progressively dial up the
+ * challenge by growing piece count, piece size, target size, and the amount
+ * of pre-fill that must be cleared away. Expert is at least as hard as the
+ * old Level 10; Easy is tuned to feel meaningful from the first move (the
+ * previous Level 1 was nearly trivial so it's been folded into Normal).
  *
  * Generator strategy: forward-simulation on a (possibly pre-filled) board.
  * Because the simulation itself is a valid solution, every generated puzzle
  * is guaranteed solvable. Quality filters reject degenerate targets.
  */
 
-export const PUZZLE_MAX_DIFFICULTY: PuzzleLevel = 5;
+export const PUZZLE_MAX_DIFFICULTY: PuzzleLevel = 4;
 export const PUZZLE_MIN_DIFFICULTY: PuzzleLevel = 1;
 
 export type DifficultySpec = {
@@ -43,12 +45,14 @@ export type DifficultySpec = {
   minPrefillCleared: number;
 };
 
+// Easy is a blend of the retired levels 1 and 2: small pieces like old Level 1
+// but a 3-piece tray and slightly bigger target like old Level 2, so the very
+// first puzzle still asks the player to think rather than just drop & done.
 const DIFFICULTY_SPECS: Record<PuzzleLevel, DifficultySpec> = {
-  1: { difficulty: 1, pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 8,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  2: { difficulty: 2, pieceCount: 3, minPieceCells: 2, maxPieceCells: 4, minTargetCells: 7,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
-  3: { difficulty: 3, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
-  4: { difficulty: 4, pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
-  5: { difficulty: 5, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
+  1: { difficulty: 1, pieceCount: 3, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 5,  maxTargetCells: 10, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
+  2: { difficulty: 2, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
+  3: { difficulty: 3, pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
+  4: { difficulty: 4, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
 };
 
 export function clampPuzzleDifficulty(difficulty: number): PuzzleLevel {

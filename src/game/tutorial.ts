@@ -6,7 +6,7 @@ import { createEmptyBoard } from './board';
  * Authored step-by-step introduction shown before the numeric puzzle levels.
  * Each step is a fully-formed puzzle (board + tray + target pattern) paired
  * with instructional copy. The player drives progression by solving each
- * step; on the final step they graduate to Puzzle 1.
+ * step; on the final step they graduate to the first Easy puzzle.
  *
  * Design notes:
  * - Steps are intentionally tiny so the meaning of each rule lands clearly.

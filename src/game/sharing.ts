@@ -15,7 +15,9 @@ import { clampPuzzleDifficulty } from './puzzleGenerator';
  *
  * Byte layout (VERSION 1):
  *   [0]         VERSION (= 1)
- *   [1]         difficulty (1..5)
+ *   [1]         difficulty (new encoders emit 1..4; legacy links in the wild
+ *                 may encode 1..5 from the pre-rebalance scheme and are
+ *                 remapped to the new 1..4 range on decode).
  *   [2..33]     board, 64 cells packed 2 per byte (high nibble first).
  *                 nibble values:
  *                   0       = empty
@@ -138,7 +140,18 @@ export function decodePuzzle(encoded: string): EncodablePuzzle | null {
   if (bytes[0] !== VERSION) return null;
 
   let off = 1;
-  const difficulty = clampPuzzleDifficulty(bytes[off++]);
+  // Legacy share links encoded difficulties 1..5 under the old Puzzle
+  // numbering. The rebalanced scheme collapsed old 1 into old 2 and renamed
+  // the rest, so old values map: 1→1, 2→1, 3→2, 4→3, 5→4.
+  const rawDifficulty = bytes[off++];
+  const remappedLegacy =
+    rawDifficulty === 1 ? 1 :
+    rawDifficulty === 2 ? 1 :
+    rawDifficulty === 3 ? 2 :
+    rawDifficulty === 4 ? 3 :
+    rawDifficulty === 5 ? 4 :
+    rawDifficulty;
+  const difficulty = clampPuzzleDifficulty(remappedLegacy);
 
   const board: BoardGrid = Array.from({ length: BOARD_SIZE }, () =>
     Array.from({ length: BOARD_SIZE }, () => null as string | null)

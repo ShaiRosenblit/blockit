@@ -85,7 +85,7 @@ export type GameAction =
       tray: PieceShape[];
       target: TargetPattern;
     }
-  /** Advance to the next tutorial step; graduate to Puzzle 1 after the last step. */
+  /** Advance to the next tutorial step; graduate to the Easy puzzle after the last step. */
   | { type: 'TUTORIAL_NEXT' }
   /** Jump to a specific tutorial step (for dot-indicator navigation). */
   | { type: 'TUTORIAL_GOTO'; step: number };
@@ -100,6 +100,9 @@ const LEGACY_RIDDLE_LEVEL_KEY = 'blockit-riddle-level';
 const LEGACY_RIDDLE_MAX_LEVEL_KEY = 'blockit-riddle-max-level';
 const LEGACY_RIDDLE_PUZZLE_KEY = 'blockit-riddle-puzzle';
 const LEGACY_RIDDLE_DIFFICULTY_KEY = 'blockit-riddle-difficulty';
+// Marker for the 1..5 → 1..4 rebalance (Easy/Normal/Hard/Expert). One-shot;
+// its mere presence means the rename migration has already run.
+const PUZZLE_RENUMBER_MARKER_KEY = 'blockit-puzzle-renumbered-v2';
 
 function bestScoreKey(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLevel): string {
   return `blockit-best-${mode}-${difficulty}`;
@@ -107,14 +110,6 @@ function bestScoreKey(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLeve
 
 function puzzleKey(difficulty: PuzzleLevel): string {
   return `blockit-puzzle-${difficulty}`;
-}
-
-function legacyRiddlePuzzleKey(difficulty: PuzzleLevel): string {
-  return `blockit-riddle-puzzle-${difficulty}`;
-}
-
-function legacyRiddleBestScoreKey(difficulty: PuzzleLevel): string {
-  return `blockit-best-riddle-${difficulty}`;
 }
 
 function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLevel): number {
@@ -192,10 +187,12 @@ function migrateLegacyKeys() {
 
     const legacyRiddleLevel = localStorage.getItem(LEGACY_RIDDLE_LEVEL_KEY);
     if (legacyRiddleLevel !== null && !localStorage.getItem(PUZZLE_DIFFICULTY_KEY)) {
-      // Old 1..10 levels compress into new 1..5 difficulties.
+      // Old 1..10 riddle levels compress into the old 1..5 scheme here; the
+      // second-wave rebalance below then collapses those into the current
+      // 1..4 (Easy/Normal/Hard/Expert) range.
       const n = Number(legacyRiddleLevel);
       if (Number.isFinite(n) && n > 0) {
-        const mapped = clampPuzzleDifficulty(Math.ceil(n / 2));
+        const mapped = Math.min(5, Math.max(1, Math.ceil(n / 2)));
         localStorage.setItem(PUZZLE_DIFFICULTY_KEY, String(mapped));
       }
     }
@@ -219,24 +216,59 @@ function migrateLegacyKeys() {
     localStorage.removeItem(LEGACY_RIDDLE_DIFFICULTY_KEY);
 
     // Rehome stored per-difficulty puzzles and best scores under the new
-    // 'puzzle' names.
+    // 'puzzle' names. The old riddle scheme ran 1..5 — after this block
+    // they're rehomed under the same numeric keys; the second migration
+    // below then collapses the 1..5 range into the new 1..4 range.
     for (let d = 1; d <= 5; d++) {
-      const level = d as PuzzleLevel;
-
-      const legacyPuzzle = localStorage.getItem(legacyRiddlePuzzleKey(level));
+      const key = `blockit-puzzle-${d}`;
+      const legacyPuzzle = localStorage.getItem(`blockit-riddle-puzzle-${d}`);
       if (legacyPuzzle !== null) {
-        if (!localStorage.getItem(puzzleKey(level))) {
-          localStorage.setItem(puzzleKey(level), legacyPuzzle);
-        }
-        localStorage.removeItem(legacyRiddlePuzzleKey(level));
+        if (!localStorage.getItem(key)) localStorage.setItem(key, legacyPuzzle);
+        localStorage.removeItem(`blockit-riddle-puzzle-${d}`);
       }
 
-      const legacyBest = localStorage.getItem(legacyRiddleBestScoreKey(level));
+      const legacyBest = localStorage.getItem(`blockit-best-riddle-${d}`);
       if (legacyBest !== null) {
-        const newKey = bestScoreKey('puzzle', level);
+        const newKey = `blockit-best-puzzle-${d}`;
         if (!localStorage.getItem(newKey)) localStorage.setItem(newKey, legacyBest);
-        localStorage.removeItem(legacyRiddleBestScoreKey(level));
+        localStorage.removeItem(`blockit-best-riddle-${d}`);
       }
+    }
+
+    // Second wave: the 1..5 → 1..4 rebalance. Old level 1 was nearly trivial
+    // and has been folded into the new Easy, then the rest renumbered.
+    // Mapping: 1→1, 2→1, 3→2, 4→3, 5→4. Done once, guarded by a marker.
+    if (!localStorage.getItem(PUZZLE_RENUMBER_MARKER_KEY)) {
+      const remap = (n: number): number =>
+        n <= 2 ? 1 : n === 3 ? 2 : n === 4 ? 3 : 4;
+
+      const rawDiff = localStorage.getItem(PUZZLE_DIFFICULTY_KEY);
+      if (rawDiff !== null && rawDiff !== 'tutorial') {
+        const n = Number(rawDiff);
+        if (Number.isFinite(n) && n >= 1 && n <= 5) {
+          localStorage.setItem(PUZZLE_DIFFICULTY_KEY, String(remap(n)));
+        }
+      }
+
+      // Stored puzzles encode their own `difficulty` field, so simply dropping
+      // everything is the cleanest path — a fresh puzzle at the new difficulty
+      // will be generated on first load. Best scores, on the other hand,
+      // represent real player progress so we migrate the ones whose semantic
+      // level survives (old 3/4/5) and drop the ones that were folded away.
+      const oldBest3 = localStorage.getItem('blockit-best-puzzle-3');
+      const oldBest4 = localStorage.getItem('blockit-best-puzzle-4');
+      const oldBest5 = localStorage.getItem('blockit-best-puzzle-5');
+
+      for (let d = 1; d <= 5; d++) {
+        localStorage.removeItem(`blockit-puzzle-${d}`);
+        localStorage.removeItem(`blockit-best-puzzle-${d}`);
+      }
+
+      if (oldBest3 !== null) localStorage.setItem('blockit-best-puzzle-2', oldBest3);
+      if (oldBest4 !== null) localStorage.setItem('blockit-best-puzzle-3', oldBest4);
+      if (oldBest5 !== null) localStorage.setItem('blockit-best-puzzle-4', oldBest5);
+
+      localStorage.setItem(PUZZLE_RENUMBER_MARKER_KEY, '1');
     }
   } catch { /* noop */ }
 }
@@ -728,7 +760,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const next = state.tutorialStep + 1;
       if (next >= TUTORIAL_STEP_COUNT) {
         // Graduation: mark the tutorial completed and drop the player into
-        // Puzzle 1 — the natural next challenge.
+        // the Easy puzzle — the natural next challenge.
         saveTutorialStep(TUTORIAL_STEP_COUNT - 1);
         savePuzzleDifficulty(1);
         saveMode('puzzle');

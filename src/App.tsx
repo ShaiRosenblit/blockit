@@ -8,7 +8,7 @@ import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord } from './game/types';
-import { BOARD_SIZE, CLASSIC_DIFFICULTIES, PUZZLE_DIFFICULTIES } from './game/types';
+import { BOARD_SIZE, CLASSIC_DIFFICULTIES, PUZZLE_DIFFICULTIES, puzzleDifficultyLabel } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -38,7 +38,7 @@ let celebrationRunId = 0;
 /**
  * Map a puzzle difficulty to a 0..1 celebration intensity. Tutorial steps
  * get a modest cheer (with the final step bumped a bit for graduation);
- * numeric puzzles ramp linearly so Puzzle 5 feels genuinely triumphant.
+ * numeric puzzles ramp linearly so Expert feels genuinely triumphant.
  */
 function difficultyToCelebrationIntensity(
   difficulty: PuzzleDifficulty,
@@ -48,8 +48,8 @@ function difficultyToCelebrationIntensity(
     const isLast = tutorialStep >= TUTORIAL_STEP_COUNT - 1;
     return isLast ? 0.55 : 0.2;
   }
-  // Puzzle levels 1..5 map to 0.32..1.0 — noticeable escalation between steps.
-  const t = (difficulty - 1) / 4;
+  // Puzzle levels 1..4 map to 0.32..1.0 — noticeable escalation between steps.
+  const t = (difficulty - 1) / 3;
   return 0.32 + t * 0.68;
 }
 
@@ -346,22 +346,23 @@ export default function App() {
     // Tailor the share copy to the moment: a just-solved puzzle reads as a
     // brag / dare, a just-failed one as a "beat this one for me", and any
     // mid-game share (header button) stays neutral.
+    const difficultyLabel = puzzleDifficultyLabel(puzzleDifficulty);
     const { title, text } = (() => {
       if (puzzleResult === 'solved') {
         return {
           title: 'Blockit challenge',
-          text: `Just cracked this Blockit puzzle (difficulty ${puzzleDifficulty}). Your move — think you can match it?`,
+          text: `Just cracked this ${difficultyLabel} Blockit puzzle. Your move — think you can match it?`,
         };
       }
       if (puzzleResult === 'failed') {
         return {
           title: 'Blockit challenge',
-          text: `This Blockit puzzle (difficulty ${puzzleDifficulty}) got me. See if you can crack it.`,
+          text: `This ${difficultyLabel} Blockit puzzle got me. See if you can crack it.`,
         };
       }
       return {
         title: 'Blockit puzzle',
-        text: `Take a shot at this Blockit puzzle (difficulty ${puzzleDifficulty}).`,
+        text: `Take a shot at this ${difficultyLabel} Blockit puzzle.`,
       };
     })();
 
@@ -627,7 +628,7 @@ export default function App() {
                 </button>
               ))
             : PUZZLE_DIFFICULTIES.map((d) => {
-                const label = d === 'tutorial' ? 'Tutorial' : d;
+                const label = puzzleDifficultyLabel(d);
                 const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
                 return (
                   <button
@@ -713,7 +714,7 @@ export default function App() {
               {state.mode === 'puzzle'
                 ? state.puzzleDifficulty === 'tutorial'
                   ? 'Tap to rotate · drag to place'
-                  : `Difficulty ${state.puzzleDifficulty} — fill \u25CB cells, clear \u2715 cells.`
+                  : `${puzzleDifficultyLabel(state.puzzleDifficulty)} — fill \u25CB cells, clear \u2715 cells.`
                 : 'Tap to rotate · drag to place'}
             </p>
           </div>

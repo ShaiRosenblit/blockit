@@ -23,8 +23,13 @@ export type GameMode = 'classic' | 'puzzle';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
-/** Numeric puzzle levels — the real puzzles. */
-export type PuzzleLevel = 1 | 2 | 3 | 4 | 5;
+/**
+ * Numeric puzzle levels — the real puzzles. Internally we keep a numeric
+ * identifier (1..4) because share-link encoding, localStorage keys, and
+ * persistence are all happier with a tiny stable integer; the player-facing
+ * label lives in `PUZZLE_LEVEL_LABELS` and mirrors the classic-mode names.
+ */
+export type PuzzleLevel = 1 | 2 | 3 | 4;
 
 /**
  * Puzzle difficulty selector value. `'tutorial'` is a guided step-by-step
@@ -45,12 +50,29 @@ export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'hard',
 ] as const;
 
-export const PUZZLE_NUMERIC_DIFFICULTIES: readonly PuzzleLevel[] = [1, 2, 3, 4, 5] as const;
+export const PUZZLE_NUMERIC_DIFFICULTIES: readonly PuzzleLevel[] = [1, 2, 3, 4] as const;
 
 export const PUZZLE_DIFFICULTIES: readonly PuzzleDifficulty[] = [
   'tutorial',
   ...PUZZLE_NUMERIC_DIFFICULTIES,
 ] as const;
+
+/**
+ * Player-facing labels for puzzle levels. Kept parallel to classic-mode
+ * difficulty names so the two modes read as a single ramp. Zen has no
+ * puzzle analogue (puzzles are goal-oriented rather than endless) so the
+ * puzzle ramp starts at Easy.
+ */
+export const PUZZLE_LEVEL_LABELS: Record<PuzzleLevel, string> = {
+  1: 'Easy',
+  2: 'Normal',
+  3: 'Hard',
+  4: 'Expert',
+};
+
+export function puzzleDifficultyLabel(d: PuzzleDifficulty): string {
+  return d === 'tutorial' ? 'Tutorial' : PUZZLE_LEVEL_LABELS[d];
+}
 
 export function isPuzzleLevel(d: PuzzleDifficulty): d is PuzzleLevel {
   return d !== 'tutorial';

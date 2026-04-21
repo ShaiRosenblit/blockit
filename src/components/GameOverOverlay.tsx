@@ -3,6 +3,7 @@ import { useGame } from '../hooks/useGame';
 import { haptics } from '../haptics';
 import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
+import { puzzleDifficultyLabel } from '../game/types';
 
 type Props = {
   /**
@@ -63,7 +64,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const subline = isTutorial
     ? solved
       ? isLastTutorialStep
-        ? "You've got the hang of Blockit. Time to tackle Puzzle 1!"
+        ? "You've got the hang of Blockit. Time to tackle your first Easy puzzle!"
         : 'On to the next lesson.'
       : 'Use Retry to reset this step and give it another go.'
     : isPuzzle
@@ -75,7 +76,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const selectionLabel = isTutorial
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
     : isPuzzle
-      ? `Puzzle · Difficulty ${state.puzzleDifficulty}`
+      ? `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`
       : `Classic · ${state.classicDifficulty}`;
 
   // Puzzle mode is a binary solve/not-solve challenge, so numeric score
@@ -132,7 +133,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 className="game-over-panel__btn game-over-panel__btn--primary"
                 onClick={() => dispatch({ type: 'TUTORIAL_NEXT' })}
               >
-                {isLastTutorialStep ? 'Start Puzzle 1' : 'Next step'}
+                {isLastTutorialStep ? 'Start Easy puzzle' : 'Next step'}
               </button>
             ) : (
               <button
