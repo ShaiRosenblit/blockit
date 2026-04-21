@@ -7,7 +7,7 @@ import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
 type Props = {
   /**
    * Called when the player taps "Challenge a friend". Only relevant in
-   * riddle mode; tutorial steps aren't shareable. Parent owns the share
+   * puzzle mode; tutorial steps aren't shareable. Parent owns the share
    * flow so behaviour stays consistent with the header's Share button.
    */
   onShare?: () => void;
@@ -24,10 +24,10 @@ type Props = {
 export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const { state, dispatch } = useGame();
 
-  const isRiddle = state.mode === 'riddle';
-  const solved = isRiddle && state.riddleResult === 'solved';
-  const failed = isRiddle && state.riddleResult === 'failed';
-  const isTutorial = isRiddle && state.riddleDifficulty === 'tutorial';
+  const isPuzzle = state.mode === 'puzzle';
+  const solved = isPuzzle && state.puzzleResult === 'solved';
+  const failed = isPuzzle && state.puzzleResult === 'failed';
+  const isTutorial = isPuzzle && state.puzzleDifficulty === 'tutorial';
   const isLastTutorialStep =
     isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;
 
@@ -45,7 +45,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
   if (!state.isGameOver) return null;
 
-  // Tutorial messaging is separate from the generic riddle/classic copy so
+  // Tutorial messaging is separate from the generic puzzle/classic copy so
   // the overlay teaches rather than congratulates when the student solves
   // an authored step, and encourages a retry (not "new puzzle") on failure.
   const headline = isTutorial
@@ -63,10 +63,10 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const subline = isTutorial
     ? solved
       ? isLastTutorialStep
-        ? "You've got the hang of Blockit. Time to tackle Riddle 1!"
+        ? "You've got the hang of Blockit. Time to tackle Puzzle 1!"
         : 'On to the next lesson.'
       : 'Use Retry to reset this step and give it another go.'
-    : isRiddle
+    : isPuzzle
       ? solved
         ? 'Nicely done.'
         : 'Tip: row/column clears can remove unwanted cells — plan the order.'
@@ -74,15 +74,15 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
   const selectionLabel = isTutorial
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
-    : isRiddle
-      ? `Riddle · Difficulty ${state.riddleDifficulty}`
+    : isPuzzle
+      ? `Puzzle · Difficulty ${state.puzzleDifficulty}`
       : `Classic · ${state.classicDifficulty}`;
 
-  // Riddle mode is a binary solve/not-solve challenge, so numeric score
+  // Puzzle mode is a binary solve/not-solve challenge, so numeric score
   // and per-difficulty best aren't meaningful feedback — they're suppressed
   // here. Classic mode still shows both.
-  const bestLabel = !isRiddle ? `Best (${state.classicDifficulty})` : null;
-  const showStats = !isRiddle;
+  const bestLabel = !isPuzzle ? `Best (${state.classicDifficulty})` : null;
+  const showStats = !isPuzzle;
 
   const variant = solved
     ? 'game-over-panel--solved'
@@ -132,7 +132,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 className="game-over-panel__btn game-over-panel__btn--primary"
                 onClick={() => dispatch({ type: 'TUTORIAL_NEXT' })}
               >
-                {isLastTutorialStep ? 'Start Riddle 1' : 'Next step'}
+                {isLastTutorialStep ? 'Start Puzzle 1' : 'Next step'}
               </button>
             ) : (
               <button
@@ -144,12 +144,12 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
             )}
             <button
               className="game-over-panel__btn"
-              onClick={() => dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: 1 })}
+              onClick={() => dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: 1 })}
             >
               Skip tutorial
             </button>
           </>
-        ) : isRiddle ? (
+        ) : isPuzzle ? (
           <>
             {/* Primary action depends on outcome: after a solve the natural
                 next step is a fresh puzzle, not replaying the one you just
@@ -159,7 +159,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
               <>
                 <button
                   className="game-over-panel__btn game-over-panel__btn--primary"
-                  onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+                  onClick={() => dispatch({ type: 'NEW_PUZZLE' })}
                 >
                   New puzzle
                 </button>
@@ -180,17 +180,17 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 </button>
                 <button
                   className="game-over-panel__btn"
-                  onClick={() => dispatch({ type: 'NEW_RIDDLE' })}
+                  onClick={() => dispatch({ type: 'NEW_PUZZLE' })}
                 >
                   New puzzle
                 </button>
               </>
             )}
-            {onShare && state.riddleInitialBoard && state.riddleTarget && (
+            {onShare && state.puzzleInitialBoard && state.puzzleTarget && (
               <button
                 className="game-over-panel__btn game-over-panel__btn--wide"
                 onClick={onShare}
-                title="Share this riddle as a challenge"
+                title="Share this puzzle as a challenge"
               >
                 <span aria-hidden>{'\u{1F3AF}'}</span>{' '}
                 {shareStatus === 'copied'

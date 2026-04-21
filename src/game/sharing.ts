@@ -1,17 +1,17 @@
 import type {
   BoardGrid,
   PieceShape,
-  RiddleLevel,
+  PuzzleLevel,
   TargetPattern,
 } from './types';
 import { BOARD_SIZE, COLORS } from './types';
-import { clampRiddleDifficulty } from './riddleGenerator';
+import { clampPuzzleDifficulty } from './puzzleGenerator';
 
 /**
- * Share-link format for riddles. The entire starting state of a riddle
+ * Share-link format for puzzles. The entire starting state of a puzzle
  * (board, target pattern, tray pieces with colors & rotation) is serialized
  * into a compact byte stream, base64url-encoded, and placed in the URL hash
- * (`#r=<payload>`) so GitHub Pages routing doesn't need any special tricks.
+ * (`#p=<payload>`) so GitHub Pages routing doesn't need any special tricks.
  *
  * Byte layout (VERSION 1):
  *   [0]         VERSION (= 1)
@@ -30,6 +30,10 @@ import { clampRiddleDifficulty } from './riddleGenerator';
  *
  * `VERSION` lets the decoder reject unknown formats cleanly, so the layout
  * can be changed later without breaking old links in an uncontrolled way.
+ *
+ * Legacy note: the share hash previously used `#r=` (when this mode was
+ * called "riddle"). We still accept `r=` on decode so old links keep
+ * working, but emit the new `p=` prefix going forward.
  */
 
 const VERSION = 1;
@@ -71,19 +75,19 @@ function base64UrlToBytes(encoded: string): number[] | null {
   }
 }
 
-export type EncodableRiddle = {
-  difficulty: RiddleLevel;
+export type EncodablePuzzle = {
+  difficulty: PuzzleLevel;
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
 };
 
-export function encodeRiddle(riddle: EncodableRiddle): string {
-  const { difficulty, board, tray, target } = riddle;
+export function encodePuzzle(puzzle: EncodablePuzzle): string {
+  const { difficulty, board, tray, target } = puzzle;
   const bytes: number[] = [];
 
   bytes.push(VERSION);
-  bytes.push(clampRiddleDifficulty(difficulty));
+  bytes.push(clampPuzzleDifficulty(difficulty));
 
   // Board: 64 cells packed 2 per byte.
   for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i += 2) {
@@ -127,14 +131,14 @@ export function encodeRiddle(riddle: EncodableRiddle): string {
   return bytesToBase64Url(bytes);
 }
 
-export function decodeRiddle(encoded: string): EncodableRiddle | null {
+export function decodePuzzle(encoded: string): EncodablePuzzle | null {
   const bytes = base64UrlToBytes(encoded);
   if (!bytes) return null;
   if (bytes.length < 2 + 32 + 8 + 1) return null;
   if (bytes[0] !== VERSION) return null;
 
   let off = 1;
-  const difficulty = clampRiddleDifficulty(bytes[off++]);
+  const difficulty = clampPuzzleDifficulty(bytes[off++]);
 
   const board: BoardGrid = Array.from({ length: BOARD_SIZE }, () =>
     Array.from({ length: BOARD_SIZE }, () => null as string | null)
@@ -207,27 +211,31 @@ export function decodeRiddle(encoded: string): EncodableRiddle | null {
 }
 
 /** Build a full shareable URL pointing at the current origin + base URL. */
-export function buildShareUrl(riddle: EncodableRiddle): string {
-  const encoded = encodeRiddle(riddle);
+export function buildShareUrl(puzzle: EncodablePuzzle): string {
+  const encoded = encodePuzzle(puzzle);
   const base = import.meta.env.BASE_URL;
-  return `${window.location.origin}${base}#r=${encoded}`;
+  return `${window.location.origin}${base}#p=${encoded}`;
 }
 
 /**
- * Extract a shared-riddle payload from the current URL hash, if any.
+ * Extract a shared-puzzle payload from the current URL hash, if any.
  * Returns the raw encoded string (caller decides when to decode) so the
  * app can tell "there is a share link" apart from "link was there but
  * failed to decode" if it wants to.
+ *
+ * Accepts both the current `p=` prefix and the legacy `r=` prefix so
+ * previously-shared links continue to work.
  */
 export function parseSharePayload(): string | null {
   const hash = window.location.hash;
   if (!hash) return null;
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
+  if (h.startsWith('p=')) return h.slice(2);
   if (h.startsWith('r=')) return h.slice(2);
   return null;
 }
 
-/** Remove any shared-riddle marker from the URL without adding a history entry. */
+/** Remove any shared-puzzle marker from the URL without adding a history entry. */
 export function clearShareHash(): void {
   if (!window.location.hash) return;
   const url = window.location.pathname + window.location.search;

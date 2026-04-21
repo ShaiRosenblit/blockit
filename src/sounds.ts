@@ -89,9 +89,9 @@ export const sounds = {
   invalidDrop: () => play('invalid-drop.mp3', 0.35),
   gameOver: () => play('game-over.mp3', 0.6),
   /**
-   * Riddle-solve celebration. A bespoke ascending arpeggio + bell-chord
+   * Puzzle-solve celebration. A bespoke ascending arpeggio + bell-chord
    * fanfare; volume scales with intensity so tutorial solves stay gentle and
-   * the hardest riddle lands with a full, ringing reward.
+   * the hardest puzzle lands with a full, ringing reward.
    */
   celebrate: (intensity: number) => {
     const clamped = Math.max(0, Math.min(1, intensity));

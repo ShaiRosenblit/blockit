@@ -4,14 +4,14 @@ type CellProps = {
   justPlaced?: boolean;
   willClear?: boolean;
   /**
-   * Riddle-mode target hint:
+   * Puzzle-mode target hint:
    *   'needs-fill'  — this cell is empty but the target requires it filled.
    *   'needs-clear' — this cell is filled but the target requires it empty.
    *   'target-met'  — cell is filled and is part of the target (keep the
    *                   dashed outline visible so the player can still see
    *                   which cells belong to the pattern).
    *   'neutral'     — cell matches the target and is not part of it.
-   * Undefined in non-riddle modes.
+   * Undefined in non-puzzle modes.
    */
   targetState?: 'needs-fill' | 'needs-clear' | 'target-met' | 'neutral';
 };

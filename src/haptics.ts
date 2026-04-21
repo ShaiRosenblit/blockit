@@ -13,7 +13,7 @@ export const haptics = {
   invalidDrop: () => vibrate([15, 40, 15]),
   gameOver: () => vibrate([50, 80, 100, 80, 200]),
   /**
-   * Riddle-solve celebration. `intensity` is 0..1 (scales with difficulty).
+   * Puzzle-solve celebration. `intensity` is 0..1 (scales with difficulty).
    * Low intensity: single short pulse; high intensity: longer cheer burst.
    */
   celebrate: (intensity: number) => {

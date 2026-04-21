@@ -4,7 +4,7 @@ import { COLORS } from '../game/types';
 /**
  * Intensity is a 0..1 dial that governs every celebration knob at once:
  * piece count, burst radius, physical reach, duration, and fireworks.
- * Tutorial solves use a tiny value; the hardest numeric riddle maxes out.
+ * Tutorial solves use a tiny value; the hardest numeric puzzle maxes out.
  */
 type Props = {
   intensity: number;

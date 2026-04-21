@@ -3,15 +3,15 @@ import { BOARD_SIZE } from './types';
 import { createEmptyBoard } from './board';
 
 /**
- * Authored step-by-step introduction shown before the numeric riddle levels.
- * Each step is a fully-formed riddle (board + tray + target pattern) paired
+ * Authored step-by-step introduction shown before the numeric puzzle levels.
+ * Each step is a fully-formed puzzle (board + tray + target pattern) paired
  * with instructional copy. The player drives progression by solving each
- * step; on the final step they graduate to Riddle 1.
+ * step; on the final step they graduate to Puzzle 1.
  *
  * Design notes:
  * - Steps are intentionally tiny so the meaning of each rule lands clearly.
- * - We lean on the existing riddle machinery: target pattern + "all pieces
- *   placed → isGameOver + riddleResult" drives win/fail detection, and
+ * - We lean on the existing puzzle machinery: target pattern + "all pieces
+ *   placed → isGameOver + puzzleResult" drives win/fail detection, and
  *   `boardMatchesTarget` validates the final state. Tutorials never touch
  *   best-score storage.
  * - The `hint` copy is shown under the primary instruction in small text;
@@ -108,7 +108,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 3. Multiple pieces filling a target.
   {
     title: 'Step 3 — Fill the outline',
-    text: 'Use both dominoes to complete the 2×2 outline. You solve a riddle when every dashed cell is filled and nothing else is.',
+    text: 'Use both dominoes to complete the 2×2 outline. You solve a puzzle when every dashed cell is filled and nothing else is.',
     hint: 'Pieces can be placed in any order. Try one, then the other.',
     board: createEmptyBoard(),
     tray: [

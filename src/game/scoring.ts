@@ -1,7 +1,7 @@
 import type { PieceShape } from './types';
 
-/** Bonus when riddle mode clears the entire board after placing all three pieces. */
-export const RIDDLE_SOLVE_BONUS = 2500;
+/** Bonus when puzzle mode clears the entire board after placing all three pieces. */
+export const PUZZLE_SOLVE_BONUS = 2500;
 
 export function calculatePlacementScore(piece: PieceShape): number {
   return piece.cells.length;

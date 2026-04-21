@@ -82,7 +82,7 @@ body {
   opacity: 1;
 }
 
-/* Mode selector — top-level game type (Classic / Riddle / future modes). */
+/* Mode selector — top-level game type (Classic / Puzzle / future modes). */
 .mode-selector {
   display: inline-flex;
   gap: 0;
@@ -143,8 +143,8 @@ body {
   white-space: nowrap;
 }
 
-.difficulty-btn--riddle {
-  /* Riddle difficulties are numeric — no capitalize needed and a touch wider
+.difficulty-btn--puzzle {
+  /* Puzzle difficulties are numeric — no capitalize needed and a touch wider
    * glyph weight reads better centered. */
   text-transform: none;
   font-variant-numeric: tabular-nums;
@@ -160,7 +160,7 @@ body {
 }
 
 /*
- * Tutorial tab sits first in the riddle difficulty row. Slightly different
+ * Tutorial tab sits first in the puzzle difficulty row. Slightly different
  * typographic treatment (letter-spacing, subtle left divider) so it reads
  * as an onboarding option rather than "level 0".
  */
@@ -259,7 +259,7 @@ body {
 }
 
 /*
- * ---- Riddle-mode "Blueprint" target hints -----------------------------------
+ * ---- Puzzle-mode "Blueprint" target hints -----------------------------------
  *
  * Metaphor: architect's blueprint -- target cells are "drawn" onto the board.
  * Every state uses 2+ independent visual channels (shape + brightness/pattern)
@@ -271,12 +271,12 @@ body {
  *   needs-clear -- filled, must vacate (error)   -> hazard stripes + X bars
  *   neutral     -- no decoration
  *
- * All rules are scoped to .board--riddle or .cell--target-* classes that are
- * never emitted outside riddle mode -- zero visual diff for other difficulties.
+ * All rules are scoped to .board--puzzle or .cell--target-* classes that are
+ * never emitted outside puzzle mode -- zero visual diff for other difficulties.
  */
 
-/* Board-level riddle chrome -- cyan halo frames the puzzle board */
-.board--riddle {
+/* Board-level puzzle chrome -- cyan halo frames the puzzle board */
+.board--puzzle {
   box-shadow:
     0 0 0 2px rgba(78, 205, 196, 0.40),
     0 0 20px rgba(78, 205, 196, 0.14);
@@ -300,7 +300,7 @@ body {
   border-color: rgba(78, 205, 196, 0.38);
 }
 
-.board--riddle .cell.cell--target-needs-fill::before {
+.board--puzzle .cell.cell--target-needs-fill::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -374,7 +374,7 @@ body {
 }
 
 /*
- * Board-level action row: Restart (both modes) and New puzzle (riddle only).
+ * Board-level action row: Restart (both modes) and New puzzle (puzzle only).
  * Wraps on narrow viewports so nothing gets clipped on phones.
  */
 .board-controls {
@@ -1004,7 +1004,7 @@ body {
   }
 }
 
-/* ───────────────────── Riddle-solve celebration ───────────────────── */
+/* ───────────────────── Puzzle-solve celebration ───────────────────── */
 
 .celebration-overlay {
   position: fixed;

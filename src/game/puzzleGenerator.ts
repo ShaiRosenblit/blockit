@@ -1,4 +1,4 @@
-import type { BoardGrid, Coord, PieceShape, RiddleLevel, TargetPattern } from './types';
+import type { BoardGrid, Coord, PieceShape, PuzzleLevel, TargetPattern } from './types';
 import { BOARD_SIZE, COLORS } from './types';
 import {
   createEmptyBoard,
@@ -10,7 +10,7 @@ import {
 import { PIECE_CATALOG } from './pieces';
 
 /**
- * Riddle mode: the player is shown a **target pattern** and must end the round
+ * Puzzle mode: the player is shown a **target pattern** and must end the round
  * with the board's occupancy matching it exactly — every target cell filled,
  * every non-target cell empty. Row/column clears still trigger during play and
  * are a core planning tool: clearing a row removes unwanted starting fill, so
@@ -21,15 +21,15 @@ import { PIECE_CATALOG } from './pieces';
  * Difficulty 5 is at least as hard as the old Level 10.
  *
  * Generator strategy: forward-simulation on a (possibly pre-filled) board.
- * Because the simulation itself is a valid solution, every generated riddle
+ * Because the simulation itself is a valid solution, every generated puzzle
  * is guaranteed solvable. Quality filters reject degenerate targets.
  */
 
-export const RIDDLE_MAX_DIFFICULTY: RiddleLevel = 5;
-export const RIDDLE_MIN_DIFFICULTY: RiddleLevel = 1;
+export const PUZZLE_MAX_DIFFICULTY: PuzzleLevel = 5;
+export const PUZZLE_MIN_DIFFICULTY: PuzzleLevel = 1;
 
 export type DifficultySpec = {
-  difficulty: RiddleLevel;
+  difficulty: PuzzleLevel;
   pieceCount: number;
   minPieceCells: number;
   maxPieceCells: number;
@@ -43,7 +43,7 @@ export type DifficultySpec = {
   minPrefillCleared: number;
 };
 
-const DIFFICULTY_SPECS: Record<RiddleLevel, DifficultySpec> = {
+const DIFFICULTY_SPECS: Record<PuzzleLevel, DifficultySpec> = {
   1: { difficulty: 1, pieceCount: 2, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 4,  maxTargetCells: 8,  prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
   2: { difficulty: 2, pieceCount: 3, minPieceCells: 2, maxPieceCells: 4, minTargetCells: 7,  maxTargetCells: 12, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
   3: { difficulty: 3, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
@@ -51,23 +51,23 @@ const DIFFICULTY_SPECS: Record<RiddleLevel, DifficultySpec> = {
   5: { difficulty: 5, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
 };
 
-export function clampRiddleDifficulty(difficulty: number): RiddleLevel {
-  if (!Number.isFinite(difficulty)) return RIDDLE_MIN_DIFFICULTY;
+export function clampPuzzleDifficulty(difficulty: number): PuzzleLevel {
+  if (!Number.isFinite(difficulty)) return PUZZLE_MIN_DIFFICULTY;
   const n = Math.round(difficulty);
-  if (n < RIDDLE_MIN_DIFFICULTY) return RIDDLE_MIN_DIFFICULTY;
-  if (n > RIDDLE_MAX_DIFFICULTY) return RIDDLE_MAX_DIFFICULTY;
-  return n as RiddleLevel;
+  if (n < PUZZLE_MIN_DIFFICULTY) return PUZZLE_MIN_DIFFICULTY;
+  if (n > PUZZLE_MAX_DIFFICULTY) return PUZZLE_MAX_DIFFICULTY;
+  return n as PuzzleLevel;
 }
 
 export function getDifficultySpec(difficulty: number): DifficultySpec {
-  return DIFFICULTY_SPECS[clampRiddleDifficulty(difficulty)];
+  return DIFFICULTY_SPECS[clampPuzzleDifficulty(difficulty)];
 }
 
 const RECENT_SIGNATURE_LIMIT = 8;
 /** Per-difficulty history of recent signatures so replaying at the same difficulty doesn't repeat. */
-const recentSignaturesByDifficulty = new Map<RiddleLevel, string[]>();
+const recentSignaturesByDifficulty = new Map<PuzzleLevel, string[]>();
 
-type BuiltRiddle = {
+type BuiltPuzzle = {
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
@@ -350,7 +350,7 @@ export function canReachTarget(
   return false;
 }
 
-function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltRiddle | null {
+function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltPuzzle | null {
   for (let attempt = 0; attempt < 60; attempt++) {
     const prefillCount = spec.prefillMin +
       Math.floor(rng() * (spec.prefillMax - spec.prefillMin + 1));
@@ -390,19 +390,19 @@ function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltRiddle | 
   return null;
 }
 
-function recordSignature(difficulty: RiddleLevel, signature: string): void {
+function recordSignature(difficulty: PuzzleLevel, signature: string): void {
   const list = recentSignaturesByDifficulty.get(difficulty) ?? [];
   list.push(signature);
   while (list.length > RECENT_SIGNATURE_LIMIT) list.shift();
   recentSignaturesByDifficulty.set(difficulty, list);
 }
 
-function isRecentlySeen(difficulty: RiddleLevel, signature: string): boolean {
+function isRecentlySeen(difficulty: PuzzleLevel, signature: string): boolean {
   return recentSignaturesByDifficulty.get(difficulty)?.includes(signature) ?? false;
 }
 
 /** Hard-coded fallback used if generation repeatedly fails to meet a spec. */
-function buildFallback(): BuiltRiddle {
+function buildFallback(): BuiltPuzzle {
   const rng = mulberry32(0xfa11ba7);
   const pieces = [
     PIECE_CATALOG.find((p) => p.id === 'h4')!,
@@ -411,7 +411,7 @@ function buildFallback(): BuiltRiddle {
   ];
   const startBoard = createEmptyBoard();
   const sim = simulateForward(startBoard, pieces, rng);
-  if (!sim) throw new Error('Fallback riddle simulation failed.');
+  if (!sim) throw new Error('Fallback puzzle simulation failed.');
   const target = boardToTarget(sim.board);
   const tray = colorizeTray(
     shuffleInPlace([...pieces], rng).map((piece) => rotatePieceNTimes(piece, Math.floor(rng() * 4))),
@@ -423,13 +423,13 @@ function buildFallback(): BuiltRiddle {
 
 const fallback = buildFallback();
 
-export function generateRiddle(options: { difficulty?: number; seed?: number } = {}): {
+export function generatePuzzle(options: { difficulty?: number; seed?: number } = {}): {
   board: BoardGrid;
   tray: PieceShape[];
   target: TargetPattern;
-  difficulty: RiddleLevel;
+  difficulty: PuzzleLevel;
 } {
-  const difficulty = clampRiddleDifficulty(options.difficulty ?? RIDDLE_MIN_DIFFICULTY);
+  const difficulty = clampPuzzleDifficulty(options.difficulty ?? PUZZLE_MIN_DIFFICULTY);
   const spec = getDifficultySpec(difficulty);
   const seed = (options.seed ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
   const rng = mulberry32(seed);

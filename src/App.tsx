@@ -8,15 +8,15 @@ import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import type { Coord } from './game/types';
-import { BOARD_SIZE, CLASSIC_DIFFICULTIES, RIDDLE_DIFFICULTIES } from './game/types';
+import { BOARD_SIZE, CLASSIC_DIFFICULTIES, PUZZLE_DIFFICULTIES } from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
-import { buildShareUrl, clearShareHash, decodeRiddle, parseSharePayload } from './game/sharing';
+import { buildShareUrl, clearShareHash, decodePuzzle, parseSharePayload } from './game/sharing';
 import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT } from './game/tutorial';
 import { TutorialBanner } from './components/TutorialBanner';
 import { Celebration } from './components/Celebration';
-import type { RiddleDifficulty } from './game/types';
+import type { PuzzleDifficulty } from './game/types';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -35,19 +35,19 @@ let orbId = 0;
 let celebrationRunId = 0;
 
 /**
- * Map a riddle difficulty to a 0..1 celebration intensity. Tutorial steps
+ * Map a puzzle difficulty to a 0..1 celebration intensity. Tutorial steps
  * get a modest cheer (with the final step bumped a bit for graduation);
- * numeric riddles ramp linearly so Riddle 5 feels genuinely triumphant.
+ * numeric puzzles ramp linearly so Puzzle 5 feels genuinely triumphant.
  */
 function difficultyToCelebrationIntensity(
-  difficulty: RiddleDifficulty,
+  difficulty: PuzzleDifficulty,
   tutorialStep: number
 ): number {
   if (difficulty === 'tutorial') {
     const isLast = tutorialStep >= TUTORIAL_STEP_COUNT - 1;
     return isLast ? 0.55 : 0.2;
   }
-  // Riddle levels 1..5 map to 0.32..1.0 — noticeable escalation between steps.
+  // Puzzle levels 1..5 map to 0.32..1.0 — noticeable escalation between steps.
   const t = (difficulty - 1) / 4;
   return 0.32 + t * 0.68;
 }
@@ -277,11 +277,11 @@ export default function App() {
         haptics.lineClear(linesCleared);
         sounds.lineClear(linesCleared);
 
-        // Riddle mode has no score display, so skip the +N popup and the
+        // Puzzle mode has no score display, so skip the +N popup and the
         // cells-flying-to-the-score-bar animation — the board's own cell
         // clear animation is still plenty of feedback. Classic mode keeps
         // them because the score is the primary feedback loop there.
-        if (state.mode !== 'riddle') {
+        if (state.mode !== 'puzzle') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
           spawnScorePopup(totalPopup, origin);
@@ -321,18 +321,18 @@ export default function App() {
   );
 
   const handleShare = useCallback(async () => {
-    const { riddleInitialBoard, riddleInitialTray, riddleTarget, riddleDifficulty, riddleResult } = state;
-    if (!riddleInitialBoard || !riddleInitialTray || !riddleTarget) return;
+    const { puzzleInitialBoard, puzzleInitialTray, puzzleTarget, puzzleDifficulty, puzzleResult } = state;
+    if (!puzzleInitialBoard || !puzzleInitialTray || !puzzleTarget) return;
     // Tutorial puzzles are authored per-step and aren't shareable — the
     // encoder expects a numeric difficulty anyway.
-    if (riddleDifficulty === 'tutorial') return;
+    if (puzzleDifficulty === 'tutorial') return;
     let url: string;
     try {
       url = buildShareUrl({
-        difficulty: riddleDifficulty,
-        board: riddleInitialBoard,
-        tray: riddleInitialTray,
-        target: riddleTarget,
+        difficulty: puzzleDifficulty,
+        board: puzzleInitialBoard,
+        tray: puzzleInitialTray,
+        target: puzzleTarget,
       });
     } catch {
       setShareStatus('failed');
@@ -342,25 +342,25 @@ export default function App() {
     haptics.pickup();
     sounds.pickup();
 
-    // Tailor the share copy to the moment: a just-solved riddle reads as a
+    // Tailor the share copy to the moment: a just-solved puzzle reads as a
     // brag / dare, a just-failed one as a "beat this one for me", and any
     // mid-game share (header button) stays neutral.
     const { title, text } = (() => {
-      if (riddleResult === 'solved') {
+      if (puzzleResult === 'solved') {
         return {
           title: 'Blockit challenge',
-          text: `Just cracked this Blockit riddle (difficulty ${riddleDifficulty}). Your move — think you can match it?`,
+          text: `Just cracked this Blockit puzzle (difficulty ${puzzleDifficulty}). Your move — think you can match it?`,
         };
       }
-      if (riddleResult === 'failed') {
+      if (puzzleResult === 'failed') {
         return {
           title: 'Blockit challenge',
-          text: `This Blockit riddle (difficulty ${riddleDifficulty}) got me. See if you can crack it.`,
+          text: `This Blockit puzzle (difficulty ${puzzleDifficulty}) got me. See if you can crack it.`,
         };
       }
       return {
-        title: 'Blockit riddle',
-        text: `Take a shot at this Blockit riddle (difficulty ${riddleDifficulty}).`,
+        title: 'Blockit puzzle',
+        text: `Take a shot at this Blockit puzzle (difficulty ${puzzleDifficulty}).`,
       };
     })();
 
@@ -376,7 +376,7 @@ export default function App() {
       await navigator.clipboard.writeText(url);
       setShareStatus('copied');
     } catch {
-      const ok = window.prompt('Copy this link to share the riddle:', url);
+      const ok = window.prompt('Copy this link to share the puzzle:', url);
       setShareStatus(ok === null ? null : 'copied');
     }
   }, [state]);
@@ -387,18 +387,18 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [shareStatus]);
 
-  // Riddle-solve celebration. Wait one frame after riddleResult flips to
+  // Puzzle-solve celebration. Wait one frame after puzzleResult flips to
   // 'solved' so the board has painted its final cleared state underneath —
   // otherwise the confetti lands on the board mid-clear animation.
   const lastSolveKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (state.mode !== 'riddle') return;
-    if (state.riddleResult !== 'solved') {
+    if (state.mode !== 'puzzle') return;
+    if (state.puzzleResult !== 'solved') {
       // Reset tracker so the next solve of the same puzzle re-fires.
       lastSolveKeyRef.current = null;
       return;
     }
-    const key = `${state.riddleDifficulty}:${state.tutorialStep}`;
+    const key = `${state.puzzleDifficulty}:${state.tutorialStep}`;
     if (lastSolveKeyRef.current === key) return;
     lastSolveKeyRef.current = key;
 
@@ -407,14 +407,14 @@ export default function App() {
     const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
     const intensity = difficultyToCelebrationIntensity(
-      state.riddleDifficulty,
+      state.puzzleDifficulty,
       state.tutorialStep
     );
 
     setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
-  }, [state.mode, state.riddleResult, state.riddleDifficulty, state.tutorialStep]);
+  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep]);
 
   // A hash-based share link arriving while the app is already open (e.g.
   // the browser focuses an existing tab instead of reloading) only triggers
@@ -426,10 +426,10 @@ export default function App() {
     const loadFromHash = () => {
       const payload = parseSharePayload();
       if (!payload) return;
-      const decoded = decodeRiddle(payload);
+      const decoded = decodePuzzle(payload);
       if (!decoded) return;
       dispatch({
-        type: 'LOAD_SHARED_RIDDLE',
+        type: 'LOAD_SHARED_PUZZLE',
         difficulty: decoded.difficulty,
         board: decoded.board,
         tray: decoded.tray,
@@ -565,9 +565,9 @@ export default function App() {
     ? boardRef.current.getBoundingClientRect().width / BOARD_SIZE
     : 40;
 
-  const modes: { id: 'classic' | 'riddle'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
-    { id: 'riddle', label: 'Riddle' },
+    { id: 'puzzle', label: 'Puzzle' },
   ];
 
   return (
@@ -623,19 +623,19 @@ export default function App() {
                   {d}
                 </button>
               ))
-            : RIDDLE_DIFFICULTIES.map((d) => {
+            : PUZZLE_DIFFICULTIES.map((d) => {
                 const label = d === 'tutorial' ? 'Tutorial' : d;
                 const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
                 return (
                   <button
                     key={d}
                     role="tab"
-                    aria-selected={d === state.riddleDifficulty}
-                    className={`difficulty-btn difficulty-btn--riddle${tutorialClass}${d === state.riddleDifficulty ? ' difficulty-btn--active' : ''}`}
+                    aria-selected={d === state.puzzleDifficulty}
+                    className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
                     onClick={() => {
-                      if (d !== state.riddleDifficulty) {
+                      if (d !== state.puzzleDifficulty) {
                         clearShareHash();
-                        dispatch({ type: 'SET_RIDDLE_DIFFICULTY', difficulty: d });
+                        dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
                       }
                     }}
                   >
@@ -644,7 +644,7 @@ export default function App() {
                 );
               })}
         </div>
-        {state.mode !== 'riddle' && <ScoreBar scoreValueRef={scoreValueRef} />}
+        {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
             className="board-restart-btn"
@@ -655,28 +655,28 @@ export default function App() {
             <span aria-hidden>{'\u21BB'}</span>
             <span className="board-restart-btn__label">Restart</span>
           </button>
-          {state.mode === 'riddle' && state.riddleDifficulty !== 'tutorial' && (
+          {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
             <button
               className="board-restart-btn board-restart-btn--ghost"
               aria-label="Generate a new puzzle"
               title="Generate a new puzzle"
               onClick={() => {
                 clearShareHash();
-                dispatch({ type: 'NEW_RIDDLE' });
+                dispatch({ type: 'NEW_PUZZLE' });
               }}
             >
               <span aria-hidden>{'\u2728'}</span>
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
-          {state.mode === 'riddle' &&
-            state.riddleDifficulty !== 'tutorial' &&
-            state.riddleInitialBoard &&
-            state.riddleTarget && (
+          {state.mode === 'puzzle' &&
+            state.puzzleDifficulty !== 'tutorial' &&
+            state.puzzleInitialBoard &&
+            state.puzzleTarget && (
               <button
                 className="board-restart-btn board-restart-btn--ghost"
-                aria-label="Share this riddle"
-                title="Share this riddle"
+                aria-label="Share this puzzle"
+                title="Share this puzzle"
                 onClick={handleShare}
               >
                 <span aria-hidden>{'\u{1F517}'}</span>
@@ -686,7 +686,7 @@ export default function App() {
               </button>
             )}
         </div>
-        {state.mode === 'riddle' && state.riddleDifficulty === 'tutorial' && (
+        {state.mode === 'puzzle' && state.puzzleDifficulty === 'tutorial' && (
           <TutorialBanner
             stepIndex={state.tutorialStep}
             totalSteps={TUTORIAL_STEPS.length}
@@ -707,10 +707,10 @@ export default function App() {
           <div className="piece-tray-wrap">
             <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
             <p className="piece-tray-hint">
-              {state.mode === 'riddle'
-                ? state.riddleDifficulty === 'tutorial'
+              {state.mode === 'puzzle'
+                ? state.puzzleDifficulty === 'tutorial'
                   ? 'Tap to rotate · drag to place'
-                  : `Difficulty ${state.riddleDifficulty} — fill \u25CB cells, clear \u2715 cells.`
+                  : `Difficulty ${state.puzzleDifficulty} — fill \u25CB cells, clear \u2715 cells.`
                 : 'Tap to rotate · drag to place'}
             </p>
           </div>

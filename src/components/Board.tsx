@@ -17,8 +17,8 @@ function coordKey(r: number, c: number): string {
 
 export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
   const { state } = useGame();
-  const target = state.riddleTarget;
-  const isRiddle = state.mode === 'riddle';
+  const target = state.puzzleTarget;
+  const isPuzzle = state.mode === 'puzzle';
 
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -52,7 +52,7 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
   }
 
   return (
-    <div className={isRiddle ? 'board board--riddle' : 'board'} ref={boardRef}>
+    <div className={isPuzzle ? 'board board--puzzle' : 'board'} ref={boardRef}>
       {cells}
     </div>
   );
