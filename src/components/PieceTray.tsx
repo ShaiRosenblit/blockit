@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import type { PieceShape } from '../game/types';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from '../dragConstants';
@@ -8,13 +9,27 @@ type PieceTrayProps = {
 };
 
 const MINI_GAP_PX = 2;
-const MAX_MINI_CELL_PX = 20;
+/**
+ * Per-tier caps on the rendered mini-cell size. Keeps thumbnails legible
+ * without letting them balloon on desktop. The actual cell size is the
+ * smaller of (slot-width / maxDim) and this cap.
+ */
+const MINI_CELL_CAP_PX = 28;
+/**
+ * Fallback inner slot size used before the ResizeObserver has fired on
+ * first paint. Matches the previous hard-coded defaults closely enough
+ * that the first frame doesn't jump visibly.
+ */
+const FALLBACK_INNER_PX = { dense: 56, loose: 76 } as const;
 
 function PieceMiniGrid({ piece, slotInnerPx }: { piece: PieceShape; slotInnerPx: number }) {
   const maxDim = Math.max(piece.width, piece.height, 1);
-  const cellSize = Math.min(
-    MAX_MINI_CELL_PX,
-    Math.floor((slotInnerPx - MINI_GAP_PX * (maxDim - 1)) / maxDim)
+  const cellSize = Math.max(
+    1,
+    Math.min(
+      MINI_CELL_CAP_PX,
+      Math.floor((slotInnerPx - MINI_GAP_PX * (maxDim - 1)) / maxDim)
+    )
   );
 
   const cells: React.ReactNode[] = [];
@@ -49,22 +64,77 @@ function PieceMiniGrid({ piece, slotInnerPx }: { piece: PieceShape; slotInnerPx:
   );
 }
 
+/**
+ * Single tray slot. We measure the rendered slot width with a ResizeObserver
+ * and feed the live value to the mini grid so thumbnails scale with the
+ * container — e.g. the slot grows on tablet/desktop tiers because its CSS
+ * max-width is bumped per tier, and the mini pieces grow with it without
+ * any tier-aware JS.
+ */
+function TraySlot({
+  piece,
+  index,
+  dense,
+  dragging,
+  onPointerDown,
+}: {
+  piece: PieceShape | null;
+  index: number;
+  dense: boolean;
+  dragging: boolean;
+  onPointerDown: (index: number, e: React.PointerEvent) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [innerPx, setInnerPx] = useState<number>(
+    dense ? FALLBACK_INNER_PX.dense : FALLBACK_INNER_PX.loose
+  );
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const compute = () => {
+      const rect = el.getBoundingClientRect();
+      // `getBoundingClientRect().width` already reflects CSS transforms,
+      // but reading clientWidth keeps it zoom-agnostic and cheaper.
+      const cs = window.getComputedStyle(el);
+      const padX =
+        parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0');
+      const inner = Math.max(0, (rect.width || el.clientWidth) - padX);
+      if (inner > 0) setInnerPx(inner);
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${dragging ? ' piece-slot--dragging' : ''}`}
+      onPointerDown={(e) => piece && onPointerDown(index, e)}
+      style={{ touchAction: 'none' }}
+    >
+      {piece && !dragging && <PieceMiniGrid piece={piece} slotInnerPx={innerPx} />}
+    </div>
+  );
+}
+
 export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) {
   const { state } = useGame();
   const dense = state.mode === 'puzzle' && state.tray.length > 3;
-  const slotInnerPx = dense ? 56 : 76;
 
   return (
     <div className={`piece-tray${dense ? ' piece-tray--dense' : ''}`}>
       {state.tray.map((piece, i) => (
-        <div
+        <TraySlot
           key={i}
-          className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${draggingIndex === i ? ' piece-slot--dragging' : ''}`}
-          onPointerDown={(e) => piece && onTrayPointerDown(i, e)}
-          style={{ touchAction: 'none' }}
-        >
-          {piece && draggingIndex !== i && <PieceMiniGrid piece={piece} slotInnerPx={slotInnerPx} />}
-        </div>
+          piece={piece}
+          index={i}
+          dense={dense}
+          dragging={draggingIndex === i}
+          onPointerDown={onTrayPointerDown}
+        />
       ))}
     </div>
   );

@@ -97,6 +97,32 @@ export default function App() {
     runId: number;
   } | null>(null);
 
+  /**
+   * Live board cell size in device pixels. Kept in state (fed by a
+   * ResizeObserver on the board element) so the floating-piece overlay
+   * stays aligned when the viewport resizes mid-drag (orientation change,
+   * iOS URL-bar collapse, keyboard opening, user-initiated resize) —
+   * events that don't necessarily fire a pointer move. Falls back to 40
+   * on first render before the observer has measured.
+   */
+  const [boardCellSize, setBoardCellSize] = useState<number>(40);
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0) setBoardCellSize(rect.width / BOARD_SIZE);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
   const { seen: coachSeen, markSeen: markCoachSeen } = useCoachMarks();
   const [coachAnchor, setCoachAnchor] = useState<HTMLElement | null>(null);
   const [activeCoach, setActiveCoach] = useState<CoachSymbol | null>(null);
@@ -658,9 +684,7 @@ export default function App() {
     drag && dragPiece
       ? dragPointerToEffective(drag.x, drag.y, drag.anchorX, drag.anchorY)
       : null;
-  const dragFloatCellSize = boardRef.current
-    ? boardRef.current.getBoundingClientRect().width / BOARD_SIZE
-    : 40;
+  const dragFloatCellSize = boardCellSize;
 
   const modes: { id: 'classic' | 'puzzle'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
@@ -670,6 +694,16 @@ export default function App() {
   return (
     <GameContext value={{ state, dispatch }}>
       <div className="app">
+        {/*
+         * `.app-aside` holds every non-board element (chrome + tray /
+         * game-over). In portrait it uses `display: contents` so its
+         * children flow straight into the `.app` flex column exactly as
+         * before. In landscape-short it becomes a flex column that sits to
+         * the right of the board (see `index.css` landscape media query).
+         * Wrapper-first ordering is intentional: the Board still appears
+         * before the tray in portrait via CSS `order` on the tray.
+         */}
+        <div className="app-aside">
         <div className="header-row">
           <h1 className="title">
             <Wordmark />
@@ -796,13 +830,6 @@ export default function App() {
         {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
           <PuzzleLegend />
         )}
-        <Board
-          boardRef={boardRef}
-          previewCells={preview?.cells}
-          previewColor={preview?.color}
-          placedCells={placedCells ?? undefined}
-          clearPreviewCells={preview?.clearCells ?? undefined}
-        />
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
@@ -815,6 +842,14 @@ export default function App() {
             </p>
           </div>
         )}
+        </div>
+        <Board
+          boardRef={boardRef}
+          previewCells={preview?.cells}
+          previewColor={preview?.color}
+          placedCells={placedCells ?? undefined}
+          clearPreviewCells={preview?.clearCells ?? undefined}
+        />
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece
             piece={dragPiece}

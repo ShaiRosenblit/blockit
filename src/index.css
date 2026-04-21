@@ -6,23 +6,58 @@
   padding: 0;
 }
 
+/*
+ * Layout tokens. The board sizes itself from the space it actually has
+ * (aspect-ratio + grid 1fr); no magic "chrome budget" constant. Per-tier
+ * overrides below scale the board up on larger viewports and switch short
+ * landscape viewports to a two-column layout.
+ *
+ *   --panel-max : max width of chrome rows (tabs, tray, game-over panel).
+ *   --board-max : max width of the board. In landscape this gets a
+ *                 height-derived value so the board fits the short axis.
+ *
+ * Everything else (fonts, paddings, inner widths) is expressed in rem or
+ * clamp()/min() so browser zoom and OS text scaling work naturally.
+ */
 :root {
-  /*
-   * The 380px budget covers everything stacked around the board in the
-   * tallest UI state — header, mode + difficulty tabs, board-controls, and
-   * the game-over panel (which is taller than the piece tray it replaces).
-   * Subtracting env(safe-area-inset-bottom) keeps the overlay off the iOS
-   * home-indicator / Safari chrome so Retry / New puzzle / Challenge stay
-   * tappable on notched devices. Falls back to 0 where unsupported.
-   */
-  --board-size: min(90vw, calc(100dvh - 380px - env(safe-area-inset-bottom, 0px)), 420px);
-  --cell-size: calc(var(--board-size) / 8);
-  --gap: 2px;
+  --panel-max: 28rem;
+  --board-max: 26.25rem;
+  --gap: 0.125rem;
   --bg: #1a1a2e;
   --surface: #16213e;
   --cell-empty: #0f3460;
   --text: #e8e8e8;
   --text-muted: #8899aa;
+}
+
+/* Standard-portrait: large phones, small tablets, desktop portrait windows. */
+@media (min-width: 481px) {
+  :root {
+    --panel-max: 32rem;
+    --board-max: 35rem;
+  }
+}
+
+/* Tablet / desktop portrait — generous board. */
+@media (min-width: 768px) and (min-height: 820px) {
+  :root {
+    --board-max: 40rem;
+  }
+}
+
+/*
+ * Landscape-short covers phones sideways, laptops, Chromebooks, and iPad
+ * landscape. We cap the board from the *height* axis so it always fits
+ * vertically, then the .app grid below places everything-else to its right.
+ */
+@media (orientation: landscape) and (max-height: 900px) {
+  :root {
+    --board-max: min(
+      calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)),
+      38rem
+    );
+    --panel-max: 22rem;
+  }
 }
 
 html {
@@ -52,24 +87,57 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 16px;
+  justify-content: safe flex-start;
+  gap: clamp(0.5rem, 2vh, 1rem);
   min-height: 100dvh;
   /*
-   * Respect iOS safe areas so the game-over panel's bottom button (Retry /
-   * New puzzle / Challenge a friend) isn't eaten by the Safari toolbar or
-   * home indicator. env() falls back to 0 on platforms without insets.
+   * Respect iOS safe areas on every edge so the game-over panel's bottom
+   * button (Retry / New puzzle / Challenge a friend) isn't eaten by the
+   * Safari toolbar or the home indicator, and so content clears the
+   * Dynamic Island at the top. env() falls back to 0 where unsupported.
    */
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  padding: max(0.75rem, env(safe-area-inset-top))
+    max(0.75rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-bottom))
+    max(0.75rem, env(safe-area-inset-left));
 }
+
+/*
+ * `.app-aside` is a DOM wrapper around every non-board element (all chrome
+ * + the tray/game-over panel). In portrait it's transparent structurally
+ * (display: contents) so its children participate directly in `.app`'s
+ * flex column, preserving the original stacked layout and a11y order.
+ *
+ * In landscape it becomes a flex column that lives to the right of the
+ * board (see the media query below), giving us a clean two-column layout
+ * without any JSX restructuring.
+ */
+.app-aside {
+  display: contents;
+}
+
+/* Portrait flex order: chrome rows (default order 0), then the board,
+ * then the tray / game-over panel. Only these two get non-zero order;
+ * every other row rides the default. */
+.app > .board {
+  order: 1;
+}
+
+.app-aside > .piece-tray-wrap,
+.app-aside > .game-over-panel {
+  order: 2;
+}
+
+/* NOTE: Responsive overrides (compact-portrait, tall-viewport centering,
+ * landscape-short two-column grid) live at the END of this file so they
+ * always win against the base rules in normal CSS cascade order. */
 
 .header-row {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 0.75rem;
   width: 100%;
 }
 
@@ -82,7 +150,7 @@ body {
   /* Cap the wordmark's rendered width (the SVG inside fills 100% of this).
    * On narrow phones the title naturally shrinks to share the row with
    * the sound-toggle (flex-wrap keeps it on one line while there's space). */
-  width: min(280px, 100%);
+  width: min(18rem, 100%);
 }
 
 .title svg {
@@ -94,9 +162,9 @@ body {
 .sound-toggle {
   background: none;
   border: none;
-  font-size: 22px;
+  font-size: 1.375rem;
   cursor: pointer;
-  padding: 4px;
+  padding: 0.25rem;
   line-height: 1;
   opacity: 0.7;
   transition: opacity 0.15s ease;
@@ -111,25 +179,25 @@ body {
   display: inline-flex;
   gap: 0;
   background: var(--surface);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   overflow: hidden;
-  padding: 3px;
+  padding: 0.1875rem;
   align-self: center;
 }
 
 .mode-btn {
   min-width: 0;
-  padding: 6px 18px;
+  padding: 0.375rem 1.125rem;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
   white-space: nowrap;
-  border-radius: 8px;
+  border-radius: 0.5rem;
 }
 
 .mode-btn:hover {
@@ -148,18 +216,18 @@ body {
   grid-auto-columns: minmax(0, 1fr);
   gap: 0;
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   overflow: hidden;
-  width: min(100%, 440px);
+  width: min(100%, var(--panel-max));
 }
 
 .difficulty-btn {
   min-width: 0;
-  padding: 5px 10px;
+  padding: 0.3125rem 0.625rem;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: capitalize;
   cursor: pointer;
@@ -193,7 +261,7 @@ body {
    * Giving it two grid tracks keeps it legible on narrow phone viewports
    * without shrinking the numeric buttons. */
   grid-column: span 2;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -206,8 +274,8 @@ body {
 /* Score bar */
 .score-bar {
   display: flex;
-  gap: 24px;
-  width: min(100%, 260px);
+  gap: 1.5rem;
+  width: min(100%, 16rem);
 }
 
 .score-item {
@@ -216,38 +284,51 @@ body {
   flex-direction: column;
   align-items: center;
   background: var(--surface);
-  border-radius: 10px;
-  padding: 6px 20px;
-  min-width: 80px;
+  border-radius: 0.625rem;
+  padding: 0.375rem 1.25rem;
+  min-width: 5rem;
 }
 
 .score-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.0625rem;
   color: var(--text-muted);
 }
 
 .score-value {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
 }
 
-/* Board */
+/*
+ * Board. The board is an 8x8 CSS grid that sizes itself from the space
+ * the parent makes available:
+ *   width  = min(100%, --board-max)
+ *   height = width (via aspect-ratio: 1)
+ *   cell   = 1 fraction of that (no --cell-size coupling)
+ * Everything downstream (drag math, cell pseudo-element glyphs, preview
+ * highlights) already works in percentages or reads rect.width / 8, so
+ * removing --cell-size is safe. container-type: inline-size lets any
+ * future glyph use cqi for cell-relative sizing.
+ */
 .board {
+  width: min(100%, var(--board-max));
+  aspect-ratio: 1;
   display: grid;
-  grid-template-columns: repeat(8, var(--cell-size));
-  grid-template-rows: repeat(8, var(--cell-size));
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
   gap: var(--gap);
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   padding: var(--gap);
+  container-type: inline-size;
 }
 
 .cell {
-  width: var(--cell-size);
-  height: var(--cell-size);
-  border-radius: 4px;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.25rem;
   /* Reserve border width so preview / filled borders never pop from 0→1px (white flash) */
   border: 1px solid transparent;
   background: var(--cell-empty);
@@ -276,7 +357,7 @@ body {
 }
 
 .cell--will-clear {
-  /* Clear “about to clear” read — strong white ring + visible pulse (separate from drag flicker fix) */
+  /* Clear "about to clear" read — strong white ring + visible pulse (separate from drag flicker fix) */
   animation: will-clear-pulse 1.1s ease-in-out infinite alternate;
   border-color: rgba(255, 255, 255, 0.58);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
@@ -330,7 +411,7 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  /* Percentage dimensions scale automatically with --cell-size */
+  /* Percentage dimensions scale automatically with cell size */
   width: 42%;
   height: 42%;
   border-radius: 50%;
@@ -397,9 +478,9 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 16px;
-  margin: 0 auto 6px;
-  font-size: 12px;
+  gap: 1rem;
+  margin: 0 auto 0.375rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   user-select: none;
 }
@@ -407,27 +488,30 @@ body {
 .puzzle-legend__item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 /*
- * Override the shared --cell-size locally so the swatch renders small,
- * independent of the actual board size (which can grow to ~56px on desktop).
- * Scoping the override to the swatch means the real board is untouched.
+ * The swatch is a tiny stand-alone cell outside the board grid. We give the
+ * inner `.cell` an explicit rem size here rather than riding on --cell-size
+ * (which no longer exists — cells now stretch to the board's 1fr tracks).
  */
 .puzzle-legend__swatch {
-  --cell-size: 22px;
-  --gap: 0px;
   display: inline-flex;
   padding: 0;
   background: transparent;
   box-shadow: none;
-  border-radius: 4px;
+  border-radius: 0.25rem;
+}
+
+.puzzle-legend__swatch .cell {
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .puzzle-legend__label {
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.0125rem;
 }
 
 /*
@@ -455,12 +539,12 @@ body {
 .coach-mark__bubble {
   background: rgba(20, 28, 38, 0.96);
   color: #fff;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 13px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.3;
-  max-width: 240px;
+  max-width: 15rem;
   text-align: center;
   box-shadow:
     0 6px 18px rgba(0, 0, 0, 0.35),
@@ -527,22 +611,22 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
+  gap: 0.625rem;
+  margin: 0 0 0.5rem;
   width: 100%;
-  max-width: min(480px, 100%);
+  max-width: min(var(--panel-max), 100%);
 }
 
 .board-restart-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 14px;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.875rem;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(255, 255, 255, 0.06);
   color: var(--text, #fff);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
@@ -596,29 +680,29 @@ body {
  * from the board.
  */
 .tutorial-banner {
-  width: min(100%, 460px);
-  padding: 12px 16px 10px;
+  width: min(100%, var(--panel-max));
+  padding: 0.75rem 1rem 0.625rem;
   background: linear-gradient(
     135deg,
     rgba(78, 205, 196, 0.12),
     rgba(78, 205, 196, 0.04)
   );
   border: 1px solid rgba(78, 205, 196, 0.32);
-  border-radius: 12px;
+  border-radius: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
   box-shadow: 0 0 18px rgba(78, 205, 196, 0.08);
 }
 
 .tutorial-banner__head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .tutorial-banner__eyebrow {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -626,20 +710,20 @@ body {
 }
 
 .tutorial-banner__title {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text);
   line-height: 1.2;
 }
 
 .tutorial-banner__text {
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.4;
   color: var(--text);
 }
 
 .tutorial-banner__hint {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
   color: var(--text-muted);
   font-style: italic;
@@ -648,13 +732,13 @@ body {
 .tutorial-banner__dots {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .tutorial-banner__dot {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   padding: 0;
   background: transparent;
   border: none;
@@ -665,8 +749,8 @@ body {
 }
 
 .tutorial-banner__dot-inner {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.25);
   transition: background-color 0.15s ease, transform 0.15s ease;
@@ -687,12 +771,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: min(100%, 440px);
+  gap: 0.375rem;
+  width: min(100%, var(--panel-max));
 }
 
 .piece-tray-hint {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -702,12 +786,12 @@ body {
 .piece-tray {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(8px, 3vw, 16px);
+  gap: clamp(0.5rem, 3vw, 1rem);
   justify-items: center;
   align-items: center;
-  min-height: 88px;
+  min-height: 5.5rem;
   width: 100%;
-  max-width: 440px;
+  max-width: var(--panel-max);
 }
 
 .piece-slot {
@@ -715,23 +799,36 @@ body {
   align-items: center;
   justify-content: center;
   background: var(--surface);
-  border-radius: 10px;
-  padding: 6px;
+  border-radius: 0.625rem;
+  padding: 0.375rem;
   width: 100%;
-  max-width: 88px;
+  max-width: 5.5rem;
   aspect-ratio: 1;
   cursor: grab;
   transition: transform 0.15s ease, opacity 0.15s ease;
 }
 
 .piece-tray--dense {
-  gap: clamp(8px, 2.6vw, 10px);
-  max-width: 360px;
+  gap: clamp(0.5rem, 2.6vw, 0.625rem);
+  max-width: min(var(--panel-max), 22.5rem);
 }
 
 .piece-slot--dense {
-  max-width: 68px;
-  padding: 4px;
+  max-width: 4.25rem;
+  padding: 0.25rem;
+}
+
+/* On tablets/desktops the board grows past phone sizes; let the tray slots
+ * grow with it so piece thumbnails stay proportionate rather than pinned at
+ * 88px in a 640px-board layout. */
+@media (min-width: 481px) {
+  .piece-slot { max-width: 6rem; }
+  .piece-slot--dense { max-width: 4.75rem; }
+}
+
+@media (min-width: 768px) and (min-height: 820px) {
+  .piece-slot { max-width: 6.75rem; }
+  .piece-slot--dense { max-width: 5.25rem; }
 }
 
 .piece-slot:active {
@@ -784,14 +881,14 @@ body {
  * gradient + glow, failure/classic variants stay calm.
  */
 .game-over-panel {
-  width: min(100%, 440px);
-  padding: 16px 18px 14px;
-  border-radius: 14px;
+  width: min(100%, var(--panel-max));
+  padding: 1rem 1.125rem 0.875rem;
+  border-radius: 0.875rem;
   background: var(--surface);
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.625rem;
   animation: game-over-panel-in 360ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
@@ -823,11 +920,11 @@ body {
 .game-over-panel__head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .game-over-panel__mark {
-  font-size: 26px;
+  font-size: 1.625rem;
   line-height: 1;
   filter: drop-shadow(0 0 6px rgba(78, 205, 196, 0.5));
 }
@@ -841,13 +938,13 @@ body {
 .game-over-panel__headings {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
   min-width: 0;
   flex: 1;
 }
 
 .game-over-panel__title {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: 0.01em;
@@ -860,7 +957,7 @@ body {
 }
 
 .game-over-panel__meta {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -872,7 +969,7 @@ body {
 }
 
 .game-over-panel__sub {
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -880,20 +977,20 @@ body {
 .game-over-panel__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
-  padding: 6px 0 2px;
+  gap: 1.125rem;
+  padding: 0.375rem 0 0.125rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .game-over-panel__stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
   min-width: 0;
 }
 
 .game-over-panel__stat-label {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -901,7 +998,7 @@ body {
 }
 
 .game-over-panel__stat-value {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -910,19 +1007,19 @@ body {
 .game-over-panel__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 2px;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
 }
 
 .game-over-panel__btn {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 0.625rem 1rem;
+  border-radius: 0.625rem;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -987,7 +1084,7 @@ body {
 .score-popup {
   position: fixed;
   transform: translate(-50%, -50%);
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   color: #FFEAA7;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
@@ -1277,8 +1374,179 @@ body {
   }
 }
 
+/* ───────────────────────── Responsive overrides ─────────────────────────
+ *
+ * These media queries need to follow every base rule they override, so we
+ * keep them pinned to the bottom of the file. Three tiers:
+ *
+ *   compact-portrait   — ≤380 px wide phones: trims the wordmark so the
+ *                        sound toggle fits on one row.
+ *   tall-viewport      — ≥760 px tall, any orientation: vertically centers
+ *                        the stacked `.app` flex column.
+ *   landscape-short    — landscape ≤900 px tall: switches `.app` to a
+ *                        two-column grid (board | aside) with compact
+ *                        chrome so phones-sideways and non-tall laptops
+ *                        still fit the board + tray without scrolling.
+ *
+ * The compact-landscape typography tweaks here are deliberately inside the
+ * landscape query so they don't bleed into portrait tiers.
+ */
+
+/* compact-portrait: iPhone SE / small Androids. */
+@media (orientation: portrait) and (max-width: 380px) {
+  .title {
+    width: min(13rem, 100%);
+  }
+  .sound-toggle {
+    font-size: 1.25rem;
+    padding: 0.125rem;
+  }
+}
+
+/* tall-viewport: center the stack so desktops/iPads don't pin to top. */
 @media (min-height: 760px) {
   .app {
+    justify-content: safe center;
+  }
+}
+
+/* landscape-short: two-column grid. */
+@media (orientation: landscape) and (max-height: 900px) {
+  .app {
+    display: grid;
+    grid-template-columns: auto minmax(14rem, 22rem);
+    grid-template-rows: auto;
+    grid-template-areas: "board aside";
+    column-gap: clamp(1rem, 3vw, 2rem);
+    align-content: safe center;
     justify-content: center;
+    min-height: 100dvh;
+  }
+
+  .app > .board {
+    grid-area: board;
+    align-self: center;
+    justify-self: start;
+    /* Col 1 is `auto`-sized; using `min(100%, --board-max)` would collapse
+     * because 100% resolves against the intrinsic column. Set width from
+     * the height-derived token directly. */
+    width: var(--board-max);
+    /* Reset the portrait flex `order` tweak. */
+    order: 0;
+  }
+
+  .app > .app-aside {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(0.35rem, 1vh, 0.65rem);
+    grid-area: aside;
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .app-aside > * {
+    order: 0;
+    flex-shrink: 0;
+  }
+
+  /* Compact chrome typography for short-landscape viewports so the stack
+   * in the right column still fits on ~390 px-tall phones. Larger landscape
+   * viewports (iPad land, laptops) just get slightly roomier buttons than
+   * needed — harmless. */
+  .title {
+    width: min(11rem, 100%);
+  }
+
+  .header-row {
+    gap: 0.5rem;
+  }
+
+  .sound-toggle {
+    font-size: 1.125rem;
+    padding: 0.125rem;
+  }
+
+  .mode-btn {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .difficulty-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  .difficulty-btn--tutorial {
+    font-size: 0.625rem;
+  }
+
+  .score-bar {
+    gap: 0.75rem;
+    width: min(100%, 14rem);
+  }
+
+  .score-item {
+    padding: 0.25rem 0.75rem;
+  }
+
+  .score-value {
+    font-size: 1.125rem;
+  }
+
+  .score-label {
+    font-size: 0.625rem;
+  }
+
+  .board-controls {
+    gap: 0.375rem;
+    margin: 0;
+  }
+
+  .board-restart-btn {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.6875rem;
+  }
+
+  .piece-tray {
+    min-height: 4rem;
+    gap: clamp(0.375rem, 2vw, 0.625rem);
+  }
+
+  .piece-slot {
+    max-width: 3.75rem;
+    padding: 0.25rem;
+  }
+
+  .piece-slot--dense {
+    max-width: 3.25rem;
+    padding: 0.1875rem;
+  }
+
+  .piece-tray-hint {
+    font-size: 0.625rem;
+  }
+
+  .tutorial-banner {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .tutorial-banner__title {
+    font-size: 0.875rem;
+  }
+
+  .tutorial-banner__text {
+    font-size: 0.75rem;
+  }
+
+  .tutorial-banner__hint {
+    font-size: 0.6875rem;
+  }
+
+  .tutorial-banner__dots {
+    gap: 0.375rem;
+    margin-top: 0.125rem;
   }
 }
