@@ -7,7 +7,15 @@
 }
 
 :root {
-  --board-size: min(90vw, calc(100dvh - 340px), 420px);
+  /*
+   * The 380px budget covers everything stacked around the board in the
+   * tallest UI state — header, mode + difficulty tabs, board-controls, and
+   * the game-over panel (which is taller than the piece tray it replaces).
+   * Subtracting env(safe-area-inset-bottom) keeps the overlay off the iOS
+   * home-indicator / Safari chrome so Retry / New puzzle / Challenge stay
+   * tappable on notched devices. Falls back to 0 where unsupported.
+   */
+  --board-size: min(90vw, calc(100dvh - 380px - env(safe-area-inset-bottom, 0px)), 420px);
   --cell-size: calc(var(--board-size) / 8);
   --gap: 2px;
   --bg: #1a1a2e;
@@ -47,7 +55,13 @@ body {
   justify-content: flex-start;
   gap: 16px;
   min-height: 100dvh;
-  padding: 12px;
+  /*
+   * Respect iOS safe areas so the game-over panel's bottom button (Retry /
+   * New puzzle / Challenge a friend) isn't eaten by the Safari toolbar or
+   * home indicator. env() falls back to 0 on platforms without insets.
+   */
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 
 .header-row {
