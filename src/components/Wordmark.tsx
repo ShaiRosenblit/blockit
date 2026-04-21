@@ -1,135 +1,181 @@
 /**
- * "BLOCKIT" wordmark rendered as pixel-block letters in the in-game piece
- * palette (see `COLORS` in `game/types.ts`), echoing the app icon's
- * letter-made-of-blocks concept. Each letter gets its own color so the
- * mark visually rhymes with the tetrominoes in the tray.
+ * "BLOCKIT" wordmark rendered in the style of the game's puzzle board:
+ * letters are spelled out with colored puzzle-piece blocks placed on a
+ * visible grid (empty cells in the game's `--cell-empty` navy, filled
+ * cells in the piece palette). This echoes the app icon — where the
+ * letter B is built from blocks on a grid — and makes the title feel
+ * like a natural extension of gameplay rather than stylized text.
  *
- * Layout: each letter sits on a 7-column × 7-row cell grid with 2-cell-thick
- * strokes (cell = 4 viewBox units). Letters are separated by a 1-cell gap.
- * Total: 7 letters × 7 cols + 6 gaps × 1 col = 55 cells wide = 220 viewBox
- * units × 28 tall. The 2-cell stroke was chosen over a thinner 1-cell stroke
- * after visual testing — 1-cell letters read as skeletal at header sizes and
- * didn't match the chunky feel of the tetromino pieces below.
+ * Per-letter colors come from `COLORS` in `game/types.ts`, so every
+ * palette hue used by in-game pieces also appears in the title.
  *
- * Actual render size is controlled by CSS (`.title svg` in index.css) so
- * the mark adapts to viewport width. The `width`/`height` attributes below
- * serve only as intrinsic size hints before CSS loads.
+ * Layout (in grid cells):
+ *   col:  0 | 1..4  B | 5 gap | 6..8  L | 9 gap | 10..13 O | 14 gap |
+ *         15..18 C | 19 gap | 20..23 K | 24 gap | 25..27 I | 28 gap |
+ *         29..31 T | 32 pad
+ *   row:  0 pad | 1..5 letters | 6 pad
+ * Total: 33 cols × 7 rows, viewBox 330×70 (≈4.7:1 aspect).
+ *
+ * Each cell is a 10×10 viewBox square with a 9×9 inner block, so a 1-unit
+ * gap separates cells and the parent surface shows through as the board's
+ * grid lines. Filled cells get a subtle top-left highlight + faint white
+ * edge so they read as polished game pieces, matching the in-game look.
  */
 
-type LetterGrid = readonly (readonly number[])[];
+type LetterGrid = number[][];
 
-const B_GRID: LetterGrid = [
-  [1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0],
+const B: LetterGrid = [
+  [1, 1, 1, 0],
+  [1, 0, 0, 1],
+  [1, 1, 1, 0],
+  [1, 0, 0, 1],
+  [1, 1, 1, 0],
 ];
-
-const L_GRID: LetterGrid = [
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 1, 1, 1, 1, 1],
+const L: LetterGrid = [
+  [1, 0, 0],
+  [1, 0, 0],
+  [1, 0, 0],
+  [1, 0, 0],
+  [1, 1, 1],
 ];
-
-const O_GRID: LetterGrid = [
-  [0, 1, 1, 1, 1, 1, 0],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 0, 1, 1],
-  [0, 1, 1, 1, 1, 1, 0],
+const O: LetterGrid = [
+  [0, 1, 1, 0],
+  [1, 0, 0, 1],
+  [1, 0, 0, 1],
+  [1, 0, 0, 1],
+  [0, 1, 1, 0],
 ];
-
-const C_GRID: LetterGrid = [
-  [0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [1, 1, 0, 0, 0, 0, 0],
-  [0, 1, 1, 1, 1, 1, 1],
+const C: LetterGrid = [
+  [0, 1, 1, 1],
+  [1, 0, 0, 0],
+  [1, 0, 0, 0],
+  [1, 0, 0, 0],
+  [0, 1, 1, 1],
 ];
-
-const K_GRID: LetterGrid = [
-  [1, 1, 0, 0, 0, 1, 1],
-  [1, 1, 0, 0, 1, 1, 0],
-  [1, 1, 0, 1, 1, 0, 0],
-  [1, 1, 1, 1, 0, 0, 0],
-  [1, 1, 0, 1, 1, 0, 0],
-  [1, 1, 0, 0, 1, 1, 0],
-  [1, 1, 0, 0, 0, 1, 1],
+const K: LetterGrid = [
+  [1, 0, 0, 1],
+  [1, 0, 1, 0],
+  [1, 1, 0, 0],
+  [1, 0, 1, 0],
+  [1, 0, 0, 1],
 ];
-
-const I_GRID: LetterGrid = [
-  [1, 1, 1, 1, 1, 1, 1],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [1, 1, 1, 1, 1, 1, 1],
+const I: LetterGrid = [
+  [1, 1, 1],
+  [0, 1, 0],
+  [0, 1, 0],
+  [0, 1, 0],
+  [1, 1, 1],
 ];
-
-const T_GRID: LetterGrid = [
-  [1, 1, 1, 1, 1, 1, 1],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
-  [0, 0, 1, 1, 1, 0, 0],
+const T: LetterGrid = [
+  [1, 1, 1],
+  [0, 1, 0],
+  [0, 1, 0],
+  [0, 1, 0],
+  [0, 1, 0],
 ];
 
 type LetterSpec = { grid: LetterGrid; color: string };
 
-const WORD: readonly LetterSpec[] = [
-  { grid: B_GRID, color: '#FF6B6B' }, // coral
-  { grid: L_GRID, color: '#4ECDC4' }, // teal
-  { grid: O_GRID, color: '#45B7D1' }, // sky blue
-  { grid: C_GRID, color: '#96CEB4' }, // sage
-  { grid: K_GRID, color: '#FFEAA7' }, // butter yellow
-  { grid: I_GRID, color: '#DDA0DD' }, // plum
-  { grid: T_GRID, color: '#FF8C42' }, // orange
+const LETTERS: LetterSpec[] = [
+  { grid: B, color: '#FF6B6B' }, // coral
+  { grid: L, color: '#4ECDC4' }, // teal
+  { grid: O, color: '#45B7D1' }, // sky blue
+  { grid: C, color: '#96CEB4' }, // sage
+  { grid: K, color: '#FFEAA7' }, // butter yellow
+  { grid: I, color: '#DDA0DD' }, // plum
+  { grid: T, color: '#FF8C42' }, // orange
 ];
 
-const CELL = 4;
-const LETTER_COLS = 7;
-const LETTER_ROWS = 7;
-const LETTER_GAP_COLS = 1;
-const VIEW_W =
-  WORD.length * LETTER_COLS * CELL +
-  (WORD.length - 1) * LETTER_GAP_COLS * CELL;
-const VIEW_H = LETTER_ROWS * CELL;
+const CELL = 10;
+const CELL_INSET = 0.5; // half of the 1-unit grid gap
+const CELL_INNER = CELL - 2 * CELL_INSET; // 9
+const CORNER_RADIUS = 1.2;
+
+const LEFT_PAD = 1;
+const RIGHT_PAD = 1;
+const TOP_PAD = 1;
+const BOTTOM_PAD = 1;
+const LETTER_GAP = 1;
+const LETTER_ROWS = 5;
+
+const LETTER_WIDTHS = LETTERS.map((l) => l.grid[0].length);
+const LETTER_X_OFFSETS: number[] = [];
+{
+  let cursor = LEFT_PAD;
+  for (const w of LETTER_WIDTHS) {
+    LETTER_X_OFFSETS.push(cursor);
+    cursor += w + LETTER_GAP;
+  }
+}
+const COLS =
+  LEFT_PAD +
+  LETTER_WIDTHS.reduce((s, w) => s + w, 0) +
+  LETTER_GAP * (LETTERS.length - 1) +
+  RIGHT_PAD;
+const ROWS = TOP_PAD + LETTER_ROWS + BOTTOM_PAD;
+const VIEW_W = COLS * CELL;
+const VIEW_H = ROWS * CELL;
+
+const EMPTY_FILL = '#0f3460'; // matches --cell-empty in index.css
+const HIGHLIGHT = 'rgba(255, 255, 255, 0.32)';
+const EDGE_STROKE = 'rgba(255, 255, 255, 0.16)';
 
 type WordmarkProps = {
   className?: string;
 };
 
 export function Wordmark({ className }: WordmarkProps) {
-  const rects: React.ReactElement[] = [];
-  WORD.forEach((letter, letterIdx) => {
-    const xOffset =
-      letterIdx * (LETTER_COLS + LETTER_GAP_COLS) * CELL;
+  const cells: React.ReactElement[] = [];
+
+  // Background grid — every cell rendered first so the letters sit on top.
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      cells.push(
+        <rect
+          key={`bg-${row}-${col}`}
+          x={col * CELL + CELL_INSET}
+          y={row * CELL + CELL_INSET}
+          width={CELL_INNER}
+          height={CELL_INNER}
+          rx={CORNER_RADIUS}
+          fill={EMPTY_FILL}
+        />
+      );
+    }
+  }
+
+  // Letter cells — colored blocks with a thin pale edge + a small
+  // top-left glint so they read as polished pieces sitting on the board.
+  LETTERS.forEach((letter, letterIdx) => {
+    const x0 = LETTER_X_OFFSETS[letterIdx];
     letter.grid.forEach((row, rowIdx) => {
       row.forEach((filled, colIdx) => {
         if (!filled) return;
-        rects.push(
-          <rect
-            key={`${letterIdx}-${rowIdx}-${colIdx}`}
-            x={xOffset + colIdx * CELL}
-            y={rowIdx * CELL}
-            width={CELL}
-            height={CELL}
-            fill={letter.color}
-          />
+        const cx = x0 + colIdx;
+        const cy = TOP_PAD + rowIdx;
+        const x = cx * CELL + CELL_INSET;
+        const y = cy * CELL + CELL_INSET;
+        cells.push(
+          <g key={`fill-${letterIdx}-${rowIdx}-${colIdx}`}>
+            <rect
+              x={x}
+              y={y}
+              width={CELL_INNER}
+              height={CELL_INNER}
+              rx={CORNER_RADIUS}
+              fill={letter.color}
+              stroke={EDGE_STROKE}
+              strokeWidth={0.3}
+            />
+            <rect
+              x={x + 1.4}
+              y={y + 1.4}
+              width={2}
+              height={0.7}
+              rx={0.3}
+              fill={HIGHLIGHT}
+            />
+          </g>
         );
       });
     });
@@ -139,16 +185,15 @@ export function Wordmark({ className }: WordmarkProps) {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-      /* Intrinsic hint only — CSS sizes the mark responsively. */
-      width={240}
-      height={Math.round((240 * VIEW_H) / VIEW_W)}
+      // Intrinsic hint only — CSS (`.title svg`) drives the real size.
+      width={280}
+      height={Math.round((280 * VIEW_H) / VIEW_W)}
       role="img"
       aria-label="Blockit"
       className={className}
-      shapeRendering="crispEdges"
       preserveAspectRatio="xMidYMid meet"
     >
-      {rects}
+      {cells}
     </svg>
   );
 }
