@@ -73,23 +73,22 @@ body {
   width: 100%;
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand__mark {
-  display: block;
-  flex-shrink: 0;
-}
-
 .title {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--text);
+  margin: 0;
+  padding: 0;
+  display: block;
+  line-height: 0;
+  font-size: 0; /* h1 is visually just the <Wordmark> SVG */
+  /* Cap the wordmark's rendered width (the SVG inside fills 100% of this).
+   * On narrow phones the title naturally shrinks to share the row with
+   * the sound-toggle (flex-wrap keeps it on one line while there's space). */
+  width: min(280px, 100%);
+}
+
+.title svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .sound-toggle {

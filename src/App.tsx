@@ -16,7 +16,7 @@ import { buildShareUrl, clearShareHash, decodePuzzle, parseSharePayload } from '
 import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT } from './game/tutorial';
 import { TutorialBanner } from './components/TutorialBanner';
 import { Celebration } from './components/Celebration';
-import { Logo } from './components/Logo';
+import { Wordmark } from './components/Wordmark';
 import type { PuzzleDifficulty } from './game/types';
 
 const DRAG_THRESHOLD_PX = 10;
@@ -575,10 +575,9 @@ export default function App() {
     <GameContext value={{ state, dispatch }}>
       <div className="app">
         <div className="header-row">
-          <div className="brand">
-            <Logo size={22} className="brand__mark" />
-            <h1 className="title">Blockit</h1>
-          </div>
+          <h1 className="title">
+            <Wordmark />
+          </h1>
           <button
             className="sound-toggle"
             aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
