@@ -8,7 +8,7 @@ type CellProps = {
    *   'needs-fill'  — this cell is empty but the target requires it filled.
    *   'needs-clear' — this cell is filled but the target requires it empty.
    *   'target-met'  — cell is filled and is part of the target (keep the
-   *                   dashed outline visible so the player can still see
+   *                   target tint visible so the player can still see
    *                   which cells belong to the pattern).
    *   'neutral'     — cell matches the target and is not part of it.
    * Undefined in non-puzzle modes.

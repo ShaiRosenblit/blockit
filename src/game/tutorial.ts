@@ -88,8 +88,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 1. Drag & drop: single piece onto a clearly-marked outline.
   {
     title: 'Step 1 — Drag & drop',
-    text: 'Welcome to Blockit! Drag the piece from the tray onto the dashed outline.',
-    hint: 'Press and hold to pick it up, then drop it so every cell lines up with the outline.',
+    text: 'Welcome to Blockit! Drag the piece from the tray onto the highlighted target cells.',
+    hint: 'Press and hold to pick it up, then drop it so every cell lines up with the ringed cells.',
     board: createEmptyBoard(),
     tray: [buildPiece('tut1-h3', [[0, 0], [0, 1], [0, 2]], CYAN)],
     target: targetFromCells([[4, 2], [4, 3], [4, 4]]),
@@ -98,7 +98,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 2. Rotation: same piece shape, but the outline is vertical.
   {
     title: 'Step 2 — Tap to rotate',
-    text: 'This outline is vertical, but your piece is horizontal. Tap the piece to rotate it, then drop it in.',
+    text: 'The target is vertical, but your piece is horizontal. Tap the piece to rotate it, then drop it in.',
     hint: 'Tap (without dragging) rotates the piece 90°. You can also press R on a keyboard.',
     board: createEmptyBoard(),
     tray: [buildPiece('tut2-h3', [[0, 0], [0, 1], [0, 2]], PINK)],
@@ -107,8 +107,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
   // 3. Multiple pieces filling a target.
   {
-    title: 'Step 3 — Fill the outline',
-    text: 'Use both dominoes to complete the 2×2 outline. You solve a puzzle when every dashed cell is filled and nothing else is.',
+    title: 'Step 3 — Fill the target',
+    text: 'Use both dominoes to complete the 2×2 target. You solve a puzzle when every highlighted cell is filled and nothing else is.',
     hint: 'Pieces can be placed in any order. Try one, then the other.',
     board: createEmptyBoard(),
     tray: [
@@ -131,8 +131,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 5. Plan the order: use a clear to remove unwanted cells, then hit the target.
   {
     title: 'Step 5 — Plan the order',
-    text: 'The red-striped cells must go. Complete the bottom row with one piece to clear them, then fill the outline with the other.',
-    hint: 'Order matters. If you fill the outline first, you still have to get rid of the red stripes.',
+    text: 'The red-striped cells must go. Complete the bottom row with one piece to clear them, then fill the target with the other.',
+    hint: 'Order matters. If you fill the target first, you still have to get rid of the red stripes.',
     board: boardWithPrefill(ROW_SEVEN_PREFILL),
     tray: [
       buildPiece('tut5-h2', [[0, 0], [0, 1]], CYAN),
