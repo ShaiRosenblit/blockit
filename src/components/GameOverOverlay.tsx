@@ -17,10 +17,23 @@ type Props = {
 };
 
 /**
- * Renders inline (in place of the piece tray) when the round ends — no dim
- * backdrop, no modal. The board stays fully visible above it so the player
- * can screenshot "board + result" in one frame, and the retry / new-puzzle
- * buttons live in the panel itself so there's nothing else to dismiss.
+ * Renders as a fixed-position modal overlay when the round ends. A
+ * dimmed/blurred backdrop covers the page, and the panel itself is
+ * centered in the viewport with its own scroll container if content
+ * ever exceeds the available height.
+ *
+ * Why a modal (and not an inline panel anymore): on short mobile
+ * viewports (iPhone 14 Safari ≈ 390×664 effective) the inline panel
+ * pushed `document.scrollHeight` ~200 px past the fold, which meant
+ * every puzzle completion required a scroll to reach "New puzzle".
+ * As a modal, the panel is out-of-flow, so completing a puzzle never
+ * grows the doc and the primary action sits within the viewport by
+ * construction.
+ *
+ * Visual continuity: the board stays visible behind a mild blur so the
+ * player can still see the pattern they just matched (great for a
+ * screenshot), while the backdrop gates pointer interaction on the
+ * board so no accidental drags while reading results.
  */
 export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const { state, dispatch } = useGame();
@@ -93,12 +106,13 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
   return (
     <div
-      className={`game-over-panel ${variant}`}
-      role="region"
-      aria-live="polite"
+      className="game-over-modal"
+      role="dialog"
+      aria-modal="true"
       aria-label={headline}
     >
-      <div className="game-over-panel__head">
+      <div className={`game-over-panel ${variant}`} aria-live="polite">
+        <div className="game-over-panel__head">
         <span className="game-over-panel__mark" aria-hidden>
           {solved ? '\u2728' : failed ? '\u25CB' : '\u25CB'}
         </span>
@@ -210,6 +224,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
             Play Again
           </button>
         )}
+        </div>
       </div>
     </div>
   );
