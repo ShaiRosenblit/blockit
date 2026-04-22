@@ -124,8 +124,27 @@ export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) 
   const { state } = useGame();
   const dense = state.mode === 'puzzle' && state.tray.length > 3;
 
+  // Column count tuned per tray size so rows stay visually balanced and
+  // the tray occupies as few rows as possible on short portrait viewports.
+  // Principles:
+  //   - 3 pieces  → 3 cols (1 row). Easy puzzle / Classic.
+  //   - 4 pieces  → 4 cols (1 row). Normal puzzle — saves a row vs 3+1.
+  //   - 5 pieces  → 3 cols (3+2, balanced). Hard puzzle — 4+1 would look
+  //                 off-balance with an orphan on row 2.
+  //   - 7 pieces  → 4 cols (4+3). Expert — saves a row vs 3+3+1.
+  //   - Anything else → 3 cols fallback.
+  // Expressed as a CSS custom property so the grid CSS stays declarative.
+  const trayCols = !dense
+    ? 3
+    : state.tray.length === 5
+      ? 3
+      : 4;
+
   return (
-    <div className={`piece-tray${dense ? ' piece-tray--dense' : ''}`}>
+    <div
+      className={`piece-tray${dense ? ' piece-tray--dense' : ''}`}
+      style={{ ['--tray-cols' as string]: String(trayCols) }}
+    >
       {state.tray.map((piece, i) => (
         <TraySlot
           key={i}

@@ -188,17 +188,22 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
               </>
             )}
             {onShare && state.puzzleInitialBoard && state.puzzleTarget && (
+              // Sits inline with the other two actions rather than on its
+              // own row, so the whole post-solve panel collapses to a
+              // single-row action strip. Label shortened to "Challenge"
+              // so all three buttons fit comfortably on a 390 px panel
+              // without wrapping; the full intent lives in `title`.
               <button
-                className="game-over-panel__btn game-over-panel__btn--wide"
+                className="game-over-panel__btn game-over-panel__btn--share"
                 onClick={onShare}
                 title="Share this puzzle as a challenge"
               >
                 <span aria-hidden>{'\u{1F3AF}'}</span>{' '}
                 {shareStatus === 'copied'
-                  ? 'Link copied!'
+                  ? 'Copied!'
                   : shareStatus === 'failed'
-                    ? 'Share failed'
-                    : 'Challenge a friend'}
+                    ? 'Failed'
+                    : 'Challenge'}
               </button>
             )}
           </>
