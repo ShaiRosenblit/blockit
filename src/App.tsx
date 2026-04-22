@@ -17,6 +17,7 @@ import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT } from './game/tutorial';
 import { TutorialBanner } from './components/TutorialBanner';
 import { Celebration } from './components/Celebration';
 import { Wordmark } from './components/Wordmark';
+import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
 import { CoachMark } from './components/CoachMark';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -704,10 +705,39 @@ export default function App() {
          * before the tray in portrait via CSS `order` on the tray.
          */}
         <div className="app-aside">
+        {/*
+         * Header-row compacts three distinct affordances — title, mode
+         * selector, mute toggle — onto a single line via a 3-col grid.
+         * The title carries both the full wordmark and a block-B monogram;
+         * CSS swaps between them at a media-query break so the header
+         * stays horizontally balanced on narrow phones (≤389 px) without
+         * JS. Pulling the mode pill out of its own row saves ~49 px of
+         * vertical chrome, which is critical to keeping gameplay
+         * scroll-free on portrait phones.
+         */}
         <div className="header-row">
           <h1 className="title">
-            <Wordmark />
+            <Wordmark className="title__wordmark" />
+            <Monogram className="title__monogram" />
           </h1>
+          <div className="mode-selector" role="tablist" aria-label="Game mode">
+            {modes.map((m) => (
+              <button
+                key={m.id}
+                role="tab"
+                aria-selected={m.id === state.mode}
+                className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
+                onClick={() => {
+                  if (m.id !== state.mode) {
+                    clearShareHash();
+                    dispatch({ type: 'SET_MODE', mode: m.id });
+                  }
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
           <button
             className="sound-toggle"
             aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
@@ -719,24 +749,6 @@ export default function App() {
           >
             {muted ? '\u{1F507}' : '\u{1F50A}'}
           </button>
-        </div>
-        <div className="mode-selector" role="tablist" aria-label="Game mode">
-          {modes.map((m) => (
-            <button
-              key={m.id}
-              role="tab"
-              aria-selected={m.id === state.mode}
-              className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
-              onClick={() => {
-                if (m.id !== state.mode) {
-                  clearShareHash();
-                  dispatch({ type: 'SET_MODE', mode: m.id });
-                }
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
         </div>
         <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
           {state.mode === 'classic'
