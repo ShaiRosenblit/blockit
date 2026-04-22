@@ -133,25 +133,51 @@ body {
  * always win against the base rules in normal CSS cascade order. */
 
 /*
- * Header lives on a single line even on narrow phones via a 3-column
- * grid: title (start-aligned) | mode pill (center) | mute (end). The
- * explicit grid — instead of a flex row with spacers — lets the mode
- * pill sit in the true horizontal center of the viewport regardless of
- * the title and mute widths, which look asymmetric. Width caps at
- * --panel-max so the pill never drifts too far from the mute on wide
- * tablet-portrait viewports.
+ * Default header layout (desktop + landscape + wide portrait): a
+ * flex-wrap row with the title sized generously (up to 18 rem like the
+ * pre-v3 design) and the mode pill forced onto its own full-width line
+ * via `flex-basis: 100%`. On these roomy viewports the extra row costs
+ * nothing and gives the wordmark the presence it deserves.
+ *
+ * Narrow/short portrait viewports (phones, overridden below) switch to
+ * a 3-column grid so title + mode + mute share a single line and the
+ * game loop stays scroll-free without a dedicated "mode row".
  */
 .header-row {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
   width: min(100%, var(--panel-max));
 }
 
-.header-row > .title { justify-self: start; }
-.header-row > .mode-selector { justify-self: center; }
-.header-row > .sound-toggle { justify-self: end; }
+.header-row > .title {
+  /* Don't grow past the declared width: on wide viewports we want the
+   * mute toggle to sit right next to the wordmark, not wrap to its own
+   * row because the title swallowed the whole aside width. */
+  flex: 0 1 auto;
+  min-width: 0;
+  width: min(18rem, 100%);
+}
+
+.header-row > .sound-toggle {
+  /* Visually placed next to the title on row 1 via `order` — DOM order
+   * (title → mode → mute) stays intact for accessibility / tab order,
+   * but flex reorders so mute doesn't get stranded below the mode pill. */
+  order: 1;
+  flex: 0 0 auto;
+}
+
+.header-row > .mode-selector {
+  /* Force-wrap onto its own row below title + mute, so the pill reads
+   * as a distinct control and the title can take its full-width
+   * treatment. `order: 2` keeps it after mute in visual flow. */
+  order: 2;
+  flex: 1 1 100%;
+  justify-content: center;
+  display: flex;
+}
 
 .title {
   margin: 0;
@@ -164,34 +190,16 @@ body {
 
 /*
  * Two marks share the same <h1>; CSS picks which one shows at each
- * breakpoint. Default (portrait <390 px): block-B monogram — lets the
- * mode pill and mute toggle fit comfortably on a 360 px line. At ≥390 px
- * the full wordmark takes over.
+ * breakpoint. On wide viewports the full wordmark wins. On ≤380 px
+ * portrait viewports (see compact-portrait block below) the monogram
+ * replaces it so title + mode + mute can still share one line.
  *
- * Rendering both in the DOM (and hiding one) keeps this JS-free — the
- * <h1 aria-label="Blockit"> still carries the app title for a11y because
- * both <svg>s declare the same aria-label.
+ * Each selector targets its variant class directly (not `.title svg`)
+ * so later `.title__monogram { display: none }` overrides don't lose
+ * to a more specific `.title svg` rule.
  */
-.title__wordmark { display: none; }
-.title__monogram { display: block; height: 1.75rem; width: auto; }
-
-@media (min-width: 390px) {
-  .title__monogram { display: none; }
-  .title__wordmark {
-    display: block;
-    width: 6.5rem;
-    height: auto;
-  }
-}
-
-/* Larger portrait phones / tablet-portrait get a roomier wordmark. */
-@media (min-width: 481px) {
-  .title__wordmark { width: 8rem; }
-}
-
-@media (min-width: 768px) and (min-height: 820px) {
-  .title__wordmark { width: 10rem; }
-}
+.title__wordmark { display: block; width: 100%; height: auto; }
+.title__monogram { display: none; width: auto; height: auto; }
 
 .sound-toggle {
   background: none;
@@ -840,7 +848,7 @@ body {
   /*
    * Column count comes from the `--tray-cols` custom property set by
    * <PieceTray> based on the tray size — 3 is the fallback for Easy /
-   * Classic (3 pieces) and Hard (5, balanced as 3+2), 4 is used for
+   * Classic (3 pieces) and Hard (5, balanced as 3+2); 4 is used for
    * Normal (1 row of 4) and Expert (4+3 instead of 3+3+1). Keeping
    * the choice in JS keeps the CSS rules count-agnostic.
    */
@@ -870,6 +878,20 @@ body {
 .piece-tray--dense {
   gap: clamp(0.5rem, 2.6vw, 0.625rem);
   max-width: min(var(--panel-max), 22.5rem);
+}
+
+/*
+ * Landscape + wide-portrait viewports always use 3 tray columns,
+ * ignoring --tray-cols set by JS. The 4-column layout is a
+ * mobile-portrait space-saving measure — on a roomy viewport it looks
+ * awkward (7-piece Expert tray becomes 4+3 with a visible gap) while a
+ * 3-column arrangement (3+3+1 for Expert, 3+1 for Normal) reads like
+ * an intentional shelf of pieces.
+ */
+@media (orientation: landscape), (min-width: 768px) and (min-height: 820px) {
+  .piece-tray {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .piece-slot--dense {
@@ -1117,19 +1139,20 @@ body {
 }
 
 /*
- * "Challenge" (share) sits inline with Retry + New puzzle rather than on
- * its own row — the whole action strip is a single line now, which keeps
- * the overlay short enough to fit in the tray's space on short portrait
- * viewports. Cyan tint still reads as a related-but-secondary affordance.
+ * "Challenge a friend" is the only secondary/social action and wraps to
+ * its own full-width row below New puzzle + Replay. That keeps the
+ * primary flow (new / replay) on one tap-sized row at the top of the
+ * panel, and reads clearer than a truncated "Challenge" label. Cyan
+ * tint marks it as a related-but-non-primary affordance.
  */
-.game-over-panel__btn--share {
+.game-over-panel__btn--wide {
+  flex: 1 1 100%;
   background: rgba(78, 205, 196, 0.08);
   border-color: rgba(78, 205, 196, 0.45);
   color: #e6fffb;
-  flex: 0 1 auto;
 }
 
-.game-over-panel__btn--share:hover {
+.game-over-panel__btn--wide:hover {
   background: rgba(78, 205, 196, 0.18);
   border-color: rgba(78, 205, 196, 0.7);
 }
@@ -1463,11 +1486,49 @@ body {
  * landscape query so they don't bleed into portrait tiers.
  */
 
-/* compact-portrait: iPhone SE / small Androids.
- * The title auto-swaps to the block-B monogram at <390 px (see .title
- * rules above), so no title-width override needed here — we just tighten
- * the mute toggle a touch so it doesn't visually dominate the corner. */
+/*
+ * Portrait viewports with vertical pressure (phones): compress the
+ * header to a single line so `.app` doesn't spend 3 rows on chrome.
+ * Title + mode pill + mute share one row via a 3-column grid; mode is
+ * centered regardless of title/mute widths so it never drifts. Wordmark
+ * shrinks to fit the line.
+ */
+@media (orientation: portrait) and (max-height: 900px) {
+  .header-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.5rem;
+  }
+
+  .header-row > .title {
+    justify-self: start;
+    flex: none;
+    width: auto;
+  }
+
+  .header-row > .mode-selector {
+    justify-self: center;
+    flex: none;
+  }
+
+  .header-row > .sound-toggle {
+    justify-self: end;
+    flex: none;
+  }
+
+  .title__wordmark { width: 7rem; }
+}
+
+/*
+ * compact-portrait: very narrow phones (iPhone SE, small Androids).
+ * Swap the full wordmark for the block-B monogram so title + mode pill
+ * + mute toggle still fit on one 320–375 px line without wrapping, and
+ * tighten the mute glyph a touch so it doesn't dominate the corner.
+ */
 @media (orientation: portrait) and (max-width: 380px) {
+  .title__wordmark { display: none; }
+  .title__monogram { display: block; height: 1.5rem; width: auto; }
+
   .sound-toggle {
     font-size: 1.25rem;
     padding: 0.125rem;
@@ -1483,12 +1544,22 @@ body {
  * Expert + Hard can live inside the viewport on an iPhone 13-class
  * phone, without forcing "dense-looking" typography anywhere.
  *
- * Board size is intentionally NOT touched here — the play surface
- * remains 366 × 366 on a 390 px-wide phone. The only reason previous
- * passes shrank it was the tray/overlay fighting for vertical room;
- * with the 4-col tray + single-row overlay that fight is gone.
+ * Board is shrunk *just enough* via a height-derived `--board-max`:
+ * on iPhone-13-class viewports (664 vh) the 2-row "Challenge a friend"
+ * panel below the board takes ~22 rem of vertical chrome, and the
+ * remainder is what the board can safely be without pushing the
+ * post-solve panel off-screen. On taller phones (iPhone 11/Plus) the
+ * formula yields a larger cap and the phone's own width becomes the
+ * constraint again, so they don't over-shrink.
  */
 @media (orientation: portrait) and (max-height: 760px) {
+  :root {
+    --board-max: min(
+      26.25rem,
+      calc(100dvh - 22rem)
+    );
+  }
+
   .app {
     gap: clamp(0.375rem, 1.2vh, 0.75rem);
     padding: max(0.5rem, env(safe-area-inset-top))
@@ -1561,23 +1632,21 @@ body {
     flex-shrink: 0;
   }
 
-  /* Compact chrome typography for short-landscape viewports so the stack
-   * in the right column still fits on ~390 px-tall phones. Larger landscape
-   * viewports (iPad land, laptops) just get slightly roomier buttons than
-   * needed — harmless.
-   *
-   * The two-column landscape layout has the aside as a vertical column,
-   * not a row, so the header-row's 3-col grid would leave the mode pill
-   * floating awkwardly; revert to a single-line flex row here. */
-  .header-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-    width: 100%;
-  }
+  /* The two-column landscape layout has the aside as a vertical column,
+   * not a row; the wrap-friendly flex header-row from the base styles
+   * already places title/mute on one line and mode on the next, which
+   * fits the 22 rem aside nicely. No grid override needed here. */
+}
 
-  .title__wordmark { width: 6.5rem; }
+/*
+ * Tight-landscape (phones sideways, low-profile Chromebooks). Chrome
+ * typography collapses further here so a 390 px-tall viewport can host
+ * the full aside without scrolling. Regular laptops (e.g. 1440×900)
+ * intentionally skip this tier and keep the comfortable desktop
+ * typography set by the base rules + landscape grid above.
+ */
+@media (orientation: landscape) and (max-height: 700px) {
+  .header-row > .title { width: min(6.5rem, 100%); flex: 0 0 auto; }
 
   .sound-toggle {
     font-size: 1.125rem;
