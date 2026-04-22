@@ -842,28 +842,17 @@ export default function App() {
         {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
           <PuzzleLegend />
         )}
-        {/*
-         * Tray is rendered unconditionally — even after a solve/fail — so
-         * the document flow doesn't change height when the overlay appears.
-         * The GameOverOverlay is a separate fixed-position modal rendered
-         * below; when active it covers the tray visually but doesn't push
-         * any sibling up/down. This is what makes the solve → "new puzzle"
-         * transition zero-scroll on short portrait viewports.
-         *
-         * Accessibility: the tray is still reachable by screen readers,
-         * but the modal traps focus and is announced live (see the
-         * overlay component for role / aria-live).
-         */}
-        <div className="piece-tray-wrap" aria-hidden={state.isGameOver || undefined}>
-          <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
-          <p className="piece-tray-hint">
-            {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
-              ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
-              : 'Tap to rotate · drag to place'}
-          </p>
-        </div>
-        {state.isGameOver && (
+        {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
+        ) : (
+          <div className="piece-tray-wrap">
+            <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
+            <p className="piece-tray-hint">
+              {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
+                ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
+                : 'Tap to rotate · drag to place'}
+            </p>
+          </div>
         )}
         </div>
         <Board
