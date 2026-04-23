@@ -3,7 +3,49 @@ import { useGame } from '../hooks/useGame';
 import { haptics } from '../haptics';
 import { sounds } from '../sounds';
 import { TUTORIAL_STEP_COUNT } from '../game/tutorial';
-import { puzzleDifficultyLabel } from '../game/types';
+import { nextPuzzleLevel } from '../game/gameReducer';
+import { puzzleDifficultyLabel, type PuzzleLevel } from '../game/types';
+
+/**
+ * Per-difficulty "level up" copy that fires once, the very first time a
+ * player solves a numeric puzzle difficulty. Written to feel like a
+ * teammate noticing you just did the thing — a quick high-five, then a
+ * dare to keep climbing. Clearing Expert gets its own mastery moment
+ * since there's no higher rung to propose.
+ */
+type LevelUpCopy = {
+  eyebrow: string;
+  headline: string;
+  subline: string;
+  cta: string;
+};
+
+const LEVEL_UP_COPY: Record<PuzzleLevel, LevelUpCopy> = {
+  1: {
+    eyebrow: 'Level up',
+    headline: 'Easy? Handled.',
+    subline: "You've got the rhythm. Think you can keep it up on Normal?",
+    cta: 'Step up to Normal',
+  },
+  2: {
+    eyebrow: 'Level up',
+    headline: 'Normal: nailed it.',
+    subline: 'Smooth moves. Turn up the heat — Hard is calling.',
+    cta: 'Step up to Hard',
+  },
+  3: {
+    eyebrow: 'Level up',
+    headline: 'Hard? Crushed.',
+    subline: 'Impressive work. One trial stands between you and mastery — Expert awaits.',
+    cta: 'Step up to Expert',
+  },
+  4: {
+    eyebrow: 'Mastery unlocked',
+    headline: 'Expert: mastered.',
+    subline: "You've cleared the toughest tier. Officially a Blockit legend.",
+    cta: 'Another Expert puzzle',
+  },
+};
 
 type Props = {
   /**
@@ -46,6 +88,14 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
   if (!state.isGameOver) return null;
 
+  // First-time solve of a numeric difficulty trumps the generic "solved"
+  // copy with a one-shot promotion prompt. The reducer only sets
+  // `puzzleLevelUp` on that exact tick (and clears it on any subsequent
+  // action), so this banner inherently fires at most once per difficulty.
+  const levelUpLevel = isPuzzle && solved ? state.puzzleLevelUp : null;
+  const levelUp: LevelUpCopy | null = levelUpLevel !== null ? LEVEL_UP_COPY[levelUpLevel] : null;
+  const nextLevel = levelUpLevel !== null ? nextPuzzleLevel(levelUpLevel) : null;
+
   // Tutorial messaging is separate from the generic puzzle/classic copy so
   // the overlay teaches rather than congratulates when the student solves
   // an authored step, and encourages a retry (not "new puzzle") on failure.
@@ -55,11 +105,13 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? 'Tutorial complete!'
         : 'Nice — step solved!'
       : 'Not quite — try again'
-    : solved
-      ? 'Pattern matched!'
-      : failed
-        ? 'Pattern not matched'
-        : 'Game Over';
+    : levelUp
+      ? levelUp.headline
+      : solved
+        ? 'Pattern matched!'
+        : failed
+          ? 'Pattern not matched'
+          : 'Game Over';
 
   const subline = isTutorial
     ? solved
@@ -67,11 +119,13 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? "You've got the hang of Blockit. Time to tackle your first Easy puzzle!"
         : 'On to the next lesson.'
       : 'Use Retry to reset this step and give it another go.'
-    : isPuzzle
-      ? solved
-        ? 'Nicely done.'
-        : 'Tip: row/column clears can remove unwanted cells — plan the order.'
-      : null;
+    : levelUp
+      ? levelUp.subline
+      : isPuzzle
+        ? solved
+          ? 'Nicely done.'
+          : 'Tip: row/column clears can remove unwanted cells — plan the order.'
+        : null;
 
   const selectionLabel = isTutorial
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
@@ -90,19 +144,25 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
     : failed
       ? 'game-over-panel--failed'
       : 'game-over-panel--classic';
+  const levelUpClass = levelUp ? ' game-over-panel--level-up' : '';
 
   return (
     <div
-      className={`game-over-panel ${variant}`}
+      className={`game-over-panel ${variant}${levelUpClass}`}
       role="region"
       aria-live="polite"
       aria-label={headline}
     >
       <div className="game-over-panel__head">
         <span className="game-over-panel__mark" aria-hidden>
-          {solved ? '\u2728' : failed ? '\u25CB' : '\u25CB'}
+          {levelUp ? '\u{1F3C6}' : solved ? '\u2728' : failed ? '\u25CB' : '\u25CB'}
         </span>
         <div className="game-over-panel__headings">
+          {levelUp && (
+            <span className="game-over-panel__eyebrow" aria-hidden>
+              {levelUp.eyebrow}
+            </span>
+          )}
           <h2 className="game-over-panel__title">{headline}</h2>
           <p className="game-over-panel__meta">{selectionLabel}</p>
         </div>
@@ -155,15 +215,29 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
             {/* Primary action depends on outcome: after a solve the natural
                 next step is a fresh puzzle, not replaying the one you just
                 beat; after a failure the player most often wants another go
-                at the same board. */}
+                at the same board. First-time solves of a given difficulty
+                promote the "step up" CTA to primary — clearing Easy for the
+                first time should feel like an invitation into Normal, not
+                just another new-puzzle prompt. */}
             {solved ? (
               <>
-                <button
-                  className="game-over-panel__btn game-over-panel__btn--primary"
-                  onClick={() => dispatch({ type: 'NEW_PUZZLE' })}
-                >
-                  New puzzle
-                </button>
+                {levelUp && nextLevel !== null ? (
+                  <button
+                    className="game-over-panel__btn game-over-panel__btn--primary game-over-panel__btn--level-up"
+                    onClick={() =>
+                      dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: nextLevel })
+                    }
+                  >
+                    <span aria-hidden>{'\u{1F680}'}</span> {levelUp.cta}
+                  </button>
+                ) : (
+                  <button
+                    className="game-over-panel__btn game-over-panel__btn--primary"
+                    onClick={() => dispatch({ type: 'NEW_PUZZLE' })}
+                  >
+                    {levelUp ? levelUp.cta : 'New puzzle'}
+                  </button>
+                )}
                 <button
                   className="game-over-panel__btn"
                   onClick={() => dispatch({ type: 'RESTART' })}

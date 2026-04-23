@@ -69,6 +69,38 @@ export type GameState = {
    * step the player was on (so returning to the tutorial resumes there).
    */
   tutorialStep: number;
+  /**
+   * Non-null only on the exact tick the player solves a numeric puzzle
+   * difficulty for the very first time. Encodes which difficulty was just
+   * cleared so `GameOverOverlay` can surface a one-shot "level up" prompt
+   * inviting them to step up to the next difficulty (or celebrate mastery
+   * when they clear Expert). Cleared on every subsequent action so the
+   * promotion CTA never shows up twice for the same difficulty.
+   */
+  puzzleLevelUp: PuzzleLevel | null;
+  /**
+   * Set of numeric puzzle difficulties the player has ever solved at
+   * least once. Seeded from localStorage at init and updated in-place by
+   * the reducer on every first-time solve. Lives in state — not read
+   * directly from localStorage inside the reducer — because React 19's
+   * StrictMode double-invokes reducers in dev, and a localStorage write
+   * on the first invocation would have the second invocation see the
+   * flag as already-set and suppress the level-up prompt. Persistence is
+   * handled by the App via a useEffect that watches this field.
+   */
+  puzzleEverSolved: PuzzleEverSolved;
+};
+
+/**
+ * Present-key-means-solved map. Using `true` (never `false`) means a
+ * fresh spread merge (`{ ...state.puzzleEverSolved, [lvl]: true }`)
+ * never accidentally un-marks anything.
+ */
+export type PuzzleEverSolved = {
+  1?: true;
+  2?: true;
+  3?: true;
+  4?: true;
 };
 
 export type GameAction =
@@ -102,6 +134,7 @@ const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
 const PUZZLE_DIFFICULTY_KEY = 'blockit-puzzle-difficulty';
 const CHROMA_DIFFICULTY_KEY = 'blockit-chroma-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
+const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
 const LEGACY_DIFFICULTY_KEY = 'blockit-difficulty';
 const LEGACY_RIDDLE_LEVEL_KEY = 'blockit-riddle-level';
@@ -142,6 +175,52 @@ function saveBestScore(
   try {
     localStorage.setItem(bestScoreKey(mode, difficulty), String(score));
   } catch { /* noop */ }
+}
+
+/**
+ * One-shot "has the player ever solved this difficulty?" flag, driving the
+ * level-up promotion in `GameOverOverlay`. Stored as a boolean per level
+ * so the prompt appears at most once per difficulty — even if the player
+ * later clears it dozens more times. Failures are silent: a missing or
+ * corrupt value just means we show the promotion one more time, which is
+ * strictly better than suppressing a meant-to-be-seen milestone.
+ */
+function puzzleFirstSolvedKey(level: PuzzleLevel): string {
+  return `${PUZZLE_FIRST_SOLVED_KEY_PREFIX}${level}`;
+}
+
+const ALL_PUZZLE_LEVELS: readonly PuzzleLevel[] = [1, 2, 3, 4];
+
+export function loadPuzzleEverSolved(): PuzzleEverSolved {
+  const result: PuzzleEverSolved = {};
+  try {
+    for (const level of ALL_PUZZLE_LEVELS) {
+      if (localStorage.getItem(puzzleFirstSolvedKey(level)) === '1') {
+        result[level] = true;
+      }
+    }
+  } catch { /* noop */ }
+  return result;
+}
+
+export function savePuzzleEverSolved(solved: PuzzleEverSolved) {
+  try {
+    for (const level of ALL_PUZZLE_LEVELS) {
+      if (solved[level]) {
+        localStorage.setItem(puzzleFirstSolvedKey(level), '1');
+      }
+    }
+  } catch { /* noop */ }
+}
+
+/**
+ * Resolve the next numeric puzzle difficulty above `level`, or null if the
+ * player has just cleared the top. Callers use this to decide whether the
+ * level-up prompt should propose a next rung or celebrate mastery instead.
+ */
+export function nextPuzzleLevel(level: PuzzleLevel): PuzzleLevel | null {
+  if (level >= PUZZLE_MAX_DIFFICULTY) return null;
+  return (level + 1) as PuzzleLevel;
 }
 
 function loadTutorialStep(): number {
@@ -428,6 +507,7 @@ function freshPuzzleState(
   chromaDifficulty: ChromaDifficulty,
   bestScore: number,
   tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
   options: { forceNew?: boolean } = {}
 ): GameState {
   const clamped = clampPuzzleDifficulty(difficulty);
@@ -455,6 +535,8 @@ function freshPuzzleState(
     puzzleInitialBoard: cloneBoard(stored.board),
     puzzleInitialTray: cloneTray(stored.tray),
     tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
   };
 }
 
@@ -467,7 +549,8 @@ function freshPuzzleState(
 function freshTutorialState(
   step: number,
   classicDifficulty: ClassicDifficulty,
-  chromaDifficulty: ChromaDifficulty
+  chromaDifficulty: ChromaDifficulty,
+  puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
   const data = getTutorialStep(safeStep);
@@ -487,6 +570,8 @@ function freshTutorialState(
     puzzleInitialBoard: cloneBoard(data.board),
     puzzleInitialTray: cloneTray(data.tray),
     tutorialStep: safeStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
   };
 }
 
@@ -501,7 +586,8 @@ function freshPuzzleStateFromShared(
   classicDifficulty: ClassicDifficulty,
   chromaDifficulty: ChromaDifficulty,
   bestScore: number,
-  tutorialStep: number
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   return {
     board: cloneBoard(shared.board),
@@ -519,6 +605,8 @@ function freshPuzzleStateFromShared(
     puzzleInitialBoard: cloneBoard(shared.board),
     puzzleInitialTray: cloneTray(shared.tray),
     tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
   };
 }
 
@@ -527,7 +615,8 @@ function freshClassicState(
   puzzleDifficulty: PuzzleDifficulty,
   chromaDifficulty: ChromaDifficulty,
   bestScore: number,
-  tutorialStep: number
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const board = createEmptyBoard();
   return {
@@ -546,6 +635,8 @@ function freshClassicState(
     puzzleInitialBoard: null,
     puzzleInitialTray: null,
     tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
   };
 }
 
@@ -559,7 +650,8 @@ function freshChromaState(
   classicDifficulty: ClassicDifficulty,
   puzzleDifficulty: PuzzleDifficulty,
   bestScore: number,
-  tutorialStep: number
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const board = createEmptyBoard();
   return {
@@ -578,6 +670,8 @@ function freshChromaState(
     puzzleInitialBoard: null,
     puzzleInitialTray: null,
     tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
   };
 }
 
@@ -587,6 +681,11 @@ export function createInitialState(): GameState {
   const puzzleDifficulty = loadPuzzleDifficulty();
   const chromaDifficulty = loadChromaDifficulty();
   const tutorialStep = loadTutorialStep();
+  // Load the "ever solved" set exactly once at init — from here on the
+  // reducer only reads/writes `state.puzzleEverSolved`. Keeping
+  // localStorage reads out of the reducer is what lets it stay idempotent
+  // under React 19 StrictMode's double-invocation-in-dev guard.
+  const puzzleEverSolved = loadPuzzleEverSolved();
 
   // A share link in the URL hash takes precedence over saved state so the
   // recipient lands directly on the shared puzzle. We intentionally do NOT
@@ -602,7 +701,8 @@ export function createInitialState(): GameState {
         classicDifficulty,
         chromaDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
-        tutorialStep
+        tutorialStep,
+        puzzleEverSolved
       );
     }
   }
@@ -610,14 +710,15 @@ export function createInitialState(): GameState {
   const mode = loadMode();
   if (mode === 'puzzle') {
     if (puzzleDifficulty === 'tutorial') {
-      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty);
+      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty, puzzleEverSolved);
     }
     return freshPuzzleState(
       puzzleDifficulty,
       classicDifficulty,
       chromaDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
-      tutorialStep
+      tutorialStep,
+      puzzleEverSolved
     );
   }
 
@@ -627,7 +728,8 @@ export function createInitialState(): GameState {
       classicDifficulty,
       puzzleDifficulty,
       loadBestScore('chroma', chromaDifficulty),
-      tutorialStep
+      tutorialStep,
+      puzzleEverSolved
     );
   }
 
@@ -636,7 +738,8 @@ export function createInitialState(): GameState {
     puzzleDifficulty,
     chromaDifficulty,
     loadBestScore('classic', classicDifficulty),
-    tutorialStep
+    tutorialStep,
+    puzzleEverSolved
   );
 }
 
@@ -653,7 +756,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const isGameOver = !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
         state.mode === 'puzzle' && isGameOver ? 'failed' : state.puzzleResult;
-      return { ...state, tray: newTray, isGameOver, puzzleResult };
+      return { ...state, tray: newTray, isGameOver, puzzleResult, puzzleLevelUp: null };
     }
 
     case 'PLACE_PIECE': {
@@ -700,6 +803,32 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             saveBestScore('puzzle', trackableDifficulty, bestScore);
           }
 
+          // First-time solve of a numeric difficulty flips a persistent flag
+          // so the level-up promotion in the overlay only fires once per
+          // difficulty. Tutorial solves never trigger promotion (there's no
+          // "next difficulty" story there — the tutorial has its own
+          // Graduation flow via TUTORIAL_NEXT). Shared/ephemeral puzzles
+          // still count: beating any Hard puzzle for the first time is the
+          // milestone worth celebrating, shared or not.
+          //
+          // Detection reads `state.puzzleEverSolved` (not localStorage), so
+          // the decision is a pure function of the incoming state — which
+          // is what keeps us correct under React 19 StrictMode's
+          // double-invocation of the reducer in dev. The corresponding
+          // persistence is handled by the App via a useEffect that
+          // observes this same field.
+          const alreadySolvedBefore =
+            trackableDifficulty !== null &&
+            state.puzzleEverSolved[trackableDifficulty] === true;
+          const puzzleLevelUp: PuzzleLevel | null =
+            solved && trackableDifficulty !== null && !alreadySolvedBefore
+              ? trackableDifficulty
+              : null;
+          const puzzleEverSolved: PuzzleEverSolved =
+            puzzleLevelUp !== null
+              ? { ...state.puzzleEverSolved, [puzzleLevelUp]: true }
+              : state.puzzleEverSolved;
+
           return {
             ...state,
             board,
@@ -709,6 +838,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             combo: solved ? combo : 0,
             isGameOver: true,
             puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp,
+            puzzleEverSolved,
           };
         }
         const isGameOver = !hasValidMoves(board, newTray);
@@ -725,6 +856,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           combo,
           isGameOver,
           puzzleResult: isGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
         };
       }
 
@@ -749,6 +881,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           combo,
           isGameOver,
           puzzleResult: null,
+          puzzleLevelUp: null,
         };
       }
 
@@ -770,6 +903,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         combo,
         isGameOver,
         puzzleResult: null,
+        puzzleLevelUp: null,
       };
     }
 
@@ -780,14 +914,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // Entering puzzle mode: resume the stored puzzle at the current
         // difficulty if there is one, otherwise generate and persist a new one.
         if (state.puzzleDifficulty === 'tutorial') {
-          return freshTutorialState(state.tutorialStep, state.classicDifficulty, state.chromaDifficulty);
+          return freshTutorialState(
+            state.tutorialStep,
+            state.classicDifficulty,
+            state.chromaDifficulty,
+            state.puzzleEverSolved
+          );
         }
         return freshPuzzleState(
           state.puzzleDifficulty,
           state.classicDifficulty,
           state.chromaDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
-          state.tutorialStep
+          state.tutorialStep,
+          state.puzzleEverSolved
         );
       }
       if (action.mode === 'chroma') {
@@ -796,7 +936,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.classicDifficulty,
           state.puzzleDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
-          state.tutorialStep
+          state.tutorialStep,
+          state.puzzleEverSolved
         );
       }
       return freshClassicState(
@@ -804,7 +945,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.puzzleDifficulty,
         state.chromaDifficulty,
         loadBestScore('classic', state.classicDifficulty),
-        state.tutorialStep
+        state.tutorialStep,
+        state.puzzleEverSolved
       );
     }
 
@@ -817,7 +959,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.puzzleDifficulty,
         state.chromaDifficulty,
         loadBestScore('classic', action.difficulty),
-        state.tutorialStep
+        state.tutorialStep,
+        state.puzzleEverSolved
       );
     }
 
@@ -825,7 +968,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (action.difficulty === 'tutorial') {
         savePuzzleDifficulty('tutorial');
         saveMode('puzzle');
-        return freshTutorialState(state.tutorialStep, state.classicDifficulty, state.chromaDifficulty);
+        return freshTutorialState(
+          state.tutorialStep,
+          state.classicDifficulty,
+          state.chromaDifficulty,
+          state.puzzleEverSolved
+        );
       }
       const target = clampPuzzleDifficulty(action.difficulty);
       savePuzzleDifficulty(target);
@@ -838,6 +986,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
+        state.puzzleEverSolved,
         { forceNew: true }
       );
     }
@@ -853,6 +1002,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.bestScore,
         state.tutorialStep,
+        state.puzzleEverSolved,
         { forceNew: true }
       );
     }
@@ -871,7 +1021,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.classicDifficulty,
         state.chromaDifficulty,
         loadBestScore('puzzle', action.difficulty),
-        state.tutorialStep
+        state.tutorialStep,
+        state.puzzleEverSolved
       );
     }
 
@@ -889,11 +1040,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.chromaDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
+          state.puzzleEverSolved,
           { forceNew: true }
         );
       }
       saveTutorialStep(next);
-      return freshTutorialState(next, state.classicDifficulty, state.chromaDifficulty);
+      return freshTutorialState(next, state.classicDifficulty, state.chromaDifficulty, state.puzzleEverSolved);
     }
 
     case 'TUTORIAL_GOTO': {
@@ -901,7 +1053,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveTutorialStep(step);
       savePuzzleDifficulty('tutorial');
       saveMode('puzzle');
-      return freshTutorialState(step, state.classicDifficulty, state.chromaDifficulty);
+      return freshTutorialState(step, state.classicDifficulty, state.chromaDifficulty, state.puzzleEverSolved);
     }
 
     case 'RESTART': {
@@ -917,6 +1069,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           combo: 0,
           isGameOver: false,
           puzzleResult: null,
+          puzzleLevelUp: null,
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };

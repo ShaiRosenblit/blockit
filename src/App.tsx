@@ -1,5 +1,5 @@
 import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
-import { gameReducer, createInitialState } from './game/gameReducer';
+import { gameReducer, createInitialState, savePuzzleEverSolved } from './game/gameReducer';
 import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
@@ -470,15 +470,31 @@ export default function App() {
     const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
-    const intensity = difficultyToCelebrationIntensity(
+    const baseIntensity = difficultyToCelebrationIntensity(
       state.puzzleDifficulty,
       state.tutorialStep
     );
+    // First-time solves of a numeric difficulty are milestones the player
+    // will only experience once per difficulty — punch the celebration up a
+    // touch so it *feels* different from their 15th Normal solve. The bump
+    // is capped at 1.0 so Expert (already near the ceiling) doesn't wrap.
+    const intensity = state.puzzleLevelUp !== null
+      ? Math.min(1, baseIntensity + 0.2)
+      : baseIntensity;
 
     setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
-  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep]);
+  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep, state.puzzleLevelUp]);
+
+  // Persist the "ever solved" set whenever it changes. Deliberately in an
+  // effect (not the reducer) so the reducer stays idempotent under React
+  // 19 StrictMode's double-invocation guard: the reducer reads and writes
+  // the flag through `state.puzzleEverSolved`, and this effect mirrors
+  // that to localStorage exactly once per committed state change.
+  useEffect(() => {
+    savePuzzleEverSolved(state.puzzleEverSolved);
+  }, [state.puzzleEverSolved]);
 
   // Puzzle coach-marks: the first time a player sees each symbol in a real
   // (non-tutorial) puzzle, surface a one-line tooltip anchored to the first
@@ -710,7 +726,8 @@ export default function App() {
   // Human-readable "you are here" label for the collapsed menu toggle.
   // Tutorial is mode-unambiguous so we drop the "Puzzle · " prefix to save
   // space; every other combo carries Mode + Difficulty because names
-  // overlap across modes (Easy/Normal/Hard appear in both).
+  // overlap across modes (Easy/Normal/Hard appear in both). Chroma v1 has
+  // a single difficulty so the mode name alone is enough.
   const currentSelectionLabel = (() => {
     if (state.mode === 'classic') {
       const d = state.classicDifficulty;
@@ -792,51 +809,51 @@ export default function App() {
               ))}
             </div>
             {state.mode !== 'chroma' && (
-            <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
-              {state.mode === 'classic'
-                ? CLASSIC_DIFFICULTIES.map((d) => (
-                    <button
-                      key={d}
-                      role="tab"
-                      aria-selected={d === state.classicDifficulty}
-                      className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
-                      onClick={() => {
-                        if (d !== state.classicDifficulty) {
-                          clearShareHash();
-                          dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
-                        }
-                        // Difficulty is the terminal pick — close the drawer
-                        // so the player gets straight back to the board.
-                        setMenuOpen(false);
-                      }}
-                    >
-                      {d}
-                    </button>
-                  ))
-                : PUZZLE_DIFFICULTIES.map((d) => {
-                    const label = puzzleDifficultyLabel(d);
-                    const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
-                    return (
+              <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
+                {state.mode === 'classic'
+                  ? CLASSIC_DIFFICULTIES.map((d) => (
                       <button
                         key={d}
                         role="tab"
-                        aria-selected={d === state.puzzleDifficulty}
-                        className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
+                        aria-selected={d === state.classicDifficulty}
+                        className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
                         onClick={() => {
-                          if (d !== state.puzzleDifficulty) {
+                          if (d !== state.classicDifficulty) {
                             clearShareHash();
-                            dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
+                            dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
                           }
                           // Difficulty is the terminal pick — close the drawer
                           // so the player gets straight back to the board.
                           setMenuOpen(false);
                         }}
                       >
-                        {label}
+                        {d}
                       </button>
-                    );
-                  })}
-            </div>
+                    ))
+                  : PUZZLE_DIFFICULTIES.map((d) => {
+                      const label = puzzleDifficultyLabel(d);
+                      const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
+                      return (
+                        <button
+                          key={d}
+                          role="tab"
+                          aria-selected={d === state.puzzleDifficulty}
+                          className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
+                          onClick={() => {
+                            if (d !== state.puzzleDifficulty) {
+                              clearShareHash();
+                              dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
+                            }
+                            // Difficulty is the terminal pick — close the drawer
+                            // so the player gets straight back to the board.
+                            setMenuOpen(false);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+              </div>
             )}
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
@@ -845,10 +862,9 @@ export default function App() {
              * hamburger drawer — a closed-by-default menu players have to
              * open on purpose — and the visual demotion (muted, small,
              * right-aligned) keeps it from stealing focus from the primary
-             * picks, without hiding it from anyone.
-             *
-             * Hidden in Chroma mode: clicking it would silently switch modes
-             * behind the player's back.
+             * picks, without hiding it from anyone. Hidden in Chroma mode
+             * because the modal generates Puzzle content and would yank
+             * the player out of the mode they picked.
              */}
             {state.mode !== 'chroma' && (
               <button
