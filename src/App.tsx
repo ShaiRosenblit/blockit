@@ -834,26 +834,22 @@ export default function App() {
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
              * link tucked under the difficulty row so it doesn't compete
-             * with the primary difficulty picks. Two layers of obscurity
-             * keep it out of a new player's way without gating on explicit
-             * experience signals: (1) it only shows on a numeric puzzle,
-             * not during the tutorial, and (2) it's inside the hamburger
-             * drawer — a closed-by-default menu players have to open on
-             * purpose. The visual demotion (muted, small, right-aligned)
-             * does the rest.
+             * with the primary difficulty picks. It lives inside the
+             * hamburger drawer — a closed-by-default menu players have to
+             * open on purpose — and the visual demotion (muted, small,
+             * right-aligned) keeps it from stealing focus from the primary
+             * picks, without hiding it from anyone.
              */}
-            {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
-              <button
-                type="button"
-                className="chrome-menu__custom-link"
-                onClick={() => {
-                  setCustomOpen(true);
-                  setMenuOpen(false);
-                }}
-              >
-                Custom puzzle&hellip;
-              </button>
-            )}
+            <button
+              type="button"
+              className="chrome-menu__custom-link"
+              onClick={() => {
+                setCustomOpen(true);
+                setMenuOpen(false);
+              }}
+            >
+              Custom puzzle&hellip;
+            </button>
           </div>
         )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
