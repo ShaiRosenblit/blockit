@@ -468,22 +468,15 @@ export default function App() {
     const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
-    const baseIntensity = difficultyToCelebrationIntensity(
+    const intensity = difficultyToCelebrationIntensity(
       state.puzzleDifficulty,
       state.tutorialStep
     );
-    // First-time solves of a numeric difficulty are milestones the player
-    // will only experience once per difficulty — punch the celebration up a
-    // touch so it *feels* different from their 15th Normal solve. The bump
-    // is capped at 1.0 so Expert (already near the ceiling) doesn't wrap.
-    const intensity = state.puzzleLevelUp !== null
-      ? Math.min(1, baseIntensity + 0.2)
-      : baseIntensity;
 
     setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
-  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep, state.puzzleLevelUp]);
+  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep]);
 
   // Puzzle coach-marks: the first time a player sees each symbol in a real
   // (non-tutorial) puzzle, surface a one-line tooltip anchored to the first
