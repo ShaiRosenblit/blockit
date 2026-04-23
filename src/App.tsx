@@ -778,6 +778,9 @@ export default function App() {
                           clearShareHash();
                           dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
                         }
+                        // Difficulty is the terminal pick — close the drawer
+                        // so the player gets straight back to the board.
+                        setMenuOpen(false);
                       }}
                     >
                       {d}
@@ -797,6 +800,9 @@ export default function App() {
                             clearShareHash();
                             dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
                           }
+                          // Difficulty is the terminal pick — close the drawer
+                          // so the player gets straight back to the board.
+                          setMenuOpen(false);
                         }}
                       >
                         {label}
