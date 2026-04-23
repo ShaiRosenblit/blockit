@@ -1750,7 +1750,9 @@ body {
  * =================================================================== */
 .header-row--big-logo {
   display: grid;
-  grid-template-columns: 2.25rem 1fr 2.25rem;
+  /* Toggle column is `auto` so the pill can widen with its Mode · Difficulty
+   * label; the 1fr title column absorbs whatever space is left. */
+  grid-template-columns: auto 1fr 2.25rem;
   align-items: center;
   gap: 0.5rem;
   width: min(100%, var(--panel-max));
@@ -1761,6 +1763,9 @@ body {
   justify-self: center;
   width: min(20rem, 100%);
   flex: none;
+  /* Prevent the title slot from pushing the toggle off-screen on narrow
+   * phones when the "you are here" label is showing. */
+  min-width: 0;
 }
 .header-row--big-logo > .sound-toggle { justify-self: end; }
 
@@ -1771,21 +1776,41 @@ body {
   max-height: 4.5rem;
 }
 
+/*
+ * Menu toggle doubles as a "you are here" display: the current Mode ·
+ * Difficulty rides alongside the hamburger glyph so players always know
+ * which configuration is live even with the drawer closed. Pill shape is
+ * used so it reads as a tappable affordance rather than a passive label.
+ */
 .menu-toggle {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--text, #fff);
-  font-size: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   line-height: 1;
-  width: 2rem;
+  letter-spacing: 0.01em;
   height: 2rem;
+  padding: 0 0.625rem;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  padding: 0;
+  gap: 0.375rem;
+  border-radius: 1rem;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.menu-toggle__icon {
+  font-size: 0.875rem;
+  line-height: 1;
+  /* Pull the glyph's optical weight down by a hair so it sits on the same
+   * baseline as the label text (the ☰ character renders slightly high). */
+  transform: translateY(-0.05em);
+}
+
+.menu-toggle__label {
+  font-variant-numeric: tabular-nums;
 }
 
 .menu-toggle:hover {
@@ -1831,4 +1856,20 @@ body {
      * but scale up a touch to benefit from the extra header height. */
     height: 2rem;
   }
+}
+
+/*
+ * Narrow phones: tighten the pill so the "you are here" label still fits
+ * on the header line with the monogram + mute toggle. Keep the label
+ * visible — knowing which difficulty is live is the whole point of the
+ * pill; collapsing it to a bare glyph would put us back where we started.
+ */
+@media (orientation: portrait) and (max-width: 429px) {
+  .menu-toggle {
+    padding: 0 0.5rem;
+    height: 1.875rem;
+    font-size: 0.6875rem;
+    gap: 0.3125rem;
+  }
+  .menu-toggle__icon { font-size: 0.8125rem; }
 }

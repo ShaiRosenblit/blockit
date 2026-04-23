@@ -696,6 +696,19 @@ export default function App() {
     { id: 'puzzle', label: 'Puzzle' },
   ];
 
+  // Human-readable "you are here" label for the collapsed menu toggle.
+  // Tutorial is mode-unambiguous so we drop the "Puzzle · " prefix to save
+  // space; every other combo carries Mode + Difficulty because names
+  // overlap across modes (Easy/Normal/Hard appear in both).
+  const currentSelectionLabel = (() => {
+    if (state.mode === 'classic') {
+      const d = state.classicDifficulty;
+      return `Classic · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
+    return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
+  })();
+
   return (
     <GameContext value={{ state, dispatch }}>
       <div className="app">
@@ -722,12 +735,13 @@ export default function App() {
         <div className="header-row header-row--big-logo">
           <button
             className={`menu-toggle${menuOpen ? ' menu-toggle--open' : ''}`}
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-label={`${menuOpen ? 'Close menu' : 'Open menu'} — current selection: ${currentSelectionLabel}`}
             aria-expanded={menuOpen}
             aria-controls="chrome-menu"
             onClick={() => setMenuOpen((v) => !v)}
           >
-            <span aria-hidden>{'\u2630'}</span>
+            <span aria-hidden className="menu-toggle__icon">{'\u2630'}</span>
+            <span className="menu-toggle__label">{currentSelectionLabel}</span>
           </button>
           <h1 className="title title--big">
             <Wordmark className="title__wordmark" />
