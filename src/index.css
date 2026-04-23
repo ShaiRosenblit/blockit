@@ -1734,3 +1734,101 @@ body {
     margin-top: 0.125rem;
   }
 }
+
+/* =====================================================================
+ * Variant A — collapsible menu + enlarged Blockit wordmark.
+ *
+ * Mode + difficulty selectors are hidden behind a hamburger toggle (see
+ * `menu-toggle` / `chrome-menu`). Reclaiming that vertical real estate
+ * lets the header hand a generous ~20 rem to the title so the wordmark
+ * reads as the primary visual anchor on wide viewports, and still keeps
+ * the chrome to one line on phones.
+ *
+ * These rules live at the very end of the file so they always win
+ * against the earlier media-query tweaks to `.header-row > .title` etc.
+ * without needing selector-weight gymnastics.
+ * =================================================================== */
+.header-row--big-logo {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(100%, var(--panel-max));
+}
+
+.header-row--big-logo > .menu-toggle { justify-self: start; }
+.header-row--big-logo > .title--big {
+  justify-self: center;
+  width: min(20rem, 100%);
+  flex: none;
+}
+.header-row--big-logo > .sound-toggle { justify-self: end; }
+
+.title--big .title__wordmark {
+  /* Let the SVG fill the wider title slot, but don't stretch the monogram
+   * fallback past its intrinsic ratio on very narrow phones. */
+  width: 100%;
+  max-height: 4.5rem;
+}
+
+.menu-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text, #fff);
+  font-size: 1rem;
+  line-height: 1;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.menu-toggle--open {
+  background: #4ECDC4;
+  border-color: #4ECDC4;
+  color: #1a1a2e;
+}
+
+/*
+ * Chrome-menu drawer — stacks the two selectors vertically so they stay
+ * fully legible regardless of viewport width. Faint framing differentiates
+ * it from the regular chrome rows so opening/closing reads as a distinct
+ * action.
+ */
+.chrome-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: min(100%, var(--panel-max));
+  padding: 0.375rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.625rem;
+}
+
+.chrome-menu .mode-selector,
+.chrome-menu .difficulty-selector {
+  width: 100%;
+}
+
+/* Narrow portrait: keep monogram-swap behavior but within the enlarged slot. */
+@media (orientation: portrait) and (max-width: 380px) {
+  .header-row--big-logo > .title--big {
+    width: min(14rem, 100%);
+  }
+  .title--big .title__monogram {
+    /* Inherit the compact-portrait swap (monogram instead of wordmark)
+     * but scale up a touch to benefit from the extra header height. */
+    height: 2rem;
+  }
+}

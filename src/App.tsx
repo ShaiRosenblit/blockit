@@ -98,6 +98,10 @@ export default function App() {
     runId: number;
   } | null>(null);
 
+  // Variant A — collapsible mode/difficulty menu. Hidden by default so the
+  // header can hand more room to the Blockit wordmark below.
+  const [menuOpen, setMenuOpen] = useState(false);
+
   /**
    * Live board cell size in device pixels. Kept in state (fed by a
    * ResizeObserver on the board element) so the floating-piece overlay
@@ -715,29 +719,20 @@ export default function App() {
          * vertical chrome, which is critical to keeping gameplay
          * scroll-free on portrait phones.
          */}
-        <div className="header-row">
-          <h1 className="title">
+        <div className="header-row header-row--big-logo">
+          <button
+            className={`menu-toggle${menuOpen ? ' menu-toggle--open' : ''}`}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="chrome-menu"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <span aria-hidden>{'\u2630'}</span>
+          </button>
+          <h1 className="title title--big">
             <Wordmark className="title__wordmark" />
             <Monogram className="title__monogram" />
           </h1>
-          <div className="mode-selector" role="tablist" aria-label="Game mode">
-            {modes.map((m) => (
-              <button
-                key={m.id}
-                role="tab"
-                aria-selected={m.id === state.mode}
-                className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
-                onClick={() => {
-                  if (m.id !== state.mode) {
-                    clearShareHash();
-                    dispatch({ type: 'SET_MODE', mode: m.id });
-                  }
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
           <button
             className="sound-toggle"
             aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
@@ -750,45 +745,67 @@ export default function App() {
             {muted ? '\u{1F507}' : '\u{1F50A}'}
           </button>
         </div>
-        <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
-          {state.mode === 'classic'
-            ? CLASSIC_DIFFICULTIES.map((d) => (
+        {menuOpen && (
+          <div id="chrome-menu" className="chrome-menu">
+            <div className="mode-selector" role="tablist" aria-label="Game mode">
+              {modes.map((m) => (
                 <button
-                  key={d}
+                  key={m.id}
                   role="tab"
-                  aria-selected={d === state.classicDifficulty}
-                  className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
+                  aria-selected={m.id === state.mode}
+                  className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
                   onClick={() => {
-                    if (d !== state.classicDifficulty) {
+                    if (m.id !== state.mode) {
                       clearShareHash();
-                      dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
+                      dispatch({ type: 'SET_MODE', mode: m.id });
                     }
                   }}
                 >
-                  {d}
+                  {m.label}
                 </button>
-              ))
-            : PUZZLE_DIFFICULTIES.map((d) => {
-                const label = puzzleDifficultyLabel(d);
-                const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
-                return (
-                  <button
-                    key={d}
-                    role="tab"
-                    aria-selected={d === state.puzzleDifficulty}
-                    className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
-                    onClick={() => {
-                      if (d !== state.puzzleDifficulty) {
-                        clearShareHash();
-                        dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
-                      }
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-        </div>
+              ))}
+            </div>
+            <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
+              {state.mode === 'classic'
+                ? CLASSIC_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.classicDifficulty}
+                      className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.classicDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
+                        }
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))
+                : PUZZLE_DIFFICULTIES.map((d) => {
+                    const label = puzzleDifficultyLabel(d);
+                    const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
+                    return (
+                      <button
+                        key={d}
+                        role="tab"
+                        aria-selected={d === state.puzzleDifficulty}
+                        className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
+                        onClick={() => {
+                          if (d !== state.puzzleDifficulty) {
+                            clearShareHash();
+                            dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
+                          }
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+            </div>
+          </div>
+        )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
