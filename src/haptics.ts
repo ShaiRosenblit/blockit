@@ -26,4 +26,12 @@ export const haptics = {
     }
     vibrate(pattern);
   },
+  /**
+   * Gravity cascade tick — short, rising-intensity pulse per step so the
+   * phone mirrors the audible escalation of a chain reaction.
+   */
+  cascadeTick: (step: number) => {
+    const clamped = Math.max(1, Math.min(6, step));
+    vibrate(Math.round(12 + clamped * 6));
+  },
 };

@@ -17,6 +17,15 @@ type CellProps = {
    * Undefined in non-puzzle modes.
    */
   targetState?: 'needs-fill' | 'needs-clear' | 'target-met' | 'neutral';
+  /**
+   * Gravity-mode fall animation: number of rows this cell fell during the
+   * current cascade step. When > 0 the cell animates in from
+   * `translateY(-fallRows * cellSize)` back to 0, giving the impression
+   * that it just dropped into place. 0 / undefined → no animation.
+   */
+  fallRows?: number;
+  /** Board cell size in px — multiplied by `fallRows` to derive the start offset. */
+  fallCellSize?: number;
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -30,7 +39,16 @@ function hexToRgba(hex: string, alpha: number): string | undefined {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function Cell({ color, preview, justPlaced, willClear, targetState, coord }: CellProps) {
+export function Cell({
+  color,
+  preview,
+  justPlaced,
+  willClear,
+  targetState,
+  coord,
+  fallRows,
+  fallCellSize,
+}: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
 
@@ -54,6 +72,18 @@ export function Cell({ color, preview, justPlaced, willClear, targetState, coord
   }
   if (!preview && targetState === 'needs-fill') className += ' cell--target-needs-fill';
   if (!preview && targetState === 'needs-clear') className += ' cell--target-needs-clear';
+
+  // Gravity cascade fall-in animation. Only applies to filled cells that
+  // actually moved during the step (fallRows > 0). The CSS custom property
+  // carries the start offset; the keyframes animate from there back to 0.
+  if (color && fallRows && fallRows > 0 && fallCellSize) {
+    className += ' cell--falling';
+    const offsetPx = -(fallRows * fallCellSize);
+    style = {
+      ...style,
+      ['--cell-fall-offset' as string]: `${offsetPx}px`,
+    } as React.CSSProperties;
+  }
 
   return <div className={className} style={style} data-coord={coord} />;
 }

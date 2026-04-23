@@ -131,12 +131,22 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
     : isPuzzle
       ? `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`
-      : `Classic · ${state.classicDifficulty}`;
+      : state.mode === 'chroma'
+        ? 'Chroma'
+        : state.mode === 'gravity'
+          ? `Gravity · ${state.gravityDifficulty}`
+          : `Classic · ${state.classicDifficulty}`;
 
   // Puzzle mode is a binary solve/not-solve challenge, so numeric score
   // and per-difficulty best aren't meaningful feedback — they're suppressed
   // here. Classic mode still shows both.
-  const bestLabel = !isPuzzle ? `Best (${state.classicDifficulty})` : null;
+  const bestLabel = !isPuzzle
+    ? state.mode === 'chroma'
+      ? 'Best (Chroma)'
+      : state.mode === 'gravity'
+        ? `Best (${state.gravityDifficulty})`
+        : `Best (${state.classicDifficulty})`
+    : null;
   const showStats = !isPuzzle;
 
   const variant = solved

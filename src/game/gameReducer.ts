@@ -1,16 +1,18 @@
 import type {
   BoardGrid,
+  CascadeStep,
   ChromaDifficulty,
   ClassicDifficulty,
   Coord,
   GameMode,
+  GravityDifficulty,
   PieceShape,
   PuzzleDifficulty,
   PuzzleLevel,
   TargetPattern,
   TraySlot,
 } from './types';
-import { BOARD_SIZE, CLASSIC_DIFFICULTIES, isPuzzleLevel } from './types';
+import { BOARD_SIZE, CLASSIC_DIFFICULTIES, GRAVITY_DIFFICULTIES, isPuzzleLevel } from './types';
 import {
   createEmptyBoard,
   canPlacePiece,
@@ -20,6 +22,7 @@ import {
   hasValidMoves,
   rotatePiece90Clockwise,
   boardMatchesTarget,
+  resolveCascades,
 } from './board';
 import { generateChromaTray, generateClassicTray } from './pieces';
 import {
@@ -27,7 +30,12 @@ import {
   clampPuzzleDifficulty,
   PUZZLE_MAX_DIFFICULTY,
 } from './puzzleGenerator';
-import { calculatePlacementScore, calculateClearScore, PUZZLE_SOLVE_BONUS } from './scoring';
+import {
+  calculatePlacementScore,
+  calculateClearScore,
+  chainMultiplier,
+  PUZZLE_SOLVE_BONUS,
+} from './scoring';
 import { decodePuzzle, parseSharePayload } from './sharing';
 import { TUTORIAL_STEP_COUNT, clampTutorialStep, getTutorialStep } from './tutorial';
 
@@ -49,6 +57,8 @@ export type GameState = {
    * change and best-score keys stay per-rung-stable.
    */
   chromaDifficulty: ChromaDifficulty;
+  /** Remembered Gravity-mode difficulty (mirrors classic rungs). */
+  gravityDifficulty: GravityDifficulty;
   /** Only set when a puzzle round ends. */
   puzzleResult: null | 'solved' | 'failed';
   /**
@@ -89,6 +99,14 @@ export type GameState = {
    * handled by the App via a useEffect that watches this field.
    */
   puzzleEverSolved: PuzzleEverSolved;
+  /**
+   * Only set right after a Gravity-mode PLACE_PIECE that triggered at
+   * least one clear. Carries the ordered resolution steps (clear → fall →
+   * clear → fall …) so the UI can replay them as animation. Null on
+   * every other action (including Gravity placements that didn't clear),
+   * which is how the view knows to stop the animation sequence.
+   */
+  lastCascade: CascadeStep[] | null;
 };
 
 /**
@@ -110,6 +128,7 @@ export type GameAction =
   | { type: 'SET_MODE'; mode: GameMode }
   | { type: 'SET_CLASSIC_DIFFICULTY'; difficulty: ClassicDifficulty }
   | { type: 'SET_PUZZLE_DIFFICULTY'; difficulty: PuzzleDifficulty }
+  | { type: 'SET_GRAVITY_DIFFICULTY'; difficulty: GravityDifficulty }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -133,6 +152,7 @@ const MODE_KEY = 'blockit-mode';
 const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
 const PUZZLE_DIFFICULTY_KEY = 'blockit-puzzle-difficulty';
 const CHROMA_DIFFICULTY_KEY = 'blockit-chroma-difficulty';
+const GRAVITY_DIFFICULTY_KEY = 'blockit-gravity-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -147,7 +167,7 @@ const PUZZLE_RENUMBER_MARKER_KEY = 'blockit-puzzle-renumbered-v2';
 
 function bestScoreKey(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -158,7 +178,7 @@ function puzzleKey(difficulty: PuzzleLevel): string {
 
 function loadBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -169,7 +189,7 @@ function loadBestScore(
 
 function saveBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty,
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty,
   score: number
 ) {
   try {
@@ -369,7 +389,14 @@ function migrateLegacyKeys() {
 function loadMode(): GameMode {
   try {
     const stored = localStorage.getItem(MODE_KEY);
-    if (stored === 'classic' || stored === 'puzzle' || stored === 'chroma') return stored;
+    if (
+      stored === 'classic' ||
+      stored === 'puzzle' ||
+      stored === 'chroma' ||
+      stored === 'gravity'
+    ) {
+      return stored;
+    }
   } catch { /* noop */ }
   // First-time players land in Puzzle mode; combined with loadPuzzleDifficulty's
   // default of 'tutorial', this drops new visitors straight into the guided
@@ -435,6 +462,27 @@ function loadChromaDifficulty(): ChromaDifficulty {
     if (stored === 'normal') return stored;
   } catch { /* noop */ }
   return 'normal';
+}
+
+function loadGravityDifficulty(): GravityDifficulty {
+  try {
+    const stored = localStorage.getItem(GRAVITY_DIFFICULTY_KEY);
+    if (
+      stored === 'zen' ||
+      stored === 'easy' ||
+      stored === 'normal' ||
+      stored === 'hard'
+    ) {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'normal';
+}
+
+function saveGravityDifficulty(difficulty: GravityDifficulty) {
+  try {
+    localStorage.setItem(GRAVITY_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
 }
 
 /**
@@ -505,6 +553,7 @@ function freshPuzzleState(
   difficulty: PuzzleLevel,
   classicDifficulty: ClassicDifficulty,
   chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -530,6 +579,7 @@ function freshPuzzleState(
     classicDifficulty,
     puzzleDifficulty: clamped,
     chromaDifficulty,
+    gravityDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -537,6 +587,7 @@ function freshPuzzleState(
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
+    lastCascade: null,
   };
 }
 
@@ -550,6 +601,7 @@ function freshTutorialState(
   step: number,
   classicDifficulty: ClassicDifficulty,
   chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -565,6 +617,7 @@ function freshTutorialState(
     classicDifficulty,
     puzzleDifficulty: 'tutorial',
     chromaDifficulty,
+    gravityDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -572,6 +625,7 @@ function freshTutorialState(
     tutorialStep: safeStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
+    lastCascade: null,
   };
 }
 
@@ -585,6 +639,7 @@ function freshPuzzleStateFromShared(
   shared: { difficulty: PuzzleLevel; board: BoardGrid; tray: PieceShape[]; target: TargetPattern },
   classicDifficulty: ClassicDifficulty,
   chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -600,6 +655,7 @@ function freshPuzzleStateFromShared(
     classicDifficulty,
     puzzleDifficulty: shared.difficulty,
     chromaDifficulty,
+    gravityDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -607,6 +663,7 @@ function freshPuzzleStateFromShared(
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
+    lastCascade: null,
   };
 }
 
@@ -614,6 +671,7 @@ function freshClassicState(
   difficulty: ClassicDifficulty,
   puzzleDifficulty: PuzzleDifficulty,
   chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -630,6 +688,7 @@ function freshClassicState(
     classicDifficulty: difficulty,
     puzzleDifficulty,
     chromaDifficulty,
+    gravityDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -637,6 +696,7 @@ function freshClassicState(
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
+    lastCascade: null,
   };
 }
 
@@ -649,6 +709,7 @@ function freshChromaState(
   difficulty: ChromaDifficulty,
   classicDifficulty: ClassicDifficulty,
   puzzleDifficulty: PuzzleDifficulty,
+  gravityDifficulty: GravityDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -665,6 +726,7 @@ function freshChromaState(
     classicDifficulty,
     puzzleDifficulty,
     chromaDifficulty: difficulty,
+    gravityDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -672,6 +734,46 @@ function freshChromaState(
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
+    lastCascade: null,
+  };
+}
+
+/**
+ * Build a fresh Gravity state. Structurally identical to Classic (empty
+ * board, random tray, score-tracked, classic piece difficulty weights),
+ * but `mode: 'gravity'` is what signals the reducer to run the cascade
+ * pipeline on each placement.
+ */
+function freshGravityState(
+  difficulty: GravityDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const board = createEmptyBoard();
+  return {
+    board,
+    tray: generateClassicTray(difficulty, board),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'gravity',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty: difficulty,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
   };
 }
 
@@ -680,6 +782,7 @@ export function createInitialState(): GameState {
   const classicDifficulty = loadClassicDifficulty();
   const puzzleDifficulty = loadPuzzleDifficulty();
   const chromaDifficulty = loadChromaDifficulty();
+  const gravityDifficulty = loadGravityDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -700,6 +803,7 @@ export function createInitialState(): GameState {
         decoded,
         classicDifficulty,
         chromaDifficulty,
+        gravityDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -710,12 +814,13 @@ export function createInitialState(): GameState {
   const mode = loadMode();
   if (mode === 'puzzle') {
     if (puzzleDifficulty === 'tutorial') {
-      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty, puzzleEverSolved);
+      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty, gravityDifficulty, puzzleEverSolved);
     }
     return freshPuzzleState(
       puzzleDifficulty,
       classicDifficulty,
       chromaDifficulty,
+      gravityDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -727,7 +832,20 @@ export function createInitialState(): GameState {
       chromaDifficulty,
       classicDifficulty,
       puzzleDifficulty,
+      gravityDifficulty,
       loadBestScore('chroma', chromaDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'gravity') {
+    return freshGravityState(
+      gravityDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -737,6 +855,7 @@ export function createInitialState(): GameState {
     classicDifficulty,
     puzzleDifficulty,
     chromaDifficulty,
+    gravityDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -756,7 +875,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const isGameOver = !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
         state.mode === 'puzzle' && isGameOver ? 'failed' : state.puzzleResult;
-      return { ...state, tray: newTray, isGameOver, puzzleResult, puzzleLevelUp: null };
+      return {
+        ...state,
+        tray: newTray,
+        isGameOver,
+        puzzleResult,
+        puzzleLevelUp: null,
+        lastCascade: null,
+      };
     }
 
     case 'PLACE_PIECE': {
@@ -768,16 +894,41 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let board = placePiece(state.board, piece, action.origin);
       let score = state.score + calculatePlacementScore(piece);
       let combo = state.combo;
+      let cascadeSteps: CascadeStep[] | null = null;
 
-      const { rows, cols } = detectCompletedLines(board);
-      const linesCleared = rows.length + cols.length;
-
-      if (linesCleared > 0) {
-        board = clearLines(board, rows, cols);
-        score += calculateClearScore(linesCleared, combo);
-        combo += 1;
+      if (state.mode === 'gravity') {
+        // Gravity mode: run the full clear → fall → clear loop and score
+        // each step. Step 1 is the player-triggered clear (no chain
+        // multiplier); every subsequent step is a gravity-driven cascade
+        // and gets a rising multiplier on top of combo. Combo still
+        // advances by exactly one per placement (i.e. a single turn
+        // triggers one combo step regardless of cascade depth) so the
+        // turn-over-turn combo mechanic keeps working the same way.
+        const resolved = resolveCascades(board);
+        if (resolved.steps.length > 0) {
+          for (let i = 0; i < resolved.steps.length; i++) {
+            const step = resolved.steps[i];
+            const linesThisStep = step.clearedRows.length + step.clearedCols.length;
+            const stepMul = chainMultiplier(i + 1);
+            score += Math.floor(calculateClearScore(linesThisStep, combo) * stepMul);
+          }
+          combo += 1;
+          cascadeSteps = resolved.steps;
+        } else {
+          combo = 0;
+        }
+        board = resolved.board;
       } else {
-        combo = 0;
+        const { rows, cols } = detectCompletedLines(board);
+        const linesCleared = rows.length + cols.length;
+
+        if (linesCleared > 0) {
+          board = clearLines(board, rows, cols);
+          score += calculateClearScore(linesCleared, combo);
+          combo += 1;
+        } else {
+          combo = 0;
+        }
       }
 
       const newTray = [...state.tray];
@@ -840,6 +991,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             puzzleResult: solved ? 'solved' : 'failed',
             puzzleLevelUp,
             puzzleEverSolved,
+            lastCascade: null,
           };
         }
         const isGameOver = !hasValidMoves(board, newTray);
@@ -857,6 +1009,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           isGameOver,
           puzzleResult: isGameOver ? 'failed' : null,
           puzzleLevelUp: null,
+          lastCascade: null,
         };
       }
 
@@ -882,6 +1035,33 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           isGameOver,
           puzzleResult: null,
           puzzleLevelUp: null,
+          lastCascade: null,
+        };
+      }
+
+      if (state.mode === 'gravity') {
+        const finalTray = allPlaced
+          ? generateClassicTray(state.gravityDifficulty, board)
+          : newTray;
+
+        const bestScore = Math.max(score, state.bestScore);
+        const isGameOver = !hasValidMoves(board, finalTray);
+
+        if (bestScore > state.bestScore) {
+          saveBestScore('gravity', state.gravityDifficulty, bestScore);
+        }
+
+        return {
+          ...state,
+          board,
+          tray: finalTray,
+          score,
+          bestScore,
+          combo,
+          isGameOver,
+          puzzleResult: null,
+          puzzleLevelUp: null,
+          lastCascade: cascadeSteps,
         };
       }
 
@@ -904,6 +1084,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         isGameOver,
         puzzleResult: null,
         puzzleLevelUp: null,
+        lastCascade: null,
       };
     }
 
@@ -918,6 +1099,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.tutorialStep,
             state.classicDifficulty,
             state.chromaDifficulty,
+            state.gravityDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -925,6 +1107,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.puzzleDifficulty,
           state.classicDifficulty,
           state.chromaDifficulty,
+          state.gravityDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -935,7 +1118,19 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.chromaDifficulty,
           state.classicDifficulty,
           state.puzzleDifficulty,
+          state.gravityDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'gravity') {
+        return freshGravityState(
+          state.gravityDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -944,6 +1139,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.classicDifficulty,
         state.puzzleDifficulty,
         state.chromaDifficulty,
+        state.gravityDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -958,6 +1154,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         action.difficulty,
         state.puzzleDifficulty,
         state.chromaDifficulty,
+        state.gravityDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -972,6 +1169,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.tutorialStep,
           state.classicDifficulty,
           state.chromaDifficulty,
+          state.gravityDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -984,10 +1182,26 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         target,
         state.classicDifficulty,
         state.chromaDifficulty,
+        state.gravityDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
         { forceNew: true }
+      );
+    }
+
+    case 'SET_GRAVITY_DIFFICULTY': {
+      if (!GRAVITY_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveGravityDifficulty(action.difficulty);
+      saveMode('gravity');
+      return freshGravityState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        loadBestScore('gravity', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
       );
     }
 
@@ -1000,6 +1214,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.puzzleDifficulty,
         state.classicDifficulty,
         state.chromaDifficulty,
+        state.gravityDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -1020,6 +1235,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         },
         state.classicDifficulty,
         state.chromaDifficulty,
+        state.gravityDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1038,6 +1254,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           1,
           state.classicDifficulty,
           state.chromaDifficulty,
+          state.gravityDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -1045,7 +1262,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         );
       }
       saveTutorialStep(next);
-      return freshTutorialState(next, state.classicDifficulty, state.chromaDifficulty, state.puzzleEverSolved);
+      return freshTutorialState(
+        next,
+        state.classicDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.puzzleEverSolved
+      );
     }
 
     case 'TUTORIAL_GOTO': {
@@ -1053,7 +1276,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveTutorialStep(step);
       savePuzzleDifficulty('tutorial');
       saveMode('puzzle');
-      return freshTutorialState(step, state.classicDifficulty, state.chromaDifficulty, state.puzzleEverSolved);
+      return freshTutorialState(
+        step,
+        state.classicDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.puzzleEverSolved
+      );
     }
 
     case 'RESTART': {
@@ -1070,6 +1299,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           isGameOver: false,
           puzzleResult: null,
           puzzleLevelUp: null,
+          lastCascade: null,
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };

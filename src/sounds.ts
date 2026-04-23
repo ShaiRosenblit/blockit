@@ -12,6 +12,40 @@ const SOUND_FILES = [
   'celebrate.mp3',
 ] as const;
 
+/**
+ * Cascade tick: a synthesized blip whose pitch climbs with each cascade
+ * step so a chain reaction audibly escalates. Built from `AudioContext`
+ * primitives rather than a sample so it stays lightweight and doesn't
+ * need an extra asset download. Mirrors the visual cascade rhythm.
+ */
+function playCascadeTick(step: number, volume = 0.32) {
+  if (muted) return;
+  const ac = getContext();
+  if (ac.state === 'suspended') ac.resume().catch(() => {});
+
+  // Step 1 is the initial placement clear; audible but modest. Subsequent
+  // steps climb by a minor third each time, capped so very long chains
+  // don't screech.
+  const clampedStep = Math.max(1, Math.min(8, step));
+  const baseHz = 520;
+  const freq = baseHz * Math.pow(1.189, clampedStep - 1); // minor-third ratio
+
+  const osc = ac.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = freq;
+
+  const gain = ac.createGain();
+  const now = ac.currentTime;
+  const dur = 0.14;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(volume, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  osc.connect(gain).connect(ac.destination);
+  osc.start(now);
+  osc.stop(now + dur);
+}
+
 let muted = localStorage.getItem(STORAGE_KEY) !== 'on';
 
 let ctx: AudioContext | null = null;
@@ -97,5 +131,18 @@ export const sounds = {
     const clamped = Math.max(0, Math.min(1, intensity));
     const volume = 0.25 + clamped * 0.25;
     play('celebrate.mp3', volume);
+  },
+  /**
+   * Gravity cascade tick. Pitch climbs with `step` so chain reactions
+   * audibly escalate; callers invoke once per cascade step.
+   */
+  cascadeTick: (step: number) => playCascadeTick(step),
+  /**
+   * Big-chain payoff — reuses the celebrate.mp3 sample at a chain-scaled
+   * volume. Fired once when a cascade reaches step >= 3.
+   */
+  bigChain: (step: number) => {
+    const scale = Math.min(1, 0.35 + (step - 3) * 0.18);
+    play('celebrate.mp3', 0.3 + scale * 0.2);
   },
 };

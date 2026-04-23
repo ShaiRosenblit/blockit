@@ -731,6 +731,48 @@ body {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* ───────────────────── Gravity-mode cascade fall animation ───────────────────── */
+
+/*
+ * Each cell that drops during a Gravity cascade step starts rendered at
+ * `translateY(var(--cell-fall-offset))` (a negative pixel value for "up"
+ * by N rows) and animates back to 0. The animation runs once per render
+ * key — App bumps `cascadeRenderKey` on each phase transition so cells
+ * that keep falling in successive steps re-trigger cleanly. Ease-in lets
+ * the cells accelerate into their resting spot, matching real gravity
+ * feel. Duration is kept short (170 ms) so multi-step cascades stay
+ * snappy rather than dragging.
+ */
+.cell--falling {
+  animation: cell-fall-in 170ms cubic-bezier(0.55, 0.1, 0.9, 0.4);
+  will-change: transform;
+}
+
+@keyframes cell-fall-in {
+  from { transform: translateY(var(--cell-fall-offset, 0)); }
+  to   { transform: translateY(0); }
+}
+
+/*
+ * Board shake added by App.tsx on big chain steps (k >= 3) for payoff.
+ * A quick, low-amplitude side-to-side wobble that hints at physical
+ * impact without jostling the cell grid enough to throw off the drag
+ * math. Duration roughly matches the fall-in animation so the two end
+ * together.
+ */
+.board--cascade-shake {
+  animation: board-cascade-shake 200ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes board-cascade-shake {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(-3px, 1px); }
+  40%  { transform: translate(3px, -1px); }
+  60%  { transform: translate(-2px, 1px); }
+  80%  { transform: translate(2px, 0); }
+  100% { transform: translate(0, 0); }
+}
+
 /*
  * ---- Tutorial banner -----------------------------------------------------
  *

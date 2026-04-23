@@ -19,9 +19,18 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma';
+export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
+
+/**
+ * Gravity mode shares the classic difficulty rungs (same piece families, same
+ * weights) because the twist is in what happens after a line clears, not in
+ * what pieces you get. Kept as its own alias so best-score storage keys stay
+ * independent per-mode and future Gravity-only tuning (e.g. a harder rung
+ * that spawns extra garbage) stays a typed, breaking change.
+ */
+export type GravityDifficulty = ClassicDifficulty;
 
 /**
  * Chroma mode v1 ships with a single difficulty. The type is kept as a
@@ -50,9 +59,17 @@ export type PuzzleDifficulty = PuzzleLevel | 'tutorial';
 export type ModeSelection =
   | { mode: 'classic'; difficulty: ClassicDifficulty }
   | { mode: 'puzzle'; difficulty: PuzzleDifficulty }
-  | { mode: 'chroma'; difficulty: ChromaDifficulty };
+  | { mode: 'chroma'; difficulty: ChromaDifficulty }
+  | { mode: 'gravity'; difficulty: GravityDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
+  'zen',
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const GRAVITY_DIFFICULTIES: readonly GravityDifficulty[] = [
   'zen',
   'easy',
   'normal',
@@ -116,3 +133,49 @@ export const CHROMA_COLORS = [
   '#4ECDC4',
   '#FFEAA7',
 ] as const;
+
+/**
+ * One resolution pass in Gravity mode: the rows/columns that cleared this
+ * step, and — after the subsequent gravity compaction — how far each
+ * surviving cell fell (measured in the NEW board's coordinates so the UI
+ * can render the final position and transition from an offset back to 0).
+ *
+ * `fallDistances[newR][newC]` = rows the cell at that post-compaction
+ * position moved down. 0 for cells that didn't move. Present for every
+ * filled cell in the resulting board; absent (undefined) for empty cells.
+ *
+ * The UI replays steps in order: paint `clearedCells` with the will-clear
+ * flash, wait for the clear animation, then swap to the post-fall board
+ * with each filled cell offset up by `fallDistances[r][c]` pixels and
+ * transitioning back to 0. Repeat for each step.
+ */
+export type CascadeStep = {
+  /**
+   * Board state at the start of this step — i.e. right before the clear
+   * runs. For step 0 this is the post-placement board (piece visible,
+   * no clears yet); for step k >= 1 this equals step[k-1].boardAfter.
+   * The UI paints this while flashing `clearedCells` with will-clear.
+   */
+  boardBefore: BoardGrid;
+  /** Rows cleared this step (as indices into the board BEFORE this step's clear). */
+  clearedRows: number[];
+  /** Columns cleared this step (as indices into the board BEFORE this step's clear). */
+  clearedCols: number[];
+  /**
+   * `${row},${col}` coordinates of every cell that cleared this step,
+   * encoded on `boardBefore`. Used to light up `cell--will-clear` during
+   * the step's pre-clear flash.
+   */
+  clearedCells: string[];
+  /**
+   * Post-compaction board for this step. Cells that cleared are `null`;
+   * surviving cells are in their settled position.
+   */
+  boardAfter: BoardGrid;
+  /**
+   * `fallDistances[r][c]` = how far the cell now sitting at (r, c) in
+   * `boardAfter` fell during this step's gravity compaction. `null` when
+   * the cell is empty. Used to drive the per-cell translateY animation.
+   */
+  fallDistances: (number | null)[][];
+};

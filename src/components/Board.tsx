@@ -1,6 +1,6 @@
 import { useGame } from '../hooks/useGame';
 import { Cell } from './Cell';
-import type { Coord } from '../game/types';
+import type { BoardGrid, Coord } from '../game/types';
 import { BOARD_SIZE } from '../game/types';
 
 type BoardProps = {
@@ -9,16 +9,51 @@ type BoardProps = {
   previewColor?: string | null;
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
+  /**
+   * Gravity-mode cascade playback override. When set, renders this board
+   * instead of `state.board` — the reducer commits the final post-cascade
+   * state in one dispatch, but the UI replays the intermediate steps to
+   * make the chain reaction visible. Undefined in all other modes / idle.
+   */
+  overrideBoard?: BoardGrid;
+  /**
+   * Per-cell fall distance (rows) for the current cascade step. Used to
+   * animate filled cells in from `translateY(-distance * cellSize)` back
+   * to 0. Parallel to `overrideBoard`. Cells with `null`/0 don't animate.
+   */
+  overrideFallDistances?: (number | null)[][];
+  /** Cell size in px — needed to translate `overrideFallDistances` into pixels. */
+  cellSize?: number;
+  /**
+   * When the cascade animation advances to a new "fall" phase, bumping
+   * this key forces the Board subtree to remount so CSS animations on the
+   * newly-falling cells restart cleanly.
+   */
+  cascadeRenderKey?: string;
+  /** Shake the whole board once — used for chain-step payoff (k >= 3). */
+  shake?: boolean;
 };
 
 function coordKey(r: number, c: number): string {
   return `${r},${c}`;
 }
 
-export function Board({ boardRef, previewCells, previewColor, placedCells, clearPreviewCells }: BoardProps) {
+export function Board({
+  boardRef,
+  previewCells,
+  previewColor,
+  placedCells,
+  clearPreviewCells,
+  overrideBoard,
+  overrideFallDistances,
+  cellSize,
+  cascadeRenderKey,
+  shake,
+}: BoardProps) {
   const { state } = useGame();
   const target = state.puzzleTarget;
   const isPuzzle = state.mode === 'puzzle';
+  const renderBoard = overrideBoard ?? state.board;
 
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -27,11 +62,12 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
       const preview = previewCells?.get(key) ?? null;
       const justPlaced = placedCells?.has(key) ?? false;
       const willClear = clearPreviewCells?.has(key) ?? false;
+      const fallRows = overrideFallDistances?.[r]?.[c] ?? 0;
 
       let targetState: 'needs-fill' | 'needs-clear' | 'target-met' | 'neutral' | undefined;
       if (target) {
         const want = target[r][c];
-        const filled = state.board[r][c] !== null;
+        const filled = renderBoard[r][c] !== null;
         if (want && !filled) targetState = 'needs-fill';
         else if (!want && filled) targetState = 'needs-clear';
         else if (want && filled) targetState = 'target-met';
@@ -40,20 +76,25 @@ export function Board({ boardRef, previewCells, previewColor, placedCells, clear
 
       cells.push(
         <Cell
-          key={key}
+          key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
           coord={key}
-          color={preview === 'valid' ? previewColor ?? null : state.board[r][c]}
+          color={preview === 'valid' ? previewColor ?? null : renderBoard[r][c]}
           preview={preview}
           justPlaced={justPlaced}
           willClear={willClear}
           targetState={targetState}
+          fallRows={fallRows ?? undefined}
+          fallCellSize={cellSize}
         />
       );
     }
   }
 
+  let boardClass = isPuzzle ? 'board board--puzzle' : 'board';
+  if (shake) boardClass += ' board--cascade-shake';
+
   return (
-    <div className={isPuzzle ? 'board board--puzzle' : 'board'} ref={boardRef}>
+    <div className={boardClass} ref={boardRef}>
       {cells}
     </div>
   );

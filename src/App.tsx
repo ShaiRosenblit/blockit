@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, useCallback, useEffect } from 'react';
+import { useReducer, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { gameReducer, createInitialState, savePuzzleEverSolved } from './game/gameReducer';
 import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
@@ -7,8 +7,14 @@ import { Board } from './components/Board';
 import { PieceTray, FloatingPiece } from './components/PieceTray';
 import { ScoreBar } from './components/ScoreBar';
 import { GameOverOverlay } from './components/GameOverOverlay';
-import type { Coord } from './game/types';
-import { BOARD_SIZE, CLASSIC_DIFFICULTIES, PUZZLE_DIFFICULTIES, puzzleDifficultyLabel } from './game/types';
+import type { CascadeStep, Coord } from './game/types';
+import {
+  BOARD_SIZE,
+  CLASSIC_DIFFICULTIES,
+  GRAVITY_DIFFICULTIES,
+  PUZZLE_DIFFICULTIES,
+  puzzleDifficultyLabel,
+} from './game/types';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -135,6 +141,47 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * Gravity-mode cascade animation state machine. The reducer commits the
+   * final post-cascade board in one dispatch, but carries the ordered
+   * resolution steps on `state.lastCascade` so the UI can replay them as
+   * animation. Each step has two visible phases:
+   *   'flash' — render `steps[i].boardBefore` with `clearedCells` pulsed
+   *             via `cell--will-clear`, so the player sees what is about
+   *             to disappear. Ends after CASCADE_FLASH_MS.
+   *   'fall'  — render `steps[i].boardAfter` with per-cell `fallRows`
+   *             driving the `cell--falling` CSS animation. Ends after
+   *             CASCADE_FALL_MS and either advances to the next step's
+   *             flash or terminates playback.
+   * Null between cascades (idle state).
+   */
+  const [cascadePlayback, setCascadePlayback] = useState<{
+    steps: CascadeStep[];
+    stepIndex: number;
+    phase: 'flash' | 'fall';
+  } | null>(null);
+  /**
+   * Incremented when a chain step >= 3 lands; drives a transient board
+   * shake CSS class. Each bump un-applies and re-applies the class via
+   * a short timer so successive big chains in the same cascade re-fire
+   * the animation cleanly.
+   */
+  const [boardShakeTick, setBoardShakeTick] = useState(0);
+  const [boardShaking, setBoardShaking] = useState(false);
+  useEffect(() => {
+    if (boardShakeTick === 0) return;
+    setBoardShaking(true);
+    const t = window.setTimeout(() => setBoardShaking(false), 220);
+    return () => window.clearTimeout(t);
+  }, [boardShakeTick]);
+  const cascadeAnimating = cascadePlayback !== null;
+  // Mirror in a ref so drag/place handlers can gate on it without
+  // re-subscribing pointer listeners each time the flag flips.
+  const cascadeAnimatingRef = useRef(false);
+  useEffect(() => {
+    cascadeAnimatingRef.current = cascadeAnimating;
+  }, [cascadeAnimating]);
+
   const { seen: coachSeen, markSeen: markCoachSeen } = useCoachMarks();
   const [coachAnchor, setCoachAnchor] = useState<HTMLElement | null>(null);
   const [activeCoach, setActiveCoach] = useState<CoachSymbol | null>(null);
@@ -158,6 +205,85 @@ export default function App() {
     }, 320);
     return () => window.clearTimeout(timeout);
   }, [scorePulseTick]);
+
+  // Gravity cascade animation timings. Tuned so short chains feel snappy
+  // and long chains (step >= 4) still resolve in well under a second per
+  // step. Flash is deliberately longer than fall — the player needs to
+  // register WHICH cells are about to go before they vanish.
+  const CASCADE_FLASH_MS = 220;
+  const CASCADE_FALL_MS = 180;
+
+  /**
+   * Kick off cascade playback whenever the reducer hands us a new
+   * `state.lastCascade`. Uses a ref-tracked identity guard so StrictMode
+   * double-invocations in dev don't double-trigger the animation, and
+   * runs in `useLayoutEffect` so the first frame already shows the
+   * step-0 boardBefore override — otherwise there would be a one-frame
+   * flash of the settled post-cascade board slipping through before the
+   * animation begins.
+   */
+  const activeCascadeRef = useRef<CascadeStep[] | null>(null);
+  useLayoutEffect(() => {
+    const steps = state.lastCascade;
+    if (!steps || steps.length === 0) {
+      // A mid-cascade RESTART / SET_MODE / rotation wipes `lastCascade`
+      // but leaves our local playback state dangling with stale step
+      // boards — which would then paint on top of the new fresh board.
+      // Clear it here so the Board snaps back to the fresh `state.board`.
+      activeCascadeRef.current = null;
+      setCascadePlayback(null);
+      return;
+    }
+    if (activeCascadeRef.current === steps) return;
+    activeCascadeRef.current = steps;
+    setCascadePlayback({ steps, stepIndex: 0, phase: 'flash' });
+    // Fire audio/haptic feedback for the first step's clear immediately
+    // so the flash phase has matching presence; subsequent steps get
+    // their own ticks from the playback driver below.
+    haptics.lineClear(steps[0].clearedRows.length + steps[0].clearedCols.length);
+    sounds.lineClear(steps[0].clearedRows.length + steps[0].clearedCols.length);
+  }, [state.lastCascade]);
+
+  /**
+   * Drive the cascade playback state machine. Each phase transition is
+   * scheduled via `setTimeout` on a single cleanup-safe timer; clearing
+   * the active cascade (e.g. mid-animation RESTART) cancels the timer
+   * and wipes playback state.
+   */
+  useEffect(() => {
+    if (!cascadePlayback) return;
+    const { steps, stepIndex, phase } = cascadePlayback;
+
+    if (phase === 'flash') {
+      const t = window.setTimeout(() => {
+        // Fire cascade tick for steps >= 2 (the chain kicks in) so the
+        // audio rises with the chain. Step 1 already got the lineClear
+        // feedback when the cascade started.
+        if (stepIndex >= 1) {
+          sounds.cascadeTick(stepIndex + 1);
+          haptics.cascadeTick(stepIndex + 1);
+        }
+        if (stepIndex + 1 >= 3) {
+          sounds.bigChain(stepIndex + 1);
+          // Big-chain board shake: toggle on, then off after the shake
+          // animation finishes so the class can re-apply next time.
+          setBoardShakeTick((n) => n + 1);
+        }
+        setCascadePlayback({ steps, stepIndex, phase: 'fall' });
+      }, CASCADE_FLASH_MS);
+      return () => window.clearTimeout(t);
+    }
+
+    // phase === 'fall'
+    const t = window.setTimeout(() => {
+      if (stepIndex + 1 < steps.length) {
+        setCascadePlayback({ steps, stepIndex: stepIndex + 1, phase: 'flash' });
+      } else {
+        setCascadePlayback(null);
+      }
+    }, CASCADE_FALL_MS);
+    return () => window.clearTimeout(t);
+  }, [cascadePlayback]);
 
   const computeOrigin = useCallback(
     (clientX: number, clientY: number, piece: { width: number; height: number }): Coord | null => {
@@ -328,14 +454,24 @@ export default function App() {
       const linesCleared = rows.length + cols.length;
 
       if (linesCleared > 0) {
-        haptics.lineClear(linesCleared);
-        sounds.lineClear(linesCleared);
+        // Gravity mode owns the line-clear feedback end-to-end via its
+        // cascade playback effect (which handles step-by-step haptics and
+        // sound on a timer). Firing here too would double-play the first
+        // step's clear. Classic/Puzzle/Chroma still need this immediate
+        // feedback because they don't run the cascade pipeline.
+        if (state.mode !== 'gravity') {
+          haptics.lineClear(linesCleared);
+          sounds.lineClear(linesCleared);
+        }
 
         // Puzzle mode has no score display, so skip the +N popup and the
         // cells-flying-to-the-score-bar animation — the board's own cell
         // clear animation is still plenty of feedback. Classic mode keeps
         // them because the score is the primary feedback loop there.
-        if (state.mode !== 'puzzle') {
+        // Gravity mode also skips: the cascade playback IS the feedback,
+        // and orbs flying out of a board that's mid-cascade reads as
+        // visual noise against the rising/falling tiles.
+        if (state.mode !== 'puzzle' && state.mode !== 'gravity') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
           spawnScorePopup(totalPopup, origin);
@@ -601,6 +737,11 @@ export default function App() {
   }, []);
 
   const handleTrayPointerDown = useCallback((index: number, e: React.PointerEvent) => {
+    // Lock input while a Gravity-mode cascade animation is mid-flight —
+    // any placement made before the board settles would operate on the
+    // final post-cascade board (that's already committed in state) but
+    // look wildly out of sync with what the player visually sees.
+    if (cascadeAnimatingRef.current) return;
     e.preventDefault();
     lastTrayIndexRef.current = index;
     setPendingTray({ index, startX: e.clientX, startY: e.clientY });
@@ -717,11 +858,47 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'chroma', label: 'Chroma' },
+    { id: 'gravity', label: 'Gravity' },
   ];
+
+  // Gravity cascade playback → Board override props. Derived per render
+  // from the current playback phase; null / undefined when idle, which
+  // makes Board fall back to `state.board`.
+  let cascadeBoard: ReturnType<typeof getCascadeFrame> = null;
+  function getCascadeFrame() {
+    if (!cascadePlayback) return null;
+    const { steps, stepIndex, phase } = cascadePlayback;
+    const step = steps[stepIndex];
+    if (phase === 'flash') {
+      // Paint the pre-clear board, highlight soon-to-clear cells.
+      const willClear = new Set<string>(step.clearedCells);
+      return {
+        board: step.boardBefore,
+        willClear,
+        fallDistances: undefined as (number | null)[][] | undefined,
+        renderKey: `flash-${stepIndex}`,
+      };
+    }
+    // phase === 'fall' — render the post-compaction board with per-cell
+    // fall distances so the animation plays. No will-clear overlay here
+    // (those cells are already gone).
+    return {
+      board: step.boardAfter,
+      willClear: undefined as Set<string> | undefined,
+      fallDistances: step.fallDistances,
+      renderKey: `fall-${stepIndex}`,
+    };
+  }
+  cascadeBoard = getCascadeFrame();
+  const effectivePreviewCells = cascadeBoard ? undefined : preview?.cells;
+  const effectivePreviewColor = cascadeBoard ? undefined : preview?.color;
+  const effectiveClearPreview =
+    cascadeBoard?.willClear ?? (preview?.clearCells ?? undefined);
+  const effectivePlacedCells = cascadeBoard ? undefined : (placedCells ?? undefined);
 
   // Human-readable "you are here" label for the collapsed menu toggle.
   // Tutorial is mode-unambiguous so we drop the "Puzzle · " prefix to save
@@ -734,6 +911,10 @@ export default function App() {
       return `Classic · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.mode === 'chroma') return 'Chroma';
+    if (state.mode === 'gravity') {
+      const d = state.gravityDifficulty;
+      return `Gravity · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
   })();
@@ -810,49 +991,68 @@ export default function App() {
             </div>
             {state.mode !== 'chroma' && (
               <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
-                {state.mode === 'classic'
-                  ? CLASSIC_DIFFICULTIES.map((d) => (
+                {state.mode === 'classic' &&
+                  CLASSIC_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.classicDifficulty}
+                      className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.classicDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
+                        }
+                        // Difficulty is the terminal pick — close the drawer
+                        // so the player gets straight back to the board.
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'gravity' &&
+                  GRAVITY_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.gravityDifficulty}
+                      className={`difficulty-btn${d === state.gravityDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.gravityDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_GRAVITY_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'puzzle' &&
+                  PUZZLE_DIFFICULTIES.map((d) => {
+                    const label = puzzleDifficultyLabel(d);
+                    const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
+                    return (
                       <button
                         key={d}
                         role="tab"
-                        aria-selected={d === state.classicDifficulty}
-                        className={`difficulty-btn${d === state.classicDifficulty ? ' difficulty-btn--active' : ''}`}
+                        aria-selected={d === state.puzzleDifficulty}
+                        className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
                         onClick={() => {
-                          if (d !== state.classicDifficulty) {
+                          if (d !== state.puzzleDifficulty) {
                             clearShareHash();
-                            dispatch({ type: 'SET_CLASSIC_DIFFICULTY', difficulty: d });
+                            dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
                           }
                           // Difficulty is the terminal pick — close the drawer
                           // so the player gets straight back to the board.
                           setMenuOpen(false);
                         }}
                       >
-                        {d}
+                        {label}
                       </button>
-                    ))
-                  : PUZZLE_DIFFICULTIES.map((d) => {
-                      const label = puzzleDifficultyLabel(d);
-                      const tutorialClass = d === 'tutorial' ? ' difficulty-btn--tutorial' : '';
-                      return (
-                        <button
-                          key={d}
-                          role="tab"
-                          aria-selected={d === state.puzzleDifficulty}
-                          className={`difficulty-btn difficulty-btn--puzzle${tutorialClass}${d === state.puzzleDifficulty ? ' difficulty-btn--active' : ''}`}
-                          onClick={() => {
-                            if (d !== state.puzzleDifficulty) {
-                              clearShareHash();
-                              dispatch({ type: 'SET_PUZZLE_DIFFICULTY', difficulty: d });
-                            }
-                            // Difficulty is the terminal pick — close the drawer
-                            // so the player gets straight back to the board.
-                            setMenuOpen(false);
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                    );
+                  })}
               </div>
             )}
             {/*
@@ -862,11 +1062,11 @@ export default function App() {
              * hamburger drawer — a closed-by-default menu players have to
              * open on purpose — and the visual demotion (muted, small,
              * right-aligned) keeps it from stealing focus from the primary
-             * picks, without hiding it from anyone. Hidden in Chroma mode
-             * because the modal generates Puzzle content and would yank
-             * the player out of the mode they picked.
+             * picks, without hiding it from anyone. Hidden in Chroma and
+             * Gravity modes because the modal generates Puzzle content and
+             * would yank the player out of the mode they picked.
              */}
-            {state.mode !== 'chroma' && (
+            {state.mode !== 'chroma' && state.mode !== 'gravity' && (
               <button
                 type="button"
                 className="chrome-menu__custom-link"
@@ -943,17 +1143,24 @@ export default function App() {
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
                 : state.mode === 'chroma'
                   ? "Chroma · pieces can't touch a different color"
-                  : 'Tap to rotate · drag to place'}
+                  : state.mode === 'gravity'
+                    ? 'Gravity · clears make blocks fall — chain reactions score big'
+                    : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}
         </div>
         <Board
           boardRef={boardRef}
-          previewCells={preview?.cells}
-          previewColor={preview?.color}
-          placedCells={placedCells ?? undefined}
-          clearPreviewCells={preview?.clearCells ?? undefined}
+          previewCells={effectivePreviewCells}
+          previewColor={effectivePreviewColor}
+          placedCells={effectivePlacedCells}
+          clearPreviewCells={effectiveClearPreview}
+          overrideBoard={cascadeBoard?.board}
+          overrideFallDistances={cascadeBoard?.fallDistances}
+          cellSize={boardCellSize}
+          cascadeRenderKey={cascadeBoard?.renderKey}
+          shake={boardShaking}
         />
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece

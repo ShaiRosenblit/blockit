@@ -15,3 +15,17 @@ export function calculateClearScore(
   const base = (linesCleared * (linesCleared + 1) / 2) * 10;
   return Math.floor(base * (1 + 0.5 * combo));
 }
+
+/**
+ * Multiplier applied to each Gravity-mode cascade step on top of the usual
+ * combo. Step 1 is the initial (player-caused) clear so it's 1x; step 2+
+ * are chain reactions triggered by gravity compaction and are rewarded
+ * progressively. Capped at 3x so late-game mega-chains don't balloon the
+ * score beyond recognition.
+ */
+export function chainMultiplier(step: number): number {
+  if (step <= 1) return 1;
+  if (step === 2) return 1.5;
+  if (step === 3) return 2;
+  return 3;
+}
