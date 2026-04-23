@@ -468,15 +468,22 @@ export default function App() {
     const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
-    const intensity = difficultyToCelebrationIntensity(
+    const baseIntensity = difficultyToCelebrationIntensity(
       state.puzzleDifficulty,
       state.tutorialStep
     );
+    // First-time solves of a numeric difficulty are milestones the player
+    // will only experience once per difficulty — punch the celebration up a
+    // touch so it *feels* different from their 15th Normal solve. The bump
+    // is capped at 1.0 so Expert (already near the ceiling) doesn't wrap.
+    const intensity = state.puzzleLevelUp !== null
+      ? Math.min(1, baseIntensity + 0.2)
+      : baseIntensity;
 
     setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
-  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep]);
+  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep, state.puzzleLevelUp]);
 
   // Puzzle coach-marks: the first time a player sees each symbol in a real
   // (non-tutorial) puzzle, surface a one-line tooltip anchored to the first
@@ -834,26 +841,26 @@ export default function App() {
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
              * link tucked under the difficulty row so it doesn't compete
-             * with the primary difficulty picks. It's also gated on
-             * *tutorial completion* — a new player who hasn't yet reached
-             * the last tutorial step never sees it. Once you've worked
-             * through the intro, this hint is there for you to find; until
-             * then it stays out of the way.
+             * with the primary difficulty picks. Two layers of obscurity
+             * keep it out of a new player's way without gating on explicit
+             * experience signals: (1) it only shows on a numeric puzzle,
+             * not during the tutorial, and (2) it's inside the hamburger
+             * drawer — a closed-by-default menu players have to open on
+             * purpose. The visual demotion (muted, small, right-aligned)
+             * does the rest.
              */}
-            {state.mode === 'puzzle' &&
-              state.puzzleDifficulty !== 'tutorial' &&
-              state.tutorialStep >= TUTORIAL_STEP_COUNT - 1 && (
-                <button
-                  type="button"
-                  className="chrome-menu__custom-link"
-                  onClick={() => {
-                    setCustomOpen(true);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Custom puzzle&hellip;
-                </button>
-              )}
+            {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
+              <button
+                type="button"
+                className="chrome-menu__custom-link"
+                onClick={() => {
+                  setCustomOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                Custom puzzle&hellip;
+              </button>
+            )}
           </div>
         )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
