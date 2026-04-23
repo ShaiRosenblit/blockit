@@ -7,7 +7,7 @@ import {
   applyPlacementAndClear,
   boardMatchesTarget,
 } from './board';
-import { PIECE_CATALOG } from './pieces';
+import { PIECE_CATALOG, PIECE_FAMILY_INFO } from './pieces';
 
 /**
  * Puzzle mode: the player is shown a **target pattern** and must end the round
@@ -191,26 +191,44 @@ function poolForSpec(spec: DifficultySpec): PieceShape[] {
   });
 }
 
-function pickPieces(spec: DifficultySpec, rng: () => number): PieceShape[] {
-  const pool = poolForSpec(spec);
-  if (pool.length === 0) return [];
-  // Sample with replacement: duplicate piece shapes are fair game and make
-  // tighter puzzles, especially at higher levels.
+function pickPieces(
+  spec: DifficultySpec,
+  rng: () => number,
+  pool?: PieceShape[],
+  allowDuplicates = true
+): PieceShape[] {
+  const src = pool ?? poolForSpec(spec);
+  if (src.length === 0) return [];
   const picked: PieceShape[] = [];
+  if (allowDuplicates) {
+    // Sample with replacement — duplicate shapes make tighter puzzles.
+    for (let i = 0; i < spec.pieceCount; i++) {
+      picked.push(sample(src, rng));
+    }
+    return picked;
+  }
+
+  // Sample without replacement: shuffle and take first N. If the pool is
+  // smaller than the request, fall back to sampling with replacement for the
+  // overflow rather than returning a short tray.
+  const shuffled = shuffleInPlace([...src], rng);
   for (let i = 0; i < spec.pieceCount; i++) {
-    picked.push(sample(pool, rng));
+    picked.push(shuffled[i] ?? sample(src, rng));
   }
   return picked;
 }
 
-/** Randomly place N pre-fill cells on an empty board. Cells are spread-out:
- *  we bias toward cells that aren't adjacent to another pre-fill so pre-fill
- *  doesn't clump into a single blob. */
-function seedPrefill(count: number, rng: () => number): BoardGrid {
+/** Randomly place N pre-fill cells on an empty board.
+ *
+ *  `spread` controls clumpiness in [0, 1]: 0 = candidates adjacent to existing
+ *  pre-fill are always accepted (fully clumped), 1 = they are almost always
+ *  rejected (maximally scattered). Default 0.65 matches the original behavior. */
+function seedPrefill(count: number, rng: () => number, spread = 0.65): BoardGrid {
   const board = createEmptyBoard();
   if (count <= 0) return board;
 
   const PREFILL_COLOR = '#5c6b7a';
+  const clamped = Math.max(0, Math.min(1, spread));
   let placed = 0;
   let attempts = 0;
 
@@ -220,8 +238,6 @@ function seedPrefill(count: number, rng: () => number): BoardGrid {
     const c = Math.floor(rng() * BOARD_SIZE);
     if (board[r][c] !== null) continue;
 
-    // Soft spread: reject with increasing probability if there's an adjacent
-    // pre-fill already, but don't loop forever.
     let adjacent = 0;
     for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
       const nr = r + dr;
@@ -229,7 +245,7 @@ function seedPrefill(count: number, rng: () => number): BoardGrid {
       if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
       if (board[nr][nc] !== null) adjacent++;
     }
-    if (adjacent > 0 && rng() < 0.65 && attempts < 200) continue;
+    if (adjacent > 0 && rng() < clamped && attempts < 200) continue;
 
     board[r][c] = PREFILL_COLOR;
     placed++;
@@ -354,12 +370,25 @@ export function canReachTarget(
   return false;
 }
 
-function buildCandidate(spec: DifficultySpec, rng: () => number): BuiltPuzzle | null {
+type CandidateOptions = {
+  /** Explicit piece pool; if omitted, derived from the spec's cell-count range. */
+  pool?: PieceShape[];
+  /** Sample pieces with replacement when true (default), without when false. */
+  allowDuplicates?: boolean;
+  /** Pre-fill spread — see seedPrefill. */
+  prefillSpread?: number;
+};
+
+function buildCandidate(
+  spec: DifficultySpec,
+  rng: () => number,
+  options: CandidateOptions = {}
+): BuiltPuzzle | null {
   for (let attempt = 0; attempt < 60; attempt++) {
     const prefillCount = spec.prefillMin +
       Math.floor(rng() * (spec.prefillMax - spec.prefillMin + 1));
-    const startBoard = seedPrefill(prefillCount, rng);
-    const pieces = pickPieces(spec, rng);
+    const startBoard = seedPrefill(prefillCount, rng, options.prefillSpread);
+    const pieces = pickPieces(spec, rng, options.pool, options.allowDuplicates);
     if (pieces.length !== spec.pieceCount) continue;
 
     const sim = simulateForward(startBoard, pieces, rng);
@@ -459,3 +488,136 @@ export function generatePuzzle(options: { difficulty?: number; seed?: number } =
     difficulty,
   };
 }
+
+/**
+ * Fully-customisable puzzle generator. Every difficulty knob is exposed as a
+ * field and validated/clamped to sane limits so bad input can't DoS the
+ * forward-simulation loop. Returns `null` only when generation genuinely can't
+ * hit the spec after many attempts (e.g. empty family allow-list, or target
+ * limits that exclude every plausible outcome).
+ */
+export type CustomPuzzleConfig = {
+  /** Tray size — also the length of the solution. */
+  pieceCount: number;
+  /** Inclusive cell-count range for sampled pieces. */
+  minPieceCells: number;
+  maxPieceCells: number;
+  /** Inclusive cell-count range for the final target pattern. */
+  minTargetCells: number;
+  maxTargetCells: number;
+  /** Inclusive pre-fill range. */
+  prefillMin: number;
+  prefillMax: number;
+  /** Of the pre-fill, how many must end up outside the target (must be cleared). */
+  minPrefillCleared: number;
+  /** Allow-list of piece family ids (see `PIECE_FAMILY_INFO`). Empty/omitted = all families in range. */
+  allowedFamilies?: string[];
+  /** Whether duplicate pieces in the tray are allowed. Default true. */
+  allowDuplicates?: boolean;
+  /** Pre-fill clumpiness: 0 = clumped, 1 = scattered. Default 0.65. */
+  prefillSpread?: number;
+  /** Optional seed for deterministic regeneration. */
+  seed?: number;
+};
+
+export type CustomPuzzleResult = {
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+  /** Nominal difficulty derived from pieceCount, used for celebration intensity
+   *  and share-link numbering; custom puzzles are always ephemeral. */
+  difficulty: PuzzleLevel;
+};
+
+const PUZZLE_MAX_BOARD_CELLS = BOARD_SIZE * BOARD_SIZE; // 64
+
+/** Build a spec + options from a custom config, after clamping everything
+ *  into a safe range so the forward simulator can't get wedged. */
+function normalizeCustomConfig(config: CustomPuzzleConfig): {
+  spec: DifficultySpec;
+  options: CandidateOptions;
+} {
+  const pieceCount = Math.max(1, Math.min(12, Math.round(config.pieceCount)));
+
+  // Piece cell range clamped to what the catalog actually covers (1–9).
+  const minPieceCells = Math.max(1, Math.min(9, Math.round(config.minPieceCells)));
+  const maxPieceCells = Math.max(minPieceCells, Math.min(9, Math.round(config.maxPieceCells)));
+
+  const minTargetCells = Math.max(1, Math.min(PUZZLE_MAX_BOARD_CELLS, Math.round(config.minTargetCells)));
+  const maxTargetCells = Math.max(
+    minTargetCells,
+    Math.min(PUZZLE_MAX_BOARD_CELLS, Math.round(config.maxTargetCells))
+  );
+
+  const prefillMin = Math.max(0, Math.min(PUZZLE_MAX_BOARD_CELLS, Math.round(config.prefillMin)));
+  const prefillMax = Math.max(prefillMin, Math.min(PUZZLE_MAX_BOARD_CELLS, Math.round(config.prefillMax)));
+  const minPrefillCleared = Math.max(0, Math.min(prefillMax, Math.round(config.minPrefillCleared)));
+
+  const spec: DifficultySpec = {
+    // Difficulty label is cosmetic for custom puzzles — we pick a nominal level
+    // elsewhere. Keep it at 1 internally.
+    difficulty: 1,
+    pieceCount,
+    minPieceCells,
+    maxPieceCells,
+    minTargetCells,
+    maxTargetCells,
+    prefillMin,
+    prefillMax,
+    minPrefillCleared,
+  };
+
+  // Resolve the piece pool: family allow-list + cell-count range intersection.
+  const allowedSet =
+    config.allowedFamilies && config.allowedFamilies.length > 0
+      ? new Set(config.allowedFamilies)
+      : null;
+
+  const allowedPieceIds = new Set<string>();
+  for (const fam of PIECE_FAMILY_INFO) {
+    if (allowedSet && !allowedSet.has(fam.id)) continue;
+    if (fam.cellCount < minPieceCells || fam.cellCount > maxPieceCells) continue;
+    for (const pid of fam.pieceIds) allowedPieceIds.add(pid);
+  }
+  const pool = PIECE_CATALOG.filter((p) => allowedPieceIds.has(p.id));
+
+  return {
+    spec,
+    options: {
+      pool,
+      allowDuplicates: config.allowDuplicates ?? true,
+      prefillSpread: config.prefillSpread,
+    },
+  };
+}
+
+function nominalDifficultyForCustom(pieceCount: number): PuzzleLevel {
+  if (pieceCount <= 3) return 1;
+  if (pieceCount <= 4) return 2;
+  if (pieceCount <= 5) return 3;
+  return 4;
+}
+
+export function generateCustomPuzzle(config: CustomPuzzleConfig): CustomPuzzleResult | null {
+  const { spec, options } = normalizeCustomConfig(config);
+  if (!options.pool || options.pool.length === 0) return null;
+
+  const seed = (config.seed ?? (Date.now() ^ Math.floor(Math.random() * 0x100000000))) >>> 0;
+  const rng = mulberry32(seed);
+
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const built = buildCandidate(spec, rng, options);
+    if (!built) continue;
+    return {
+      board: cloneBoard(built.board),
+      tray: built.tray.map((piece) => clonePiece(piece)),
+      target: built.target.map((row) => [...row]),
+      difficulty: nominalDifficultyForCustom(spec.pieceCount),
+    };
+  }
+
+  return null;
+}
+
+/** Re-export family metadata so UI code can import everything from one place. */
+export { PIECE_FAMILY_INFO } from './pieces';

@@ -20,6 +20,7 @@ import { Wordmark } from './components/Wordmark';
 import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
 import { CoachMark } from './components/CoachMark';
+import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
 import type { PuzzleDifficulty } from './game/types';
 
@@ -101,6 +102,12 @@ export default function App() {
   // Variant A — collapsible mode/difficulty menu. Hidden by default so the
   // header can hand more room to the Blockit wordmark below.
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Custom-puzzle configurator is a modal overlay, opened from the chrome
+  // menu. On Generate it dispatches LOAD_SHARED_PUZZLE so the produced
+  // puzzle is ephemeral (no localStorage write) and doesn't clobber the
+  // stored puzzle for the nominal difficulty.
+  const [customOpen, setCustomOpen] = useState(false);
 
   /**
    * Live board cell size in device pixels. Kept in state (fed by a
@@ -824,6 +831,19 @@ export default function App() {
                     );
                   })}
             </div>
+            {state.mode === 'puzzle' && (
+              <button
+                type="button"
+                className="chrome-menu__custom-btn"
+                onClick={() => {
+                  setCustomOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                <span aria-hidden>{'\u2699'}</span>
+                <span>Custom puzzle&hellip;</span>
+              </button>
+            )}
           </div>
         )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
@@ -963,6 +983,26 @@ export default function App() {
                 : 'Cells marked X must be empty at the end.'
             }
             onDismiss={dismissCoach}
+          />
+        )}
+        {customOpen && (
+          <CustomPuzzleModal
+            onClose={() => setCustomOpen(false)}
+            onGenerate={(result) => {
+              // Ephemeral load: re-uses the shared-puzzle path so we don't
+              // persist the custom puzzle under the nominal difficulty's
+              // storage slot. Share-link hash is cleared so the URL reflects
+              // this is a one-off local puzzle.
+              clearShareHash();
+              dispatch({
+                type: 'LOAD_SHARED_PUZZLE',
+                difficulty: result.difficulty,
+                board: result.board,
+                tray: result.tray,
+                target: result.target,
+              });
+              setCustomOpen(false);
+            }}
           />
         )}
       </div>

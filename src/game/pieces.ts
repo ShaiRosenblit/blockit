@@ -249,6 +249,52 @@ export const PIECE_CATALOG: PieceShape[] = PIECE_DEFS.map((def) => {
   return { ...def, width, height, color: '' };
 });
 
+/** Public, readable metadata about piece families — exposed so the custom
+ *  puzzle configurator can let players toggle which families are sampled. */
+export type PieceFamilyInfo = {
+  /** Stable id; used in the custom config as an allow-list set. */
+  id: string;
+  /** Human-readable label for the UI. */
+  label: string;
+  /** Count of cells in every variant of this family. */
+  cellCount: number;
+  /** Ids of every variant (orientation / reflection) in the family. */
+  pieceIds: string[];
+};
+
+const FAMILY_LABELS: Record<string, string> = {
+  'monomino': 'Single',
+  'domino': 'Domino',
+  'i-tromino': 'I-tromino',
+  'l-tromino': 'L-tromino',
+  'i-tetromino': 'I (4)',
+  'o-tetromino': 'Square 2×2',
+  't-tetromino': 'T (4)',
+  's-tetromino': 'S (4)',
+  'z-tetromino': 'Z (4)',
+  'j-tetromino': 'J (4)',
+  'l-tetromino': 'L (4)',
+  'i-pentomino': 'I (5)',
+  'v-pentomino': 'V (5)',
+  'l-pentomino': 'L (5)',
+  't-pentomino': 'T (5)',
+  'u-pentomino': 'U (5)',
+  'w-pentomino': 'W (5)',
+  'p-pentomino': 'P (5)',
+  'x-pentomino': 'Plus',
+  'n-pentomino': 'N (5)',
+  'y-pentomino': 'Y (5)',
+  'rect-2x3': 'Rect 2×3',
+  'sq3': 'Square 3×3',
+};
+
+export const PIECE_FAMILY_INFO: PieceFamilyInfo[] = PIECE_FAMILIES.map((fam) => ({
+  id: fam.family,
+  label: FAMILY_LABELS[fam.family] ?? fam.family,
+  cellCount: fam.variants[0].cells.length,
+  pieceIds: fam.variants.map((v) => v.id),
+}));
+
 function pieceWeight(cellCount: number, difficulty: ClassicDifficulty): number {
   switch (difficulty) {
     case 'easy':
