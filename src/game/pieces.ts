@@ -1,5 +1,5 @@
 import type { BoardGrid, ClassicDifficulty, Coord, PieceShape } from './types';
-import { BOARD_SIZE, COLORS } from './types';
+import { BOARD_SIZE, CHROMA_COLORS, COLORS } from './types';
 import { canPlacePiece, placePiece, detectCompletedLines, clearLines } from './board';
 
 type PieceDef = { id: string; cells: Coord[] };
@@ -482,4 +482,26 @@ export function generateClassicTray(
     return generateZenPieces(board);
   }
   return [randomPiece(difficulty), randomPiece(difficulty), randomPiece(difficulty)];
+}
+
+function randomChromaColor(): string {
+  return CHROMA_COLORS[Math.floor(Math.random() * CHROMA_COLORS.length)];
+}
+
+function randomChromaPiece(): PieceShape {
+  // Reuse the classic 'normal' pool (balanced weights across cell counts)
+  // but paint each piece from the small Chroma palette so the no-touching
+  // rule has a meaningful chance of same-color coincidences in the tray.
+  const { families, cumWeights } = getPool('normal');
+  const total = cumWeights[cumWeights.length - 1];
+  const r = Math.random() * total;
+  let famIdx = cumWeights.findIndex((w) => r < w);
+  if (famIdx === -1) famIdx = families.length - 1;
+  const variants = families[famIdx];
+  const variant = variants[Math.floor(Math.random() * variants.length)];
+  return { ...variant, color: randomChromaColor() };
+}
+
+export function generateChromaTray(): PieceShape[] {
+  return [randomChromaPiece(), randomChromaPiece(), randomChromaPiece()];
 }

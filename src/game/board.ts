@@ -7,10 +7,22 @@ export function createEmptyBoard(): BoardGrid {
   );
 }
 
+/**
+ * Options for `canPlacePiece` / `hasValidMoves`.
+ *
+ * `enforceColorAdjacency` powers Chroma mode: beyond the usual geometry
+ * check, each target cell's four orthogonal neighbors must either be
+ * empty, part of this same placement, or have the exact same color as
+ * the piece being placed. A single different-color neighbor rejects the
+ * placement. Defaults to off so Classic and Puzzle modes stay unchanged.
+ */
+type PlacementOpts = { enforceColorAdjacency?: boolean };
+
 export function canPlacePiece(
   board: BoardGrid,
   piece: PieceShape,
-  origin: Coord
+  origin: Coord,
+  opts?: PlacementOpts
 ): boolean {
   for (const cell of piece.cells) {
     const r = origin.row + cell.row;
@@ -18,6 +30,33 @@ export function canPlacePiece(
     if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return false;
     if (board[r][c] !== null) return false;
   }
+
+  if (opts?.enforceColorAdjacency) {
+    // Build an O(k) lookup of cells this placement occupies so neighbor
+    // checks can skip "same placement" cells without false-positive clashes
+    // when a piece has internal adjacency between its own cells.
+    const placing = new Set<string>();
+    for (const cell of piece.cells) {
+      placing.add(`${origin.row + cell.row},${origin.col + cell.col}`);
+    }
+    for (const cell of piece.cells) {
+      const r = origin.row + cell.row;
+      const c = origin.col + cell.col;
+      const neighbors: Coord[] = [
+        { row: r - 1, col: c },
+        { row: r + 1, col: c },
+        { row: r, col: c - 1 },
+        { row: r, col: c + 1 },
+      ];
+      for (const n of neighbors) {
+        if (n.row < 0 || n.row >= BOARD_SIZE || n.col < 0 || n.col >= BOARD_SIZE) continue;
+        if (placing.has(`${n.row},${n.col}`)) continue;
+        const neighborColor = board[n.row][n.col];
+        if (neighborColor !== null && neighborColor !== piece.color) return false;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -142,7 +181,8 @@ export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
 
 export function hasValidMoves(
   board: BoardGrid,
-  tray: (PieceShape | null)[]
+  tray: (PieceShape | null)[],
+  opts?: PlacementOpts
 ): boolean {
   for (const piece of tray) {
     if (!piece) continue;
@@ -150,7 +190,7 @@ export function hasValidMoves(
     for (let rot = 0; rot < 4; rot++) {
       for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
         for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
-          if (canPlacePiece(board, variant, { row: r, col: c })) return true;
+          if (canPlacePiece(board, variant, { row: r, col: c }, opts)) return true;
         }
       }
       variant = rotatePiece90Clockwise(variant);

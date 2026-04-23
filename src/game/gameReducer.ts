@@ -1,5 +1,6 @@
 import type {
   BoardGrid,
+  ChromaDifficulty,
   ClassicDifficulty,
   Coord,
   GameMode,
@@ -20,7 +21,7 @@ import {
   rotatePiece90Clockwise,
   boardMatchesTarget,
 } from './board';
-import { generateClassicTray } from './pieces';
+import { generateChromaTray, generateClassicTray } from './pieces';
 import {
   generatePuzzle,
   clampPuzzleDifficulty,
@@ -42,6 +43,12 @@ export type GameState = {
    *  you left off. */
   classicDifficulty: ClassicDifficulty;
   puzzleDifficulty: PuzzleDifficulty;
+  /**
+   * Chroma-mode difficulty. v1 only has `'normal'`, but we keep it in state
+   * parallel to classic/puzzle so future rungs slot in without a schema
+   * change and best-score keys stay per-rung-stable.
+   */
+  chromaDifficulty: ChromaDifficulty;
   /** Only set when a puzzle round ends. */
   puzzleResult: null | 'solved' | 'failed';
   /**
@@ -93,6 +100,7 @@ export type GameAction =
 const MODE_KEY = 'blockit-mode';
 const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
 const PUZZLE_DIFFICULTY_KEY = 'blockit-puzzle-difficulty';
+const CHROMA_DIFFICULTY_KEY = 'blockit-chroma-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 
 const LEGACY_DIFFICULTY_KEY = 'blockit-difficulty';
@@ -104,7 +112,10 @@ const LEGACY_RIDDLE_DIFFICULTY_KEY = 'blockit-riddle-difficulty';
 // its mere presence means the rename migration has already run.
 const PUZZLE_RENUMBER_MARKER_KEY = 'blockit-puzzle-renumbered-v2';
 
-function bestScoreKey(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLevel): string {
+function bestScoreKey(
+  mode: GameMode,
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty
+): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
 
@@ -112,7 +123,10 @@ function puzzleKey(difficulty: PuzzleLevel): string {
   return `blockit-puzzle-${difficulty}`;
 }
 
-function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLevel): number {
+function loadBestScore(
+  mode: GameMode,
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty
+): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
   } catch {
@@ -122,7 +136,7 @@ function loadBestScore(mode: GameMode, difficulty: ClassicDifficulty | PuzzleLev
 
 function saveBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel,
+  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty,
   score: number
 ) {
   try {
@@ -276,7 +290,7 @@ function migrateLegacyKeys() {
 function loadMode(): GameMode {
   try {
     const stored = localStorage.getItem(MODE_KEY);
-    if (stored === 'classic' || stored === 'puzzle') return stored;
+    if (stored === 'classic' || stored === 'puzzle' || stored === 'chroma') return stored;
   } catch { /* noop */ }
   // First-time players land in Puzzle mode; combined with loadPuzzleDifficulty's
   // default of 'tutorial', this drops new visitors straight into the guided
@@ -334,6 +348,14 @@ function savePuzzleDifficulty(difficulty: PuzzleDifficulty) {
       localStorage.setItem(PUZZLE_DIFFICULTY_KEY, String(clampPuzzleDifficulty(difficulty)));
     }
   } catch { /* noop */ }
+}
+
+function loadChromaDifficulty(): ChromaDifficulty {
+  try {
+    const stored = localStorage.getItem(CHROMA_DIFFICULTY_KEY);
+    if (stored === 'normal') return stored;
+  } catch { /* noop */ }
+  return 'normal';
 }
 
 /**
@@ -403,6 +425,7 @@ function cloneTray(t: PieceShape[]): PieceShape[] {
 function freshPuzzleState(
   difficulty: PuzzleLevel,
   classicDifficulty: ClassicDifficulty,
+  chromaDifficulty: ChromaDifficulty,
   bestScore: number,
   tutorialStep: number,
   options: { forceNew?: boolean } = {}
@@ -426,6 +449,7 @@ function freshPuzzleState(
     mode: 'puzzle',
     classicDifficulty,
     puzzleDifficulty: clamped,
+    chromaDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -442,7 +466,8 @@ function freshPuzzleState(
  */
 function freshTutorialState(
   step: number,
-  classicDifficulty: ClassicDifficulty
+  classicDifficulty: ClassicDifficulty,
+  chromaDifficulty: ChromaDifficulty
 ): GameState {
   const safeStep = clampTutorialStep(step);
   const data = getTutorialStep(safeStep);
@@ -456,6 +481,7 @@ function freshTutorialState(
     mode: 'puzzle',
     classicDifficulty,
     puzzleDifficulty: 'tutorial',
+    chromaDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -473,6 +499,7 @@ function freshTutorialState(
 function freshPuzzleStateFromShared(
   shared: { difficulty: PuzzleLevel; board: BoardGrid; tray: PieceShape[]; target: TargetPattern },
   classicDifficulty: ClassicDifficulty,
+  chromaDifficulty: ChromaDifficulty,
   bestScore: number,
   tutorialStep: number
 ): GameState {
@@ -486,6 +513,7 @@ function freshPuzzleStateFromShared(
     mode: 'puzzle',
     classicDifficulty,
     puzzleDifficulty: shared.difficulty,
+    chromaDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -497,6 +525,7 @@ function freshPuzzleStateFromShared(
 function freshClassicState(
   difficulty: ClassicDifficulty,
   puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
   bestScore: number,
   tutorialStep: number
 ): GameState {
@@ -511,6 +540,39 @@ function freshClassicState(
     mode: 'classic',
     classicDifficulty: difficulty,
     puzzleDifficulty,
+    chromaDifficulty,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
+    tutorialStep,
+  };
+}
+
+/**
+ * Build a fresh Chroma state. Classic-shaped (empty board, random tray,
+ * score-tracked) but with the Chroma palette and the no-touching-colors
+ * rule enforced on placement.
+ */
+function freshChromaState(
+  difficulty: ChromaDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  bestScore: number,
+  tutorialStep: number
+): GameState {
+  const board = createEmptyBoard();
+  return {
+    board,
+    tray: generateChromaTray(),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'chroma',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty: difficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -523,6 +585,7 @@ export function createInitialState(): GameState {
   migrateLegacyKeys();
   const classicDifficulty = loadClassicDifficulty();
   const puzzleDifficulty = loadPuzzleDifficulty();
+  const chromaDifficulty = loadChromaDifficulty();
   const tutorialStep = loadTutorialStep();
 
   // A share link in the URL hash takes precedence over saved state so the
@@ -537,6 +600,7 @@ export function createInitialState(): GameState {
       return freshPuzzleStateFromShared(
         decoded,
         classicDifficulty,
+        chromaDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep
       );
@@ -546,12 +610,23 @@ export function createInitialState(): GameState {
   const mode = loadMode();
   if (mode === 'puzzle') {
     if (puzzleDifficulty === 'tutorial') {
-      return freshTutorialState(tutorialStep, classicDifficulty);
+      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty);
     }
     return freshPuzzleState(
       puzzleDifficulty,
       classicDifficulty,
+      chromaDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
+      tutorialStep
+    );
+  }
+
+  if (mode === 'chroma') {
+    return freshChromaState(
+      chromaDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      loadBestScore('chroma', chromaDifficulty),
       tutorialStep
     );
   }
@@ -559,6 +634,7 @@ export function createInitialState(): GameState {
   return freshClassicState(
     classicDifficulty,
     puzzleDifficulty,
+    chromaDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep
   );
@@ -573,7 +649,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!piece) return state;
       const newTray = [...state.tray];
       newTray[trayIndex] = rotatePiece90Clockwise(piece);
-      const isGameOver = !hasValidMoves(state.board, newTray);
+      const enforceColorAdjacency = state.mode === 'chroma';
+      const isGameOver = !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
         state.mode === 'puzzle' && isGameOver ? 'failed' : state.puzzleResult;
       return { ...state, tray: newTray, isGameOver, puzzleResult };
@@ -582,7 +659,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'PLACE_PIECE': {
       const piece = state.tray[action.trayIndex];
       if (!piece) return state;
-      if (!canPlacePiece(state.board, piece, action.origin)) return state;
+      const enforceColorAdjacency = state.mode === 'chroma';
+      if (!canPlacePiece(state.board, piece, action.origin, { enforceColorAdjacency })) return state;
 
       let board = placePiece(state.board, piece, action.origin);
       let score = state.score + calculatePlacementScore(piece);
@@ -650,6 +728,30 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
+      if (state.mode === 'chroma') {
+        const finalTray = allPlaced ? generateChromaTray() : newTray;
+
+        const bestScore = Math.max(score, state.bestScore);
+        // Chroma game-over uses the adjacency-aware validator so "no move
+        // fits" correctly accounts for the color-touching rule.
+        const isGameOver = !hasValidMoves(board, finalTray, { enforceColorAdjacency: true });
+
+        if (bestScore > state.bestScore) {
+          saveBestScore('chroma', state.chromaDifficulty, bestScore);
+        }
+
+        return {
+          ...state,
+          board,
+          tray: finalTray,
+          score,
+          bestScore,
+          combo,
+          isGameOver,
+          puzzleResult: null,
+        };
+      }
+
       const finalTray = allPlaced ? generateClassicTray(state.classicDifficulty, board) : newTray;
 
       const bestScore = Math.max(score, state.bestScore);
@@ -678,18 +780,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // Entering puzzle mode: resume the stored puzzle at the current
         // difficulty if there is one, otherwise generate and persist a new one.
         if (state.puzzleDifficulty === 'tutorial') {
-          return freshTutorialState(state.tutorialStep, state.classicDifficulty);
+          return freshTutorialState(state.tutorialStep, state.classicDifficulty, state.chromaDifficulty);
         }
         return freshPuzzleState(
           state.puzzleDifficulty,
           state.classicDifficulty,
+          state.chromaDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
+          state.tutorialStep
+        );
+      }
+      if (action.mode === 'chroma') {
+        return freshChromaState(
+          state.chromaDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep
         );
       }
       return freshClassicState(
         state.classicDifficulty,
         state.puzzleDifficulty,
+        state.chromaDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep
       );
@@ -702,6 +815,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return freshClassicState(
         action.difficulty,
         state.puzzleDifficulty,
+        state.chromaDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep
       );
@@ -711,7 +825,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (action.difficulty === 'tutorial') {
         savePuzzleDifficulty('tutorial');
         saveMode('puzzle');
-        return freshTutorialState(state.tutorialStep, state.classicDifficulty);
+        return freshTutorialState(state.tutorialStep, state.classicDifficulty, state.chromaDifficulty);
       }
       const target = clampPuzzleDifficulty(action.difficulty);
       savePuzzleDifficulty(target);
@@ -721,6 +835,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return freshPuzzleState(
         target,
         state.classicDifficulty,
+        state.chromaDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         { forceNew: true }
@@ -735,6 +850,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return freshPuzzleState(
         state.puzzleDifficulty,
         state.classicDifficulty,
+        state.chromaDifficulty,
         state.bestScore,
         state.tutorialStep,
         { forceNew: true }
@@ -753,6 +869,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           target: action.target,
         },
         state.classicDifficulty,
+        state.chromaDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep
       );
@@ -769,13 +886,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         return freshPuzzleState(
           1,
           state.classicDifficulty,
+          state.chromaDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           { forceNew: true }
         );
       }
       saveTutorialStep(next);
-      return freshTutorialState(next, state.classicDifficulty);
+      return freshTutorialState(next, state.classicDifficulty, state.chromaDifficulty);
     }
 
     case 'TUTORIAL_GOTO': {
@@ -783,7 +901,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       saveTutorialStep(step);
       savePuzzleDifficulty('tutorial');
       saveMode('puzzle');
-      return freshTutorialState(step, state.classicDifficulty);
+      return freshTutorialState(step, state.classicDifficulty, state.chromaDifficulty);
     }
 
     case 'RESTART': {

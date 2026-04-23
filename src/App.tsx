@@ -187,7 +187,8 @@ export default function App() {
         setPreview(null);
         return;
       }
-      const valid = canPlacePiece(state.board, piece, origin);
+      const enforceColorAdjacency = state.mode === 'chroma';
+      const valid = canPlacePiece(state.board, piece, origin, { enforceColorAdjacency });
       const cells = new Map<string, 'valid' | 'invalid'>();
       for (const cell of piece.cells) {
         const r = origin.row + cell.row;
@@ -214,7 +215,7 @@ export default function App() {
 
       setPreview(cells.size > 0 ? { cells, color: piece.color, clearCells } : null);
     },
-    [state.board, state.tray, computeOrigin]
+    [state.board, state.tray, state.mode, computeOrigin]
   );
 
   const spawnCollectOrbs = useCallback(
@@ -309,7 +310,8 @@ export default function App() {
     (trayIndex: number, origin: Coord) => {
       const piece = state.tray[trayIndex];
       if (!piece) return;
-      if (!canPlacePiece(state.board, piece, origin)) return;
+      const enforceColorAdjacency = state.mode === 'chroma';
+      if (!canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) return;
 
       // Compute placed cells for snap animation
       const placed = new Set<string>();
@@ -670,7 +672,8 @@ export default function App() {
       if (piece && boardRef.current) {
         const { x: ex, y: ey } = dragPointerToEffective(e.clientX, e.clientY, drag.anchorX, drag.anchorY);
         const origin = computeOrigin(ex, ey, piece);
-        if (origin && canPlacePiece(state.board, piece, origin)) {
+        const enforceColorAdjacency = state.mode === 'chroma';
+        if (origin && canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
           handlePlace(drag.index, origin);
           placed = true;
         }
@@ -689,7 +692,7 @@ export default function App() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [drag, state.board, state.tray, computeOrigin, updatePreview, handlePlace]);
+  }, [drag, state.board, state.tray, state.mode, computeOrigin, updatePreview, handlePlace]);
 
   const dragPiece = drag ? state.tray[drag.index] : null;
   const dragFloatPos =
@@ -698,9 +701,10 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
+    { id: 'chroma', label: 'Chroma' },
   ];
 
   // Human-readable "you are here" label for the collapsed menu toggle.
@@ -712,6 +716,7 @@ export default function App() {
       const d = state.classicDifficulty;
       return `Classic · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
+    if (state.mode === 'chroma') return 'Chroma';
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
   })();
@@ -786,6 +791,7 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {state.mode !== 'chroma' && (
             <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
               {state.mode === 'classic'
                 ? CLASSIC_DIFFICULTIES.map((d) => (
@@ -831,6 +837,7 @@ export default function App() {
                     );
                   })}
             </div>
+            )}
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
              * link tucked under the difficulty row so it doesn't compete
@@ -839,17 +846,22 @@ export default function App() {
              * open on purpose — and the visual demotion (muted, small,
              * right-aligned) keeps it from stealing focus from the primary
              * picks, without hiding it from anyone.
+             *
+             * Hidden in Chroma mode: clicking it would silently switch modes
+             * behind the player's back.
              */}
-            <button
-              type="button"
-              className="chrome-menu__custom-link"
-              onClick={() => {
-                setCustomOpen(true);
-                setMenuOpen(false);
-              }}
-            >
-              Custom puzzle&hellip;
-            </button>
+            {state.mode !== 'chroma' && (
+              <button
+                type="button"
+                className="chrome-menu__custom-link"
+                onClick={() => {
+                  setCustomOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                Custom puzzle&hellip;
+              </button>
+            )}
           </div>
         )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
@@ -913,7 +925,9 @@ export default function App() {
             <p className="piece-tray-hint">
               {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
-                : 'Tap to rotate · drag to place'}
+                : state.mode === 'chroma'
+                  ? "Chroma · pieces can't touch a different color"
+                  : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}

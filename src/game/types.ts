@@ -19,9 +19,17 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle';
+export type GameMode = 'classic' | 'puzzle' | 'chroma';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
+
+/**
+ * Chroma mode v1 ships with a single difficulty. The type is kept as a
+ * literal union (not just the string) so adding more rungs later — e.g.
+ * `'easy' | 'normal' | 'hard'` — stays a typed, breaking change the
+ * compiler can hunt down rather than a silent string widening.
+ */
+export type ChromaDifficulty = 'normal';
 
 /**
  * Numeric puzzle levels — the real puzzles. Internally we keep a numeric
@@ -41,7 +49,8 @@ export type PuzzleDifficulty = PuzzleLevel | 'tutorial';
 
 export type ModeSelection =
   | { mode: 'classic'; difficulty: ClassicDifficulty }
-  | { mode: 'puzzle'; difficulty: PuzzleDifficulty };
+  | { mode: 'puzzle'; difficulty: PuzzleDifficulty }
+  | { mode: 'chroma'; difficulty: ChromaDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -94,3 +103,16 @@ export const COLORS = [
   '#DDA0DD',
   '#FF8C42',
 ];
+
+/**
+ * Chroma-mode palette: three well-separated hues pulled from `COLORS`
+ * so the look stays consistent across modes. The no-adjacent-different-
+ * colors rule is only playable with a small palette (see plan); 3 is
+ * the sweet spot between "tray forces you to lose" and "trivially
+ * mono-color".
+ */
+export const CHROMA_COLORS = [
+  '#FF6B6B',
+  '#4ECDC4',
+  '#FFEAA7',
+] as const;
