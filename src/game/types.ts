@@ -19,7 +19,7 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity';
+export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -31,6 +31,15 @@ export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
  * that spawns extra garbage) stays a typed, breaking change.
  */
 export type GravityDifficulty = ClassicDifficulty;
+
+/**
+ * Drop mode shares the classic difficulty rungs — same piece pool, same
+ * weights. The twist is the Tetris-style "release drops piece from the top"
+ * placement, not the piece vocabulary. Kept as its own alias so best-score
+ * storage keys stay independent per-mode and any future Drop-only tuning
+ * (e.g. a rung that spawns garbage rows) stays a typed, breaking change.
+ */
+export type DropDifficulty = ClassicDifficulty;
 
 /**
  * Chroma mode v1 ships with a single difficulty. The type is kept as a
@@ -60,7 +69,8 @@ export type ModeSelection =
   | { mode: 'classic'; difficulty: ClassicDifficulty }
   | { mode: 'puzzle'; difficulty: PuzzleDifficulty }
   | { mode: 'chroma'; difficulty: ChromaDifficulty }
-  | { mode: 'gravity'; difficulty: GravityDifficulty };
+  | { mode: 'gravity'; difficulty: GravityDifficulty }
+  | { mode: 'drop'; difficulty: DropDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -70,6 +80,13 @@ export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
 ] as const;
 
 export const GRAVITY_DIFFICULTIES: readonly GravityDifficulty[] = [
+  'zen',
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const DROP_DIFFICULTIES: readonly DropDifficulty[] = [
   'zen',
   'easy',
   'normal',

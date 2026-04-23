@@ -135,7 +135,9 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? 'Chroma'
         : state.mode === 'gravity'
           ? `Gravity · ${state.gravityDifficulty}`
-          : `Classic · ${state.classicDifficulty}`;
+          : state.mode === 'drop'
+            ? `Drop · ${state.dropDifficulty}`
+            : `Classic · ${state.classicDifficulty}`;
 
   // Puzzle mode is a binary solve/not-solve challenge, so numeric score
   // and per-difficulty best aren't meaningful feedback — they're suppressed
@@ -145,7 +147,9 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
       ? 'Best (Chroma)'
       : state.mode === 'gravity'
         ? `Best (${state.gravityDifficulty})`
-        : `Best (${state.classicDifficulty})`
+        : state.mode === 'drop'
+          ? `Best (${state.dropDifficulty})`
+          : `Best (${state.classicDifficulty})`
     : null;
   const showStats = !isPuzzle;
 

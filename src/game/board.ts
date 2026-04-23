@@ -259,6 +259,131 @@ export function resolveCascades(initial: BoardGrid): {
   return { board, steps, totalLinesCleared };
 }
 
+/**
+ * Drop-mode landing resolver. Given a proposed `origin` (where the player
+ * released the piece, representing its upper-left bounding corner in
+ * board coordinates), simulate a rigid-body free-fall: shift the whole
+ * piece downward by the maximum `dRow` such that every piece cell still
+ * lands on an in-bounds empty cell. Horizontal overflow (any cell off the
+ * left/right edge) and top-overflow (origin already above the board) are
+ * treated as invalid — the piece must fit entirely within the board once
+ * settled.
+ *
+ * Returns the landed `{ row, col }` or `null` if no valid landing exists
+ * (piece too tall for the chosen columns, or horizontally off-board).
+ */
+export function computeLandingOrigin(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): Coord | null {
+  // Horizontal bounds are fixed at release time — columns don't shift on
+  // fall. Reject immediately if the piece would hang off the left/right.
+  for (const cell of piece.cells) {
+    const c = origin.col + cell.col;
+    if (c < 0 || c >= BOARD_SIZE) return null;
+  }
+
+  // Find the maximum downward shift `dRow >= 0` such that every cell at
+  // `(origin.row + cell.row + dRow, origin.col + cell.col)` is in-bounds
+  // and empty. We walk dRow upward from 0 and stop at the last legal
+  // shift. The first illegal shift defines the floor.
+  let bestShift = -1;
+  for (let dRow = 0; dRow < BOARD_SIZE; dRow++) {
+    let ok = true;
+    for (const cell of piece.cells) {
+      const r = origin.row + cell.row + dRow;
+      const c = origin.col + cell.col;
+      if (r < 0 || r >= BOARD_SIZE) { ok = false; break; }
+      if (board[r][c] !== null) { ok = false; break; }
+    }
+    if (!ok) break;
+    bestShift = dRow;
+  }
+
+  if (bestShift < 0) return null;
+  return { row: origin.row + bestShift, col: origin.col };
+}
+
+/**
+ * Drop-mode slab collapse. Given a board (typically just-placed piece
+ * included) and the indices of full rows to remove, return the post-clear
+ * board where every surviving cell at original row `r` has shifted down by
+ * the number of cleared rows with index strictly greater than `r` (i.e.
+ * cleared rows BELOW it). Also returns `fallDistances[newR][c]` in the
+ * output's coordinate system so the UI can animate each cell in from
+ * `translateY(-fall * cellSize)` back to 0.
+ *
+ * Unlike `applyGravity` this preserves column structure — whole rows drop
+ * as a slab, so inter-cell horizontal relationships are maintained. Also:
+ * a single slab-collapse pass cannot create new completed rows (no row's
+ * fill count increases), so Drop mode needs only one pass per placement —
+ * no cascade loop.
+ */
+export function applySlabCollapse(
+  board: BoardGrid,
+  clearedRows: number[]
+): {
+  board: BoardGrid;
+  fallDistances: (number | null)[][];
+} {
+  const next: BoardGrid = Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => null)
+  );
+  const fallDistances: (number | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => null)
+  );
+
+  const clearedSet = new Set(clearedRows);
+
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    if (clearedSet.has(r)) continue;
+    // Count cleared rows strictly below row `r` — that's how far this row
+    // falls in the slab collapse.
+    let shift = 0;
+    for (const cr of clearedRows) {
+      if (cr > r) shift++;
+    }
+    const newR = r + shift;
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const cell = board[r][c];
+      next[newR][c] = cell;
+      if (cell !== null) fallDistances[newR][c] = shift;
+    }
+  }
+
+  return { board: next, fallDistances };
+}
+
+/**
+ * Drop-mode game-over probe. True iff at least one tray piece has some
+ * (rotation, horizontal column-origin) where its simulated rigid-body
+ * fall settles entirely within the board. Mirrors `hasValidMoves` but
+ * uses `computeLandingOrigin` instead of `canPlacePiece` because valid
+ * placements in Drop are restricted to the subset of origins reachable
+ * by falling.
+ */
+export function hasValidDrops(
+  board: BoardGrid,
+  tray: (PieceShape | null)[]
+): boolean {
+  for (const piece of tray) {
+    if (!piece) continue;
+    let variant = piece;
+    for (let rot = 0; rot < 4; rot++) {
+      for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
+        // Start the drop from the top row — computeLandingOrigin walks
+        // downward to the resting position. If the top row is itself
+        // occupied by blocking cells the simulator returns null.
+        const landed = computeLandingOrigin(board, variant, { row: 0, col: c });
+        if (landed !== null) return true;
+      }
+      variant = rotatePiece90Clockwise(variant);
+    }
+  }
+  return false;
+}
+
 export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
   const rotated = piece.cells.map(({ row, col }) => ({
     row: col,

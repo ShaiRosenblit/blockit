@@ -1,6 +1,6 @@
 import { useReducer, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { gameReducer, createInitialState, savePuzzleEverSolved } from './game/gameReducer';
-import { canPlacePiece, placePiece, detectCompletedLines } from './game/board';
+import { canPlacePiece, placePiece, detectCompletedLines, computeLandingOrigin } from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
@@ -11,6 +11,7 @@ import type { CascadeStep, Coord } from './game/types';
 import {
   BOARD_SIZE,
   CLASSIC_DIFFICULTIES,
+  DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
   puzzleDifficultyLabel,
@@ -308,13 +309,34 @@ export default function App() {
         setPreview(null);
         return;
       }
-      const origin = computeOrigin(clientX, clientY, piece);
-      if (!origin) {
+      const cursorOrigin = computeOrigin(clientX, clientY, piece);
+      if (!cursorOrigin) {
         setPreview(null);
         return;
       }
-      const enforceColorAdjacency = state.mode === 'chroma';
-      const valid = canPlacePiece(state.board, piece, origin, { enforceColorAdjacency });
+
+      // Drop mode overrides the preview geometry: horizontal position is
+      // taken from the cursor, but vertical is resolved by simulating the
+      // rigid-body fall. If the piece can't land (off-board horizontally,
+      // or columns already filled to the ceiling), mark every cell under
+      // the cursor invalid so the player gets the same red-wash feedback
+      // they already recognize from Classic.
+      const isDrop = state.mode === 'drop';
+      let origin = cursorOrigin;
+      let valid: boolean;
+      if (isDrop) {
+        const landed = computeLandingOrigin(state.board, piece, cursorOrigin);
+        if (landed) {
+          origin = landed;
+          valid = true;
+        } else {
+          valid = false;
+        }
+      } else {
+        const enforceColorAdjacency = state.mode === 'chroma';
+        valid = canPlacePiece(state.board, piece, cursorOrigin, { enforceColorAdjacency });
+      }
+
       const cells = new Map<string, 'valid' | 'invalid'>();
       for (const cell of piece.cells) {
         const r = origin.row + cell.row;
@@ -328,12 +350,17 @@ export default function App() {
       if (valid) {
         const hypothetical = placePiece(state.board, piece, origin);
         const { rows, cols } = detectCompletedLines(hypothetical);
-        if (rows.length > 0 || cols.length > 0) {
+        // Drop mode disables column clears by design — only rows contribute
+        // to the will-clear preview so the ghost matches what actually
+        // happens on commit.
+        const previewRows = rows;
+        const previewCols = isDrop ? [] : cols;
+        if (previewRows.length > 0 || previewCols.length > 0) {
           clearCells = new Set<string>();
-          for (const r of rows) {
+          for (const r of previewRows) {
             for (let c = 0; c < BOARD_SIZE; c++) clearCells.add(`${r},${c}`);
           }
-          for (const c of cols) {
+          for (const c of previewCols) {
             for (let r = 0; r < BOARD_SIZE; r++) clearCells.add(`${r},${c}`);
           }
         }
@@ -451,26 +478,30 @@ export default function App() {
 
       const hypothetical = placePiece(state.board, piece, origin);
       const { rows, cols } = detectCompletedLines(hypothetical);
-      const linesCleared = rows.length + cols.length;
+      // Drop mode disables column clears — only row fills produce a clear.
+      // Filter cols out here so the feedback (orbs, score popup, haptics)
+      // matches what the reducer will actually do on commit.
+      const effectiveCols = state.mode === 'drop' ? [] : cols;
+      const linesCleared = rows.length + effectiveCols.length;
 
       if (linesCleared > 0) {
-        // Gravity mode owns the line-clear feedback end-to-end via its
-        // cascade playback effect (which handles step-by-step haptics and
-        // sound on a timer). Firing here too would double-play the first
-        // step's clear. Classic/Puzzle/Chroma still need this immediate
-        // feedback because they don't run the cascade pipeline.
-        if (state.mode !== 'gravity') {
+        // Gravity and Drop modes own the line-clear feedback end-to-end via
+        // the cascade playback effect (which handles step-by-step haptics
+        // and sound on a timer). Firing here too would double-play the
+        // first step's clear. Classic/Puzzle/Chroma still need this
+        // immediate feedback because they don't run the cascade pipeline.
+        if (state.mode !== 'gravity' && state.mode !== 'drop') {
           haptics.lineClear(linesCleared);
           sounds.lineClear(linesCleared);
         }
 
         // Puzzle mode has no score display, so skip the +N popup and the
         // cells-flying-to-the-score-bar animation — the board's own cell
-        // clear animation is still plenty of feedback. Classic mode keeps
-        // them because the score is the primary feedback loop there.
-        // Gravity mode also skips: the cascade playback IS the feedback,
-        // and orbs flying out of a board that's mid-cascade reads as
-        // visual noise against the rising/falling tiles.
+        // clear animation is still plenty of feedback. Classic / Chroma /
+        // Drop mode keep them because the score is the primary feedback
+        // loop there. Gravity mode skips: the cascade playback IS the
+        // feedback, and orbs flying out of a board that's mid-cascade
+        // reads as visual noise against the rising/falling tiles.
         if (state.mode !== 'puzzle' && state.mode !== 'gravity') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
@@ -491,7 +522,7 @@ export default function App() {
               if (color) cellsToClear.push({ row: r, col: c, color });
             }
           }
-          for (const c of cols) {
+          for (const c of effectiveCols) {
             for (let r = 0; r < BOARD_SIZE; r++) {
               const key = `${r},${c}`;
               if (clearSet.has(key)) continue;
@@ -828,7 +859,14 @@ export default function App() {
       let placed = false;
       if (piece && boardRef.current) {
         const { x: ex, y: ey } = dragPointerToEffective(e.clientX, e.clientY, drag.anchorX, drag.anchorY);
-        const origin = computeOrigin(ex, ey, piece);
+        const cursorOrigin = computeOrigin(ex, ey, piece);
+        // Drop mode resolves the landed origin by simulating the rigid-body
+        // fall; every other mode commits at the cursor's origin directly.
+        const origin = cursorOrigin
+          ? state.mode === 'drop'
+            ? computeLandingOrigin(state.board, piece, cursorOrigin)
+            : cursorOrigin
+          : null;
         const enforceColorAdjacency = state.mode === 'chroma';
         if (origin && canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
           handlePlace(drag.index, origin);
@@ -858,11 +896,12 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
+    { id: 'drop', label: 'Drop' },
   ];
 
   // Gravity cascade playback → Board override props. Derived per render
@@ -914,6 +953,10 @@ export default function App() {
     if (state.mode === 'gravity') {
       const d = state.gravityDifficulty;
       return `Gravity · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'drop') {
+      const d = state.dropDifficulty;
+      return `Drop · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1029,6 +1072,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'drop' &&
+                  DROP_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.dropDifficulty}
+                      className={`difficulty-btn${d === state.dropDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.dropDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_DROP_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1062,11 +1123,12 @@ export default function App() {
              * hamburger drawer — a closed-by-default menu players have to
              * open on purpose — and the visual demotion (muted, small,
              * right-aligned) keeps it from stealing focus from the primary
-             * picks, without hiding it from anyone. Hidden in Chroma and
-             * Gravity modes because the modal generates Puzzle content and
-             * would yank the player out of the mode they picked.
+             * picks, without hiding it from anyone. Hidden in Chroma,
+             * Gravity, and Drop modes because the modal generates Puzzle
+             * content and would yank the player out of the mode they
+             * picked.
              */}
-            {state.mode !== 'chroma' && state.mode !== 'gravity' && (
+            {state.mode !== 'chroma' && state.mode !== 'gravity' && state.mode !== 'drop' && (
               <button
                 type="button"
                 className="chrome-menu__custom-link"
@@ -1145,7 +1207,9 @@ export default function App() {
                   ? "Chroma · pieces can't touch a different color"
                   : state.mode === 'gravity'
                     ? 'Gravity · clears make blocks fall — chain reactions score big'
-                    : 'Tap to rotate · drag to place'}
+                    : state.mode === 'drop'
+                      ? 'Drop · pieces fall from release — clear rows to survive'
+                      : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}
