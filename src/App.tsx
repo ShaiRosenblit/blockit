@@ -831,19 +831,29 @@ export default function App() {
                     );
                   })}
             </div>
-            {state.mode === 'puzzle' && (
-              <button
-                type="button"
-                className="chrome-menu__custom-btn"
-                onClick={() => {
-                  setCustomOpen(true);
-                  setMenuOpen(false);
-                }}
-              >
-                <span aria-hidden>{'\u2699'}</span>
-                <span>Custom puzzle&hellip;</span>
-              </button>
-            )}
+            {/*
+             * "Custom puzzle…" is deliberately low-key: a small, muted text
+             * link tucked under the difficulty row so it doesn't compete
+             * with the primary difficulty picks. It's also gated on
+             * *tutorial completion* — a new player who hasn't yet reached
+             * the last tutorial step never sees it. Once you've worked
+             * through the intro, this hint is there for you to find; until
+             * then it stays out of the way.
+             */}
+            {state.mode === 'puzzle' &&
+              state.puzzleDifficulty !== 'tutorial' &&
+              state.tutorialStep >= TUTORIAL_STEP_COUNT - 1 && (
+                <button
+                  type="button"
+                  className="chrome-menu__custom-link"
+                  onClick={() => {
+                    setCustomOpen(true);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Custom puzzle&hellip;
+                </button>
+              )}
           </div>
         )}
         {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
