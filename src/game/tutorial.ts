@@ -131,14 +131,42 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // 5. Plan the order: use a clear to remove unwanted cells, then hit the target.
   {
     title: 'Step 5 — Cells marked X must be empty',
-    text: 'The cells marked with an X must be empty when you finish. Complete the bottom row with one piece to clear them, then fill the ringed cells with the other.',
-    hint: 'Order matters. If you fill the ringed cells first, you still have to get rid of the X cells.',
+    text: "Cells marked X must be empty at the end. Use one piece to finish the bottom row (it'll clear), then fill the ringed cells with the other.",
+    hint: "Any full row or column clears — that's how you get rid of X cells.",
     board: boardWithPrefill(ROW_SEVEN_PREFILL),
     tray: [
       buildPiece('tut5-h2', [[0, 0], [0, 1]], CYAN),
       buildPiece('tut5-h2b', [[0, 0], [0, 1]], PINK),
     ],
     target: targetFromCells([[1, 3], [1, 4]]),
+  },
+
+  // 6. The core combo: one piece, part fills target, part completes a row.
+  //    Prefill leaves only col 7 empty in row 7, so the vertical 3-bar has
+  //    exactly one valid placement — its bottom cell completes and clears
+  //    row 7 while its top two cells satisfy the target.
+  {
+    title: 'Step 6 — One piece, two jobs',
+    text: "Here's the real trick of Blockit. Place the piece so its top cells land on the ringed targets AND its bottom cell finishes the X row. The row clears — the targets stay.",
+    hint: "A single piece can fill targets and clear clutter at the same time. That's how most puzzles are solved.",
+    board: boardWithPrefill([
+      [7, 0], [7, 1], [7, 2], [7, 3], [7, 4], [7, 5], [7, 6],
+    ]),
+    tray: [buildPiece('tut6-v3', [[0, 0], [1, 0], [2, 0]], CYAN)],
+    target: targetFromCells([[5, 7], [6, 7]]),
+  },
+
+  // 7. Same combo with a bent piece. Stem lands on the ringed cells, foot
+  //    pokes down into row 7 to finish (6 prefill + 2 new = 8 → clears).
+  {
+    title: 'Step 7 — Trickier shape, same trick',
+    text: 'Same combo with a bent piece. Its stem sits on the ringed cells; its foot reaches down to complete the X row.',
+    hint: "The piece only fits one way. If it doesn't look right, tap to rotate.",
+    board: boardWithPrefill([
+      [7, 0], [7, 1], [7, 2], [7, 3], [7, 4], [7, 5],
+    ]),
+    tray: [buildPiece('tut7-L', [[0, 0], [1, 0], [2, 0], [2, 1]], ORANGE)],
+    target: targetFromCells([[5, 6], [6, 6]]),
   },
 ];
 
