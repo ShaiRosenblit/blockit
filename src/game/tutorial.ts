@@ -168,6 +168,24 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     tray: [buildPiece('tut7-L', [[0, 0], [1, 0], [2, 0], [2, 1]], ORANGE)],
     target: targetFromCells([[5, 6], [6, 6]]),
   },
+
+  // 8. Graduation-flavoured combo: two pieces each contribute half of the
+  //    row-7 clear AND half of the ringed target above it. Fewer X-cells
+  //    than steps 6/7 — the row gets finished collaboratively, which is
+  //    the shape of a real Easy puzzle without the fog.
+  {
+    title: 'Step 8 — Two pieces, one clear',
+    text: 'Almost a real puzzle. Both pieces have to reach the bottom row to finish it — and each one also lands on two of the ringed cells above.',
+    hint: 'Think combo, times two. Each piece does both jobs.',
+    board: boardWithPrefill([
+      [7, 0], [7, 1], [7, 2], [7, 3],
+    ]),
+    tray: [
+      buildPiece('tut8-sq1', [[0, 0], [0, 1], [1, 0], [1, 1]], YELLOW),
+      buildPiece('tut8-sq2', [[0, 0], [0, 1], [1, 0], [1, 1]], PURPLE),
+    ],
+    target: targetFromCells([[6, 4], [6, 5], [6, 6], [6, 7]]),
+  },
 ];
 
 export const TUTORIAL_STEP_COUNT = TUTORIAL_STEPS.length;
