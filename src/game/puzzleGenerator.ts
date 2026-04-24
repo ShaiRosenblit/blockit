@@ -52,7 +52,7 @@ const DIFFICULTY_SPECS: Record<PuzzleLevel, DifficultySpec> = {
   1: { difficulty: 1, pieceCount: 3, minPieceCells: 2, maxPieceCells: 3, minTargetCells: 5,  maxTargetCells: 10, prefillMin: 0, prefillMax: 0, minPrefillCleared: 0 },
   2: { difficulty: 2, pieceCount: 4, minPieceCells: 3, maxPieceCells: 5, minTargetCells: 10, maxTargetCells: 16, prefillMin: 1, prefillMax: 2, minPrefillCleared: 1 },
   3: { difficulty: 3, pieceCount: 5, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 14, maxTargetCells: 22, prefillMin: 2, prefillMax: 4, minPrefillCleared: 2 },
-  4: { difficulty: 4, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 22, maxTargetCells: 34, prefillMin: 7, prefillMax: 10, minPrefillCleared: 5 },
+  4: { difficulty: 4, pieceCount: 7, minPieceCells: 4, maxPieceCells: 5, minTargetCells: 20, maxTargetCells: 30, prefillMin: 4, prefillMax: 7, minPrefillCleared: 3 },
 };
 
 export function clampPuzzleDifficulty(difficulty: number): PuzzleLevel {
