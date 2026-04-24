@@ -904,7 +904,10 @@ export function createInitialState(): GameState {
   const mode = loadMode();
   if (mode === 'puzzle') {
     if (puzzleDifficulty === 'tutorial') {
-      return freshTutorialState(tutorialStep, classicDifficulty, chromaDifficulty, gravityDifficulty, dropDifficulty, puzzleEverSolved);
+      // Always (re)start the tutorial from step 1 on entry, regardless of
+      // any previously-persisted progress. The tutorial is short and
+      // players returning to it generally want to replay the full thing.
+      return freshTutorialState(0, classicDifficulty, chromaDifficulty, gravityDifficulty, dropDifficulty, puzzleEverSolved);
     }
     return freshPuzzleState(
       puzzleDifficulty,
@@ -1269,8 +1272,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         // Entering puzzle mode: resume the stored puzzle at the current
         // difficulty if there is one, otherwise generate and persist a new one.
         if (state.puzzleDifficulty === 'tutorial') {
+          // Always (re)start the tutorial from step 1 on entry — see the
+          // equivalent note in createInitialState.
           return freshTutorialState(
-            state.tutorialStep,
+            0,
             state.classicDifficulty,
             state.chromaDifficulty,
             state.gravityDifficulty,
@@ -1357,8 +1362,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (action.difficulty === 'tutorial') {
         savePuzzleDifficulty('tutorial');
         saveMode('puzzle');
+        // Always (re)start the tutorial from step 1 on entry, even if the
+        // player had previously advanced past it or completed it.
         return freshTutorialState(
-          state.tutorialStep,
+          0,
           state.classicDifficulty,
           state.chromaDifficulty,
           state.gravityDifficulty,
