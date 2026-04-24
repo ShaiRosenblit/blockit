@@ -821,12 +821,12 @@ export default function App() {
       const el = e.target as HTMLElement | null;
       if (el?.closest('input, textarea, [contenteditable="true"]')) return;
 
-      // Cmd/Ctrl+Z → undo last puzzle placement. Shift+Z is intentionally
-      // not wired up (no redo in v1). Ignored unless we're in puzzle mode
-      // with a pending snapshot.
+      // Cmd/Ctrl+Z → undo last puzzle placement. Repeats are allowed so
+      // holding the shortcut walks the undo stack back; Shift+Z is left
+      // alone (no redo in v1). Ignored unless we're in puzzle mode with
+      // at least one snapshot to revert.
       if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        if (e.repeat) return;
-        if (state.mode !== 'puzzle' || state.puzzleUndo === null) return;
+        if (state.mode !== 'puzzle' || state.puzzleUndoStack.length === 0) return;
         e.preventDefault();
         haptics.pickup();
         sounds.pickup();
@@ -846,7 +846,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, state.tray, state.mode, state.puzzleUndo, dispatch]);
+  }, [drag, state.tray, state.mode, state.puzzleUndoStack, dispatch]);
 
   // Refresh placement preview when the tray piece changes during drag (e.g. rotate).
   // Pointer moves call updatePreview in the drag listener — do not also depend on `drag`
@@ -1226,7 +1226,7 @@ export default function App() {
                   className="piece-tray-undo"
                   aria-label="Undo last placement"
                   title="Undo last placement"
-                  disabled={state.puzzleUndo === null}
+                  disabled={state.puzzleUndoStack.length === 0}
                   onClick={() => {
                     haptics.pickup();
                     sounds.pickup();

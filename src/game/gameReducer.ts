@@ -119,15 +119,19 @@ export type GameState = {
    */
   lastCascade: CascadeStep[] | null;
   /**
-   * Single-step undo snapshot for puzzle mode. Captured on every
-   * puzzle-mode PLACE_PIECE (pre-placement state) and cleared on UNDO,
-   * RESTART, NEW_PUZZLE, difficulty/mode switches, tutorial navigation,
-   * and shared-puzzle loads. Null outside puzzle mode. We don't track
-   * rotations: the snapshot's `tray` also reverts any rotations the
-   * player performed after the placement, which is acceptable because
-   * rotations are one tap to reapply.
+   * Full undo history for puzzle mode, oldest at index 0, most-recent
+   * pre-placement snapshot at the end. Each puzzle-mode PLACE_PIECE
+   * pushes its pre-placement state onto the stack; UNDO_PLACEMENT pops
+   * the top entry and restores it. Empty array means "nothing to undo"
+   * (fresh puzzle, just-restarted, fully-undone). Reset to `[]` on
+   * RESTART, NEW_PUZZLE, mode/difficulty switches, tutorial navigation,
+   * and shared-puzzle loads. Always `[]` outside puzzle mode. We don't
+   * track rotations: each snapshot's `tray` also reverts rotations the
+   * player performed after that placement, which is acceptable because
+   * rotations are one tap to reapply. Memory is bounded by the puzzle's
+   * piece count (≤ 7 for Expert) so no cap is necessary.
    */
-  puzzleUndo: PuzzleUndoSnapshot | null;
+  puzzleUndoStack: PuzzleUndoSnapshot[];
 };
 
 export type PuzzleUndoSnapshot = {
@@ -178,9 +182,9 @@ export type GameAction =
   | { type: 'TUTORIAL_GOTO'; step: number }
   /**
    * Revert the most recent puzzle-mode placement, restoring the board,
-   * tray, score, and combo to their pre-placement values. No-op when
-   * there is no snapshot (fresh puzzle, or a previous undo already
-   * consumed it) or when not in puzzle mode.
+   * tray, score, and combo to their pre-placement values. Repeatable
+   * back to the puzzle's starting position. No-op when the undo stack
+   * is empty or when not in puzzle mode.
    */
   | { type: 'UNDO_PLACEMENT' };
 
@@ -649,7 +653,7 @@ function freshPuzzleState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -690,7 +694,7 @@ function freshTutorialState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -731,7 +735,7 @@ function freshPuzzleStateFromShared(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -767,7 +771,7 @@ function freshClassicState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -808,7 +812,7 @@ function freshChromaState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -850,7 +854,7 @@ function freshGravityState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -892,7 +896,7 @@ function freshDropState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
-    puzzleUndo: null,
+    puzzleUndoStack: [],
   };
 }
 
@@ -1033,13 +1037,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!canPlacePiece(state.board, piece, action.origin, { enforceColorAdjacency })) return state;
 
       // Snapshot pre-placement state so Puzzle mode can surface a
-      // single-step Undo. Captured here (before any board mutation) so
-      // the restore is an exact revert. The reducer already treats prior
-      // state as immutable, so holding references — no clone — is safe.
-      const puzzleUndo: PuzzleUndoSnapshot | null =
+      // multi-step Undo. Captured here (before any board mutation) so
+      // each restore is an exact revert. The reducer already treats
+      // prior state as immutable, so holding references — no clone — is
+      // safe. Outside puzzle mode the stack stays empty (we don't track
+      // history for Classic / Chroma / Gravity / Drop).
+      const puzzleUndoStack: PuzzleUndoSnapshot[] =
         state.mode === 'puzzle'
-          ? { board: state.board, tray: state.tray, score: state.score, combo: state.combo }
-          : null;
+          ? [
+              ...state.puzzleUndoStack,
+              { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+            ]
+          : [];
 
       let board = placePiece(state.board, piece, action.origin);
       let score = state.score + calculatePlacementScore(piece);
@@ -1178,7 +1187,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             puzzleLevelUp,
             puzzleEverSolved,
             lastCascade: null,
-            puzzleUndo,
+            puzzleUndoStack,
           };
         }
         const isGameOver = !hasValidMoves(board, newTray);
@@ -1197,7 +1206,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: isGameOver ? 'failed' : null,
           puzzleLevelUp: null,
           lastCascade: null,
-          puzzleUndo,
+          puzzleUndoStack,
         };
       }
 
@@ -1224,7 +1233,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: null,
-          puzzleUndo: null,
+          puzzleUndoStack: [],
         };
       }
 
@@ -1251,7 +1260,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: cascadeSteps,
-          puzzleUndo: null,
+          puzzleUndoStack: [],
         };
       }
 
@@ -1283,7 +1292,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: cascadeSteps,
-          puzzleUndo: null,
+          puzzleUndoStack: [],
         };
       }
 
@@ -1307,7 +1316,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         puzzleResult: null,
         puzzleLevelUp: null,
         lastCascade: null,
-        puzzleUndo: null,
+        puzzleUndoStack: [],
       };
     }
 
@@ -1555,11 +1564,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'UNDO_PLACEMENT': {
-      if (state.mode !== 'puzzle' || !state.puzzleUndo) return state;
-      const snap = state.puzzleUndo;
-      // Strictly one-shot: clear the slot so a second undo is a no-op.
-      // Also wipe the terminal flags so a just-failed / just-solved
+      if (state.mode !== 'puzzle') return state;
+      const stack = state.puzzleUndoStack;
+      if (stack.length === 0) return state;
+      // Pop the most recent snapshot; leave the rest of the history
+      // intact so the player can keep undoing back to the puzzle's
+      // start. Wipe the terminal flags so a just-failed / just-solved
       // puzzle becomes playable again from the restored position.
+      const snap = stack[stack.length - 1];
+      const remaining = stack.slice(0, -1);
       return {
         ...state,
         board: snap.board,
@@ -1570,7 +1583,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         puzzleResult: null,
         puzzleLevelUp: null,
         lastCascade: null,
-        puzzleUndo: null,
+        puzzleUndoStack: remaining,
       };
     }
 
@@ -1589,7 +1602,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: null,
-          puzzleUndo: null,
+          puzzleUndoStack: [],
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };

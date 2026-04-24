@@ -217,7 +217,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 >
                   Retry
                 </button>
-                {state.puzzleUndo !== null && (
+                {state.puzzleUndoStack.length > 0 && (
                   <button
                     className="game-over-panel__btn"
                     onClick={() => {
@@ -287,7 +287,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                     one tap away — the tray's own Undo button is covered by
                     this overlay. Only shown when there's actually a
                     snapshot to revert to. */}
-                {state.puzzleUndo !== null && (
+                {state.puzzleUndoStack.length > 0 && (
                   <button
                     className="game-over-panel__btn"
                     onClick={() => {
