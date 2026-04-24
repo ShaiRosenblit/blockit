@@ -1167,22 +1167,6 @@ export default function App() {
             <span aria-hidden>{'\u21BB'}</span>
             <span className="board-restart-btn__label">Restart</span>
           </button>
-          {state.mode === 'puzzle' && (
-            <button
-              className="board-restart-btn board-restart-btn--ghost"
-              aria-label="Undo last placement"
-              title="Undo last placement"
-              disabled={state.puzzleUndo === null}
-              onClick={() => {
-                haptics.pickup();
-                sounds.pickup();
-                dispatch({ type: 'UNDO_PLACEMENT' });
-              }}
-            >
-              <span aria-hidden>{'\u21A9'}</span>
-              <span className="board-restart-btn__label">Undo</span>
-            </button>
-          )}
           {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
             <button
               className="board-restart-btn board-restart-btn--ghost"
@@ -1229,6 +1213,30 @@ export default function App() {
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
+            {state.mode === 'puzzle' && (
+              // Move-level action, so it lives with the pieces (not with the
+              // round/meta buttons in .board-controls above the board). Icon
+              // only + right-aligned keeps the tray visually uncluttered;
+              // the reserved row height is stable whether the button is
+              // enabled or disabled so the tray doesn't shift when the
+              // first placement happens.
+              <div className="piece-tray-topbar">
+                <button
+                  type="button"
+                  className="piece-tray-undo"
+                  aria-label="Undo last placement"
+                  title="Undo last placement"
+                  disabled={state.puzzleUndo === null}
+                  onClick={() => {
+                    haptics.pickup();
+                    sounds.pickup();
+                    dispatch({ type: 'UNDO_PLACEMENT' });
+                  }}
+                >
+                  <span aria-hidden>{'\u21A9'}</span>
+                </button>
+              </div>
+            )}
             <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
             <p className="piece-tray-hint">
               {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'

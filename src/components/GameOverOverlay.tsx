@@ -210,12 +210,26 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 {isLastTutorialStep ? 'Start Easy puzzle' : 'Next step'}
               </button>
             ) : (
-              <button
-                className="game-over-panel__btn game-over-panel__btn--primary"
-                onClick={() => dispatch({ type: 'RESTART' })}
-              >
-                Retry
-              </button>
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Retry
+                </button>
+                {state.puzzleUndo !== null && (
+                  <button
+                    className="game-over-panel__btn"
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'UNDO_PLACEMENT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u21A9'}</span> Undo last move
+                  </button>
+                )}
+              </>
             )}
             <button
               className="game-over-panel__btn"
@@ -267,6 +281,24 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                 >
                   Retry
                 </button>
+                {/* On a fresh failure the player almost always wants to try
+                    the losing move over, not wipe the whole puzzle. Surface
+                    Undo here so the path back from a final-piece mistake is
+                    one tap away — the tray's own Undo button is covered by
+                    this overlay. Only shown when there's actually a
+                    snapshot to revert to. */}
+                {state.puzzleUndo !== null && (
+                  <button
+                    className="game-over-panel__btn"
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'UNDO_PLACEMENT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u21A9'}</span> Undo last move
+                  </button>
+                )}
                 <button
                   className="game-over-panel__btn"
                   onClick={() => dispatch({ type: 'NEW_PUZZLE' })}

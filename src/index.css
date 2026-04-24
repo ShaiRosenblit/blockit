@@ -716,22 +716,65 @@ body {
 }
 
 /*
- * Disabled state for the Undo button (puzzle mode): visually demote to
- * make "nothing to undo" obvious, and neutralise hover/active styling so
- * the button doesn't react to pointer input while unclickable.
+ * Undo button top-bar above the puzzle piece tray. Move-level actions
+ * belong with the pieces (not with the round-level buttons in
+ * .board-controls up near the board title), so Undo lives here where
+ * the player's hand already is. Right-aligned so it doesn't crowd the
+ * tray columns centered below, and always rendered (disabled when there
+ * is nothing to undo) so the tray's vertical offset doesn't shift on
+ * the first placement.
  */
-.board-restart-btn:disabled {
-  opacity: 0.4;
+.piece-tray-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: min(100%, var(--panel-max));
+  min-height: 1.75rem;
+}
+
+.piece-tray-undo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text, #fff);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease,
+    opacity 0.15s ease;
+}
+
+.piece-tray-undo:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.piece-tray-undo:active {
+  transform: scale(0.92);
+}
+
+/*
+ * Disabled = no snapshot yet (or one was just consumed). Visually demote
+ * and disable hover/active feedback so it reads as "not available right
+ * now" rather than "broken".
+ */
+.piece-tray-undo:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
-  transform: none;
 }
 
-.board-restart-btn:disabled:hover {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.18);
+.piece-tray-undo:disabled:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
-.board-restart-btn:disabled:active {
+.piece-tray-undo:disabled:active {
   transform: none;
 }
 
