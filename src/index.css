@@ -715,6 +715,26 @@ body {
   letter-spacing: 0.02em;
 }
 
+/*
+ * Disabled state for the Undo button (puzzle mode): visually demote to
+ * make "nothing to undo" obvious, and neutralise hover/active styling so
+ * the button doesn't react to pointer input while unclickable.
+ */
+.board-restart-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.board-restart-btn:disabled:hover {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.board-restart-btn:disabled:active {
+  transform: none;
+}
+
 @keyframes will-clear-pulse {
   0% {
     filter: brightness(1);

@@ -818,11 +818,25 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest('input, textarea, [contenteditable="true"]')) return;
+
+      // Cmd/Ctrl+Z → undo last puzzle placement. Shift+Z is intentionally
+      // not wired up (no redo in v1). Ignored unless we're in puzzle mode
+      // with a pending snapshot.
+      if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (e.repeat) return;
+        if (state.mode !== 'puzzle' || state.puzzleUndo === null) return;
+        e.preventDefault();
+        haptics.pickup();
+        sounds.pickup();
+        dispatch({ type: 'UNDO_PLACEMENT' });
+        return;
+      }
+
       if (e.key !== 'r' && e.key !== 'R') return;
       if (e.repeat) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = e.target as HTMLElement | null;
-      if (el?.closest('input, textarea, [contenteditable="true"]')) return;
       const idx = drag?.index ?? lastTrayIndexRef.current;
       if (idx === null) return;
       if (!state.tray[idx]) return;
@@ -832,7 +846,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, state.tray, dispatch]);
+  }, [drag, state.tray, state.mode, state.puzzleUndo, dispatch]);
 
   // Refresh placement preview when the tray piece changes during drag (e.g. rotate).
   // Pointer moves call updatePreview in the drag listener — do not also depend on `drag`
@@ -1153,6 +1167,22 @@ export default function App() {
             <span aria-hidden>{'\u21BB'}</span>
             <span className="board-restart-btn__label">Restart</span>
           </button>
+          {state.mode === 'puzzle' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Undo last placement"
+              title="Undo last placement"
+              disabled={state.puzzleUndo === null}
+              onClick={() => {
+                haptics.pickup();
+                sounds.pickup();
+                dispatch({ type: 'UNDO_PLACEMENT' });
+              }}
+            >
+              <span aria-hidden>{'\u21A9'}</span>
+              <span className="board-restart-btn__label">Undo</span>
+            </button>
+          )}
           {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
             <button
               className="board-restart-btn board-restart-btn--ghost"

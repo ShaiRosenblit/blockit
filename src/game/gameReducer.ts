@@ -118,6 +118,23 @@ export type GameState = {
    * which is how the view knows to stop the animation sequence.
    */
   lastCascade: CascadeStep[] | null;
+  /**
+   * Single-step undo snapshot for puzzle mode. Captured on every
+   * puzzle-mode PLACE_PIECE (pre-placement state) and cleared on UNDO,
+   * RESTART, NEW_PUZZLE, difficulty/mode switches, tutorial navigation,
+   * and shared-puzzle loads. Null outside puzzle mode. We don't track
+   * rotations: the snapshot's `tray` also reverts any rotations the
+   * player performed after the placement, which is acceptable because
+   * rotations are one tap to reapply.
+   */
+  puzzleUndo: PuzzleUndoSnapshot | null;
+};
+
+export type PuzzleUndoSnapshot = {
+  board: BoardGrid;
+  tray: TraySlot[];
+  score: number;
+  combo: number;
 };
 
 /**
@@ -158,7 +175,14 @@ export type GameAction =
   /** Advance to the next tutorial step; graduate to the Easy puzzle after the last step. */
   | { type: 'TUTORIAL_NEXT' }
   /** Jump to a specific tutorial step (for dot-indicator navigation). */
-  | { type: 'TUTORIAL_GOTO'; step: number };
+  | { type: 'TUTORIAL_GOTO'; step: number }
+  /**
+   * Revert the most recent puzzle-mode placement, restoring the board,
+   * tray, score, and combo to their pre-placement values. No-op when
+   * there is no snapshot (fresh puzzle, or a previous undo already
+   * consumed it) or when not in puzzle mode.
+   */
+  | { type: 'UNDO_PLACEMENT' };
 
 const MODE_KEY = 'blockit-mode';
 const CLASSIC_DIFFICULTY_KEY = 'blockit-classic-difficulty';
@@ -625,6 +649,7 @@ function freshPuzzleState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -665,6 +690,7 @@ function freshTutorialState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -705,6 +731,7 @@ function freshPuzzleStateFromShared(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -740,6 +767,7 @@ function freshClassicState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -780,6 +808,7 @@ function freshChromaState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -821,6 +850,7 @@ function freshGravityState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -862,6 +892,7 @@ function freshDropState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    puzzleUndo: null,
   };
 }
 
@@ -1001,6 +1032,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const enforceColorAdjacency = state.mode === 'chroma';
       if (!canPlacePiece(state.board, piece, action.origin, { enforceColorAdjacency })) return state;
 
+      // Snapshot pre-placement state so Puzzle mode can surface a
+      // single-step Undo. Captured here (before any board mutation) so
+      // the restore is an exact revert. The reducer already treats prior
+      // state as immutable, so holding references — no clone — is safe.
+      const puzzleUndo: PuzzleUndoSnapshot | null =
+        state.mode === 'puzzle'
+          ? { board: state.board, tray: state.tray, score: state.score, combo: state.combo }
+          : null;
+
       let board = placePiece(state.board, piece, action.origin);
       let score = state.score + calculatePlacementScore(piece);
       let combo = state.combo;
@@ -1138,6 +1178,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             puzzleLevelUp,
             puzzleEverSolved,
             lastCascade: null,
+            puzzleUndo,
           };
         }
         const isGameOver = !hasValidMoves(board, newTray);
@@ -1156,6 +1197,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: isGameOver ? 'failed' : null,
           puzzleLevelUp: null,
           lastCascade: null,
+          puzzleUndo,
         };
       }
 
@@ -1182,6 +1224,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: null,
+          puzzleUndo: null,
         };
       }
 
@@ -1208,6 +1251,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: cascadeSteps,
+          puzzleUndo: null,
         };
       }
 
@@ -1239,6 +1283,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: cascadeSteps,
+          puzzleUndo: null,
         };
       }
 
@@ -1262,6 +1307,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         puzzleResult: null,
         puzzleLevelUp: null,
         lastCascade: null,
+        puzzleUndo: null,
       };
     }
 
@@ -1508,6 +1554,26 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       );
     }
 
+    case 'UNDO_PLACEMENT': {
+      if (state.mode !== 'puzzle' || !state.puzzleUndo) return state;
+      const snap = state.puzzleUndo;
+      // Strictly one-shot: clear the slot so a second undo is a no-op.
+      // Also wipe the terminal flags so a just-failed / just-solved
+      // puzzle becomes playable again from the restored position.
+      return {
+        ...state,
+        board: snap.board,
+        tray: snap.tray,
+        score: snap.score,
+        combo: snap.combo,
+        isGameOver: false,
+        puzzleResult: null,
+        puzzleLevelUp: null,
+        lastCascade: null,
+        puzzleUndo: null,
+      };
+    }
+
     case 'RESTART': {
       // Puzzle mode: reset to the CURRENT puzzle's initial position without
       // generating a new one. The same board, tray, and target are restored;
@@ -1523,6 +1589,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleResult: null,
           puzzleLevelUp: null,
           lastCascade: null,
+          puzzleUndo: null,
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };
