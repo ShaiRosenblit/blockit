@@ -19,9 +19,19 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop';
+export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
+
+/**
+ * Mirror mode difficulty. Three rungs (no Zen, no Expert) keeps the
+ * menu compact for a puzzle-style mode where every piece does double
+ * work via reflection — Hard already feels like Expert at standard piece
+ * counts. Kept as its own literal union (not `ClassicDifficulty`) so
+ * future Mirror-only tuning stays a typed, breaking change and
+ * persistence keys stay independent per mode.
+ */
+export type MirrorDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -70,7 +80,8 @@ export type ModeSelection =
   | { mode: 'puzzle'; difficulty: PuzzleDifficulty }
   | { mode: 'chroma'; difficulty: ChromaDifficulty }
   | { mode: 'gravity'; difficulty: GravityDifficulty }
-  | { mode: 'drop'; difficulty: DropDifficulty };
+  | { mode: 'drop'; difficulty: DropDifficulty }
+  | { mode: 'mirror'; difficulty: MirrorDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -88,6 +99,12 @@ export const GRAVITY_DIFFICULTIES: readonly GravityDifficulty[] = [
 
 export const DROP_DIFFICULTIES: readonly DropDifficulty[] = [
   'zen',
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const MIRROR_DIFFICULTIES: readonly MirrorDifficulty[] = [
   'easy',
   'normal',
   'hard',

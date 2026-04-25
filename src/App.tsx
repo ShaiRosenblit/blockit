@@ -1,6 +1,14 @@
 import { useReducer, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { gameReducer, createInitialState, savePuzzleEverSolved } from './game/gameReducer';
-import { canPlacePiece, placePiece, detectCompletedLines, computeLandingOrigin } from './game/board';
+import {
+  canPlacePiece,
+  canPlacePieceMirrored,
+  placePiece,
+  placePieceMirrored,
+  detectCompletedLines,
+  computeLandingOrigin,
+  getMirroredPlacementCells,
+} from './game/board';
 import { calculatePlacementScore, calculateClearScore } from './game/scoring';
 import { GameContext } from './hooks/useGame';
 import { Board } from './components/Board';
@@ -13,6 +21,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  MIRROR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
@@ -26,6 +35,7 @@ import { Celebration } from './components/Celebration';
 import { Wordmark } from './components/Wordmark';
 import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
+import { MirrorIntro } from './components/MirrorIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -322,6 +332,7 @@ export default function App() {
       // the cursor invalid so the player gets the same red-wash feedback
       // they already recognize from Classic.
       const isDrop = state.mode === 'drop';
+      const isMirror = state.mode === 'mirror';
       let origin = cursorOrigin;
       let valid: boolean;
       if (isDrop) {
@@ -332,23 +343,48 @@ export default function App() {
         } else {
           valid = false;
         }
+      } else if (isMirror) {
+        // Mirror mode: validate that BOTH the piece and its reflection fit.
+        valid = canPlacePieceMirrored(state.board, piece, cursorOrigin);
       } else {
         const enforceColorAdjacency = state.mode === 'chroma';
         valid = canPlacePiece(state.board, piece, cursorOrigin, { enforceColorAdjacency });
       }
 
       const cells = new Map<string, 'valid' | 'invalid'>();
-      for (const cell of piece.cells) {
-        const r = origin.row + cell.row;
-        const c = origin.col + cell.col;
-        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-          cells.set(`${r},${c}`, valid ? 'valid' : 'invalid');
+      if (isMirror) {
+        // Show the reflected ghost too so the player sees exactly what the
+        // commit will write to the board. `getMirroredPlacementCells` dedupes
+        // any cells where the piece overlaps its own reflection (axis cells).
+        const { cells: mirroredCells, inBounds } = getMirroredPlacementCells(piece, cursorOrigin);
+        if (inBounds) {
+          for (const cell of mirroredCells) {
+            cells.set(`${cell.row},${cell.col}`, valid ? 'valid' : 'invalid');
+          }
+        } else {
+          for (const cell of piece.cells) {
+            const r = cursorOrigin.row + cell.row;
+            const c = cursorOrigin.col + cell.col;
+            if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+              cells.set(`${r},${c}`, 'invalid');
+            }
+          }
+        }
+      } else {
+        for (const cell of piece.cells) {
+          const r = origin.row + cell.row;
+          const c = origin.col + cell.col;
+          if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+            cells.set(`${r},${c}`, valid ? 'valid' : 'invalid');
+          }
         }
       }
 
       let clearCells: Set<string> | null = null;
       if (valid) {
-        const hypothetical = placePiece(state.board, piece, origin);
+        const hypothetical = isMirror
+          ? placePieceMirrored(state.board, piece, origin)
+          : placePiece(state.board, piece, origin);
         const { rows, cols } = detectCompletedLines(hypothetical);
         // Drop mode disables column clears by design — only rows contribute
         // to the will-clear preview so the ghost matches what actually
@@ -463,20 +499,34 @@ export default function App() {
     (trayIndex: number, origin: Coord) => {
       const piece = state.tray[trayIndex];
       if (!piece) return;
+      const isMirror = state.mode === 'mirror';
       const enforceColorAdjacency = state.mode === 'chroma';
-      if (!canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) return;
+      if (isMirror) {
+        if (!canPlacePieceMirrored(state.board, piece, origin)) return;
+      } else if (!canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
+        return;
+      }
 
       // Compute placed cells for snap animation
       const placed = new Set<string>();
-      for (const cell of piece.cells) {
-        placed.add(`${origin.row + cell.row},${origin.col + cell.col}`);
+      if (isMirror) {
+        const { cells: mirroredCells } = getMirroredPlacementCells(piece, origin);
+        for (const cell of mirroredCells) {
+          placed.add(`${cell.row},${cell.col}`);
+        }
+      } else {
+        for (const cell of piece.cells) {
+          placed.add(`${origin.row + cell.row},${origin.col + cell.col}`);
+        }
       }
       setPlacedCells(placed);
       setTimeout(() => setPlacedCells(null), 200);
       haptics.place();
       sounds.place();
 
-      const hypothetical = placePiece(state.board, piece, origin);
+      const hypothetical = isMirror
+        ? placePieceMirrored(state.board, piece, origin)
+        : placePiece(state.board, piece, origin);
       const { rows, cols } = detectCompletedLines(hypothetical);
       // Drop mode disables column clears — only row fills produce a clear.
       // Filter cols out here so the feedback (orbs, score popup, haptics)
@@ -501,8 +551,9 @@ export default function App() {
         // Drop mode keep them because the score is the primary feedback
         // loop there. Gravity mode skips: the cascade playback IS the
         // feedback, and orbs flying out of a board that's mid-cascade
-        // reads as visual noise against the rising/falling tiles.
-        if (state.mode !== 'puzzle' && state.mode !== 'gravity') {
+        // reads as visual noise against the rising/falling tiles. Mirror
+        // mode follows Puzzle (target-pattern-based, no score display).
+        if (state.mode !== 'puzzle' && state.mode !== 'gravity' && state.mode !== 'mirror') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
           spawnScorePopup(totalPopup, origin);
@@ -623,13 +674,16 @@ export default function App() {
   // otherwise the confetti lands on the board mid-clear animation.
   const lastSolveKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (state.mode !== 'puzzle') return;
+    if (state.mode !== 'puzzle' && state.mode !== 'mirror') return;
     if (state.puzzleResult !== 'solved') {
       // Reset tracker so the next solve of the same puzzle re-fires.
       lastSolveKeyRef.current = null;
       return;
     }
-    const key = `${state.puzzleDifficulty}:${state.tutorialStep}`;
+    const key =
+      state.mode === 'mirror'
+        ? `mirror:${state.mirrorDifficulty}`
+        : `${state.puzzleDifficulty}:${state.tutorialStep}`;
     if (lastSolveKeyRef.current === key) return;
     lastSolveKeyRef.current = key;
 
@@ -637,22 +691,40 @@ export default function App() {
     const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const centerY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
-    const baseIntensity = difficultyToCelebrationIntensity(
-      state.puzzleDifficulty,
-      state.tutorialStep
-    );
-    // First-time solves of a numeric difficulty are milestones the player
-    // will only experience once per difficulty — punch the celebration up a
-    // touch so it *feels* different from their 15th Normal solve. The bump
-    // is capped at 1.0 so Expert (already near the ceiling) doesn't wrap.
-    const intensity = state.puzzleLevelUp !== null
-      ? Math.min(1, baseIntensity + 0.2)
-      : baseIntensity;
+    let intensity: number;
+    if (state.mode === 'mirror') {
+      // Mirror mode tier → celebration intensity. Hard solves earn the
+      // biggest cheer; easy stays modest to keep the dopamine ramp.
+      intensity =
+        state.mirrorDifficulty === 'hard'
+          ? 0.85
+          : state.mirrorDifficulty === 'normal'
+            ? 0.55
+            : 0.35;
+    } else {
+      const baseIntensity = difficultyToCelebrationIntensity(
+        state.puzzleDifficulty,
+        state.tutorialStep
+      );
+      // First-time solves of a numeric difficulty are milestones the player
+      // will only experience once per difficulty — punch the celebration up a
+      // touch so it *feels* different from their 15th Normal solve. The bump
+      // is capped at 1.0 so Expert (already near the ceiling) doesn't wrap.
+      intensity =
+        state.puzzleLevelUp !== null ? Math.min(1, baseIntensity + 0.2) : baseIntensity;
+    }
 
     setCelebration({ intensity, centerX, centerY, runId: ++celebrationRunId });
     haptics.celebrate(intensity);
     sounds.celebrate(intensity);
-  }, [state.mode, state.puzzleResult, state.puzzleDifficulty, state.tutorialStep, state.puzzleLevelUp]);
+  }, [
+    state.mode,
+    state.puzzleResult,
+    state.puzzleDifficulty,
+    state.mirrorDifficulty,
+    state.tutorialStep,
+    state.puzzleLevelUp,
+  ]);
 
   // Persist the "ever solved" set whenever it changes. Deliberately in an
   // effect (not the reducer) so the reducer stays idempotent under React
@@ -826,7 +898,11 @@ export default function App() {
       // alone (no redo in v1). Ignored unless we're in puzzle mode with
       // at least one snapshot to revert.
       if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        if (state.mode !== 'puzzle' || state.puzzleUndoStack.length === 0) return;
+        if (
+          (state.mode !== 'puzzle' && state.mode !== 'mirror') ||
+          state.puzzleUndoStack.length === 0
+        )
+          return;
         e.preventDefault();
         haptics.pickup();
         sounds.pickup();
@@ -881,10 +957,19 @@ export default function App() {
             ? computeLandingOrigin(state.board, piece, cursorOrigin)
             : cursorOrigin
           : null;
-        const enforceColorAdjacency = state.mode === 'chroma';
-        if (origin && canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
-          handlePlace(drag.index, origin);
-          placed = true;
+        if (origin) {
+          if (state.mode === 'mirror') {
+            if (canPlacePieceMirrored(state.board, piece, origin)) {
+              handlePlace(drag.index, origin);
+              placed = true;
+            }
+          } else {
+            const enforceColorAdjacency = state.mode === 'chroma';
+            if (canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
+              handlePlace(drag.index, origin);
+              placed = true;
+            }
+          }
         }
       }
       if (!placed) {
@@ -910,9 +995,10 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
+    { id: 'mirror', label: 'Mirror' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
@@ -971,6 +1057,10 @@ export default function App() {
     if (state.mode === 'drop') {
       const d = state.dropDifficulty;
       return `Drop · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'mirror') {
+      const d = state.mirrorDifficulty;
+      return `Mirror · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1104,6 +1194,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'mirror' &&
+                  MIRROR_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.mirrorDifficulty}
+                      className={`difficulty-btn${d === state.mirrorDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.mirrorDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_MIRROR_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1156,7 +1264,7 @@ export default function App() {
             )}
           </div>
         )}
-        {state.mode !== 'puzzle' && <ScoreBar scoreValueRef={scoreValueRef} />}
+        {state.mode !== 'puzzle' && state.mode !== 'mirror' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
             className="board-restart-btn"
@@ -1175,6 +1283,19 @@ export default function App() {
               onClick={() => {
                 clearShareHash();
                 dispatch({ type: 'NEW_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
+          {state.mode === 'mirror' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new mirror puzzle"
+              title="Generate a new mirror puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_MIRROR_PUZZLE' });
               }}
             >
               <span aria-hidden>{'\u2728'}</span>
@@ -1209,11 +1330,17 @@ export default function App() {
         {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial' && (
           <PuzzleLegend />
         )}
+        {state.mode === 'mirror' && (
+          <>
+            <MirrorIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {state.mode === 'puzzle' && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1241,13 +1368,15 @@ export default function App() {
             <p className="piece-tray-hint">
               {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
-                : state.mode === 'chroma'
-                  ? "Chroma · pieces can't touch a different color"
-                  : state.mode === 'gravity'
-                    ? 'Gravity · clears make blocks fall — chain reactions score big'
-                    : state.mode === 'drop'
-                      ? 'Drop · pieces fall from release — clear rows to survive'
-                      : 'Tap to rotate · drag to place'}
+                : state.mode === 'mirror'
+                  ? 'Mirror · every piece places its reflection too'
+                  : state.mode === 'chroma'
+                    ? "Chroma · pieces can't touch a different color"
+                    : state.mode === 'gravity'
+                      ? 'Gravity · clears make blocks fall — chain reactions score big'
+                      : state.mode === 'drop'
+                        ? 'Drop · pieces fall from release — clear rows to survive'
+                        : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}

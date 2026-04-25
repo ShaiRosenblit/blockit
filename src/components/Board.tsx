@@ -53,6 +53,7 @@ export function Board({
   const { state } = useGame();
   const target = state.puzzleTarget;
   const isPuzzle = state.mode === 'puzzle';
+  const isMirror = state.mode === 'mirror';
   const renderBoard = overrideBoard ?? state.board;
 
   const cells: React.ReactNode[] = [];
@@ -90,12 +91,15 @@ export function Board({
     }
   }
 
-  let boardClass = isPuzzle ? 'board board--puzzle' : 'board';
+  let boardClass = 'board';
+  if (isPuzzle) boardClass += ' board--puzzle';
+  if (isMirror) boardClass += ' board--puzzle board--mirror';
   if (shake) boardClass += ' board--cascade-shake';
 
   return (
     <div className={boardClass} ref={boardRef}>
       {cells}
+      {isMirror && <div className="board__mirror-axis" aria-hidden />}
     </div>
   );
 }

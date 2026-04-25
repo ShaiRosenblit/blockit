@@ -384,6 +384,112 @@ export function hasValidDrops(
   return false;
 }
 
+/**
+ * Mirror mode helpers — the board is reflected across a vertical axis
+ * sitting between columns 3 and 4, and every placement also writes its
+ * horizontal mirror in one atomic step. Rows are unchanged, columns are
+ * flipped via `BOARD_SIZE - 1 - c`.
+ *
+ * Pieces near the centre column overlap with their own reflection, which
+ * we treat as a feature: the union of placement + reflection becomes a
+ * symmetric blob (e.g. a 1×3 piece centred over the axis turns into a
+ * 1×6 bar). The dedupe inside `getMirroredPlacementCells` makes this
+ * "place once, fill twice" behaviour transparent to the rest of the
+ * pipeline.
+ */
+export function mirrorCol(col: number): number {
+  return BOARD_SIZE - 1 - col;
+}
+
+/**
+ * Compute the full set of board cells that placing `piece` at `origin`
+ * would write in Mirror mode — both the literal cells and their
+ * horizontal reflections, deduplicated. Cells that fall off the board
+ * (rows < 0 / >= BOARD_SIZE, or cols < 0 / >= BOARD_SIZE on either the
+ * piece itself OR its reflection) cause the result's `inBounds` flag to
+ * flip false; collision checks live separately.
+ */
+export function getMirroredPlacementCells(
+  piece: PieceShape,
+  origin: Coord
+): { cells: Coord[]; inBounds: boolean } {
+  const seen = new Set<string>();
+  const cells: Coord[] = [];
+  let inBounds = true;
+
+  for (const cell of piece.cells) {
+    const r = origin.row + cell.row;
+    const c = origin.col + cell.col;
+    const mc = mirrorCol(c);
+
+    for (const [rr, cc] of [
+      [r, c],
+      [r, mc],
+    ] as const) {
+      if (rr < 0 || rr >= BOARD_SIZE || cc < 0 || cc >= BOARD_SIZE) {
+        inBounds = false;
+        continue;
+      }
+      const key = `${rr},${cc}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cells.push({ row: rr, col: cc });
+    }
+  }
+
+  return { cells, inBounds };
+}
+
+export function canPlacePieceMirrored(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): boolean {
+  const { cells, inBounds } = getMirroredPlacementCells(piece, origin);
+  if (!inBounds) return false;
+  for (const { row, col } of cells) {
+    if (board[row][col] !== null) return false;
+  }
+  return true;
+}
+
+export function placePieceMirrored(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): BoardGrid {
+  const newBoard = board.map((row) => [...row]);
+  const { cells } = getMirroredPlacementCells(piece, origin);
+  for (const { row, col } of cells) {
+    newBoard[row][col] = piece.color;
+  }
+  return newBoard;
+}
+
+/**
+ * Mirror-mode game-over probe. True iff at least one tray piece has
+ * some (rotation, origin) where the mirrored placement fits — i.e. both
+ * the piece and its reflection land on empty in-bounds cells.
+ */
+export function hasValidMirrorMoves(
+  board: BoardGrid,
+  tray: (PieceShape | null)[]
+): boolean {
+  for (const piece of tray) {
+    if (!piece) continue;
+    let variant = piece;
+    for (let rot = 0; rot < 4; rot++) {
+      for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
+        for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
+          if (canPlacePieceMirrored(board, variant, { row: r, col: c })) return true;
+        }
+      }
+      variant = rotatePiece90Clockwise(variant);
+    }
+  }
+  return false;
+}
+
 export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
   const rotated = piece.cells.map(({ row, col }) => ({
     row: col,

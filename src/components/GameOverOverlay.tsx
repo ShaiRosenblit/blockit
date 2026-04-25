@@ -68,8 +68,10 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const { state, dispatch } = useGame();
 
   const isPuzzle = state.mode === 'puzzle';
-  const solved = isPuzzle && state.puzzleResult === 'solved';
-  const failed = isPuzzle && state.puzzleResult === 'failed';
+  const isMirror = state.mode === 'mirror';
+  const isPuzzleLike = isPuzzle || isMirror;
+  const solved = isPuzzleLike && state.puzzleResult === 'solved';
+  const failed = isPuzzleLike && state.puzzleResult === 'failed';
   const isTutorial = isPuzzle && state.puzzleDifficulty === 'tutorial';
   const isLastTutorialStep =
     isTutorial && state.tutorialStep >= TUTORIAL_STEP_COUNT - 1;
@@ -107,11 +109,15 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
       : 'Not quite — try again'
     : levelUp
       ? levelUp.headline
-      : solved
-        ? 'Pattern matched!'
-        : failed
-          ? 'Pattern not matched'
-          : 'Game Over';
+      : isMirror
+        ? solved
+          ? 'Reflection complete!'
+          : 'Reflection broken'
+        : solved
+          ? 'Pattern matched!'
+          : failed
+            ? 'Pattern not matched'
+            : 'Game Over';
 
   const subline = isTutorial
     ? solved
@@ -121,28 +127,34 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
       : 'Use Retry to reset this step and give it another go.'
     : levelUp
       ? levelUp.subline
-      : isPuzzle
+      : isMirror
         ? solved
-          ? 'Nicely done.'
-          : 'Tip: row/column clears can remove unwanted cells — plan the order.'
-        : null;
+          ? 'Symmetry, sealed. Beautiful work.'
+          : 'Tip: every piece writes its reflection — plan both halves at once.'
+        : isPuzzle
+          ? solved
+            ? 'Nicely done.'
+            : 'Tip: row/column clears can remove unwanted cells — plan the order.'
+          : null;
 
   const selectionLabel = isTutorial
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
     : isPuzzle
       ? `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`
-      : state.mode === 'chroma'
-        ? 'Chroma'
-        : state.mode === 'gravity'
-          ? `Gravity · ${state.gravityDifficulty}`
-          : state.mode === 'drop'
-            ? `Drop · ${state.dropDifficulty}`
-            : `Classic · ${state.classicDifficulty}`;
+      : isMirror
+        ? `Mirror · ${state.mirrorDifficulty.charAt(0).toUpperCase()}${state.mirrorDifficulty.slice(1)}`
+        : state.mode === 'chroma'
+          ? 'Chroma'
+          : state.mode === 'gravity'
+            ? `Gravity · ${state.gravityDifficulty}`
+            : state.mode === 'drop'
+              ? `Drop · ${state.dropDifficulty}`
+              : `Classic · ${state.classicDifficulty}`;
 
-  // Puzzle mode is a binary solve/not-solve challenge, so numeric score
-  // and per-difficulty best aren't meaningful feedback — they're suppressed
-  // here. Classic mode still shows both.
-  const bestLabel = !isPuzzle
+  // Puzzle and Mirror modes are binary solve/not-solve challenges, so
+  // numeric score and per-difficulty best aren't meaningful feedback —
+  // they're suppressed here. Classic mode still shows both.
+  const bestLabel = !isPuzzleLike
     ? state.mode === 'chroma'
       ? 'Best (Chroma)'
       : state.mode === 'gravity'
@@ -151,7 +163,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           ? `Best (${state.dropDifficulty})`
           : `Best (${state.classicDifficulty})`
     : null;
-  const showStats = !isPuzzle;
+  const showStats = !isPuzzleLike;
 
   const variant = solved
     ? 'game-over-panel--solved'
@@ -237,6 +249,52 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
             >
               Skip tutorial
             </button>
+          </>
+        ) : isMirror ? (
+          <>
+            {solved ? (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'NEW_MIRROR_PUZZLE' })}
+                >
+                  New mirror
+                </button>
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Replay
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Retry
+                </button>
+                {state.puzzleUndoStack.length > 0 && (
+                  <button
+                    className="game-over-panel__btn"
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'UNDO_PLACEMENT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u21A9'}</span> Undo last move
+                  </button>
+                )}
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'NEW_MIRROR_PUZZLE' })}
+                >
+                  New mirror
+                </button>
+              </>
+            )}
           </>
         ) : isPuzzle ? (
           <>

@@ -446,6 +446,45 @@ body {
   box-shadow:
     0 0 0 2px rgba(78, 205, 196, 0.40),
     0 0 20px rgba(78, 205, 196, 0.14);
+  position: relative;
+}
+
+/*
+ * ---- Mirror-mode chrome -----------------------------------------------------
+ *
+ * Override the puzzle halo with a magenta/violet tone so Mirror reads as a
+ * sibling of Puzzle but never gets confused with it. A vertical axis line
+ * runs down the middle of the board so the player always sees where the
+ * reflection plane is. The axis is rendered via an absolutely-positioned
+ * overlay (not pseudo-element) so it survives child-stacking quirks during
+ * preview animations.
+ */
+.board--mirror {
+  box-shadow:
+    0 0 0 2px rgba(199, 125, 255, 0.45),
+    0 0 22px rgba(199, 125, 255, 0.18);
+}
+
+.board__mirror-axis {
+  position: absolute;
+  top: var(--gap);
+  bottom: var(--gap);
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: linear-gradient(
+    to bottom,
+    rgba(199, 125, 255, 0) 0%,
+    rgba(199, 125, 255, 0.55) 16%,
+    rgba(199, 125, 255, 0.65) 50%,
+    rgba(199, 125, 255, 0.55) 84%,
+    rgba(199, 125, 255, 0) 100%
+  );
+  pointer-events: none;
+  border-radius: 1px;
+  box-shadow:
+    0 0 6px rgba(199, 125, 255, 0.35),
+    0 0 12px rgba(199, 125, 255, 0.18);
 }
 
 /*
@@ -929,6 +968,109 @@ body {
   background: #4ECDC4;
   transform: scale(1.35);
   box-shadow: 0 0 8px rgba(78, 205, 196, 0.6);
+}
+
+/*
+ * ---- Mirror-mode intro card -------------------------------------------------
+ *
+ * Same shape language as the tutorial banner (so it slots cleanly above the
+ * board on first entry into Mirror), but tinted with the magenta/violet hue
+ * we use on the mirror axis line and the board halo. One-shot: dismissing
+ * persists in localStorage so it never nags again.
+ */
+.mirror-intro {
+  width: min(100%, var(--panel-max));
+  padding: 0.75rem 1rem 0.875rem;
+  background: linear-gradient(
+    135deg,
+    rgba(199, 125, 255, 0.13),
+    rgba(199, 125, 255, 0.04)
+  );
+  border: 1px solid rgba(199, 125, 255, 0.34);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 0 18px rgba(199, 125, 255, 0.08);
+}
+
+.mirror-intro__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.mirror-intro__eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #C77DFF;
+}
+
+.mirror-intro__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.mirror-intro__text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.mirror-intro__text strong {
+  color: #C77DFF;
+  font-weight: 700;
+}
+
+.mirror-intro__tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.mirror-intro__tips li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.mirror-intro__tips li > span:first-child {
+  color: #C77DFF;
+  width: 1.1rem;
+  text-align: center;
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.mirror-intro__btn {
+  align-self: flex-end;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(199, 125, 255, 0.55);
+  background: rgba(199, 125, 255, 0.18);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.mirror-intro__btn:hover {
+  background: rgba(199, 125, 255, 0.28);
+}
+
+.mirror-intro__btn:active {
+  transform: translateY(1px);
 }
 
 /* Piece tray */

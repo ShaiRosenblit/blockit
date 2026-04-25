@@ -7,6 +7,7 @@ import type {
   DropDifficulty,
   GameMode,
   GravityDifficulty,
+  MirrorDifficulty,
   PieceShape,
   PuzzleDifficulty,
   PuzzleLevel,
@@ -18,16 +19,20 @@ import {
   CLASSIC_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  MIRROR_DIFFICULTIES,
   isPuzzleLevel,
 } from './types';
 import {
   createEmptyBoard,
   canPlacePiece,
+  canPlacePieceMirrored,
   placePiece,
+  placePieceMirrored,
   detectCompletedLines,
   clearLines,
   hasValidMoves,
   hasValidDrops,
+  hasValidMirrorMoves,
   rotatePiece90Clockwise,
   applySlabCollapse,
   boardMatchesTarget,
@@ -39,6 +44,7 @@ import {
   clampPuzzleDifficulty,
   PUZZLE_MAX_DIFFICULTY,
 } from './puzzleGenerator';
+import { generateMirrorPuzzle } from './mirrorPuzzleGenerator';
 import {
   calculatePlacementScore,
   calculateClearScore,
@@ -70,6 +76,8 @@ export type GameState = {
   gravityDifficulty: GravityDifficulty;
   /** Remembered Drop-mode difficulty (mirrors classic rungs). */
   dropDifficulty: DropDifficulty;
+  /** Remembered Mirror-mode difficulty. */
+  mirrorDifficulty: MirrorDifficulty;
   /** Only set when a puzzle round ends. */
   puzzleResult: null | 'solved' | 'failed';
   /**
@@ -162,6 +170,9 @@ export type GameAction =
   | { type: 'SET_PUZZLE_DIFFICULTY'; difficulty: PuzzleDifficulty }
   | { type: 'SET_GRAVITY_DIFFICULTY'; difficulty: GravityDifficulty }
   | { type: 'SET_DROP_DIFFICULTY'; difficulty: DropDifficulty }
+  | { type: 'SET_MIRROR_DIFFICULTY'; difficulty: MirrorDifficulty }
+  /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -194,6 +205,7 @@ const PUZZLE_DIFFICULTY_KEY = 'blockit-puzzle-difficulty';
 const CHROMA_DIFFICULTY_KEY = 'blockit-chroma-difficulty';
 const GRAVITY_DIFFICULTY_KEY = 'blockit-gravity-difficulty';
 const DROP_DIFFICULTY_KEY = 'blockit-drop-difficulty';
+const MIRROR_DIFFICULTY_KEY = 'blockit-mirror-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -208,7 +220,13 @@ const PUZZLE_RENUMBER_MARKER_KEY = 'blockit-puzzle-renumbered-v2';
 
 function bestScoreKey(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty | DropDifficulty
+  difficulty:
+    | ClassicDifficulty
+    | PuzzleLevel
+    | ChromaDifficulty
+    | GravityDifficulty
+    | DropDifficulty
+    | MirrorDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -219,7 +237,13 @@ function puzzleKey(difficulty: PuzzleLevel): string {
 
 function loadBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty | DropDifficulty
+  difficulty:
+    | ClassicDifficulty
+    | PuzzleLevel
+    | ChromaDifficulty
+    | GravityDifficulty
+    | DropDifficulty
+    | MirrorDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -230,7 +254,13 @@ function loadBestScore(
 
 function saveBestScore(
   mode: GameMode,
-  difficulty: ClassicDifficulty | PuzzleLevel | ChromaDifficulty | GravityDifficulty | DropDifficulty,
+  difficulty:
+    | ClassicDifficulty
+    | PuzzleLevel
+    | ChromaDifficulty
+    | GravityDifficulty
+    | DropDifficulty
+    | MirrorDifficulty,
   score: number
 ) {
   try {
@@ -435,7 +465,8 @@ function loadMode(): GameMode {
       stored === 'puzzle' ||
       stored === 'chroma' ||
       stored === 'gravity' ||
-      stored === 'drop'
+      stored === 'drop' ||
+      stored === 'mirror'
     ) {
       return stored;
     }
@@ -548,6 +579,22 @@ function saveDropDifficulty(difficulty: DropDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadMirrorDifficulty(): MirrorDifficulty {
+  try {
+    const stored = localStorage.getItem(MIRROR_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+function saveMirrorDifficulty(difficulty: MirrorDifficulty) {
+  try {
+    localStorage.setItem(MIRROR_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
 /**
  * Shape of the active puzzle as persisted to localStorage. Storing the
  * puzzle's starting position (not mid-game state) means refresh restores the
@@ -618,6 +665,7 @@ function freshPuzzleState(
   chromaDifficulty: ChromaDifficulty,
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -645,6 +693,7 @@ function freshPuzzleState(
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -669,6 +718,7 @@ function freshTutorialState(
   chromaDifficulty: ChromaDifficulty,
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -686,6 +736,7 @@ function freshTutorialState(
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -710,6 +761,7 @@ function freshPuzzleStateFromShared(
   chromaDifficulty: ChromaDifficulty,
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -727,6 +779,7 @@ function freshPuzzleStateFromShared(
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -745,6 +798,7 @@ function freshClassicState(
   chromaDifficulty: ChromaDifficulty,
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -763,6 +817,7 @@ function freshClassicState(
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -786,6 +841,7 @@ function freshChromaState(
   puzzleDifficulty: PuzzleDifficulty,
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -804,6 +860,7 @@ function freshChromaState(
     chromaDifficulty: difficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -828,6 +885,7 @@ function freshGravityState(
   puzzleDifficulty: PuzzleDifficulty,
   chromaDifficulty: ChromaDifficulty,
   dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -846,6 +904,7 @@ function freshGravityState(
     chromaDifficulty,
     gravityDifficulty: difficulty,
     dropDifficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -870,6 +929,7 @@ function freshDropState(
   puzzleDifficulty: PuzzleDifficulty,
   chromaDifficulty: ChromaDifficulty,
   gravityDifficulty: GravityDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -888,10 +948,61 @@ function freshDropState(
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty: difficulty,
+    mirrorDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
     puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Mirror state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Mirror is a puzzle-style mode
+ * with a target pattern and a finite tray. The placement pipeline keys
+ * off `mode === 'mirror'` to apply the reflective placement rules.
+ *
+ * Unlike Puzzle, Mirror puzzles are not persisted to localStorage —
+ * mirror generation is fast and the puzzles aren't difficulty-tracked
+ * with first-solved milestones, so a fresh puzzle on each entry keeps
+ * the experience surprising and the storage footprint tiny.
+ */
+function freshMirrorState(
+  difficulty: MirrorDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const { board, tray, target } = generateMirrorPuzzle({ difficulty });
+  return {
+    board: cloneBoard(board),
+    tray: cloneTray(tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'mirror',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty: difficulty,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(target),
+    puzzleInitialBoard: cloneBoard(board),
+    puzzleInitialTray: cloneTray(tray),
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
@@ -907,6 +1018,7 @@ export function createInitialState(): GameState {
   const chromaDifficulty = loadChromaDifficulty();
   const gravityDifficulty = loadGravityDifficulty();
   const dropDifficulty = loadDropDifficulty();
+  const mirrorDifficulty = loadMirrorDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -929,6 +1041,7 @@ export function createInitialState(): GameState {
         chromaDifficulty,
         gravityDifficulty,
         dropDifficulty,
+        mirrorDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -942,7 +1055,15 @@ export function createInitialState(): GameState {
       // Always (re)start the tutorial from step 1 on entry, regardless of
       // any previously-persisted progress. The tutorial is short and
       // players returning to it generally want to replay the full thing.
-      return freshTutorialState(0, classicDifficulty, chromaDifficulty, gravityDifficulty, dropDifficulty, puzzleEverSolved);
+      return freshTutorialState(
+        0,
+        classicDifficulty,
+        chromaDifficulty,
+        gravityDifficulty,
+        dropDifficulty,
+        mirrorDifficulty,
+        puzzleEverSolved
+      );
     }
     return freshPuzzleState(
       puzzleDifficulty,
@@ -950,6 +1071,7 @@ export function createInitialState(): GameState {
       chromaDifficulty,
       gravityDifficulty,
       dropDifficulty,
+      mirrorDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -963,6 +1085,7 @@ export function createInitialState(): GameState {
       puzzleDifficulty,
       gravityDifficulty,
       dropDifficulty,
+      mirrorDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -976,6 +1099,7 @@ export function createInitialState(): GameState {
       puzzleDifficulty,
       chromaDifficulty,
       dropDifficulty,
+      mirrorDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -989,7 +1113,22 @@ export function createInitialState(): GameState {
       puzzleDifficulty,
       chromaDifficulty,
       gravityDifficulty,
+      mirrorDifficulty,
       loadBestScore('drop', dropDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'mirror') {
+    return freshMirrorState(
+      mirrorDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1001,6 +1140,7 @@ export function createInitialState(): GameState {
     chromaDifficulty,
     gravityDifficulty,
     dropDifficulty,
+    mirrorDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1017,9 +1157,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const newTray = [...state.tray];
       newTray[trayIndex] = rotatePiece90Clockwise(piece);
       const enforceColorAdjacency = state.mode === 'chroma';
-      const isGameOver = !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
+      const isGameOver =
+        state.mode === 'mirror'
+          ? !hasValidMirrorMoves(state.board, newTray)
+          : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
-        state.mode === 'puzzle' && isGameOver ? 'failed' : state.puzzleResult;
+        (state.mode === 'puzzle' || state.mode === 'mirror') && isGameOver
+          ? 'failed'
+          : state.puzzleResult;
       return {
         ...state,
         tray: newTray,
@@ -1033,6 +1178,80 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'PLACE_PIECE': {
       const piece = state.tray[action.trayIndex];
       if (!piece) return state;
+
+      // Mirror mode: every placement also writes its horizontal reflection.
+      // Validation, board mutation, line clearing, and win/lose detection
+      // all use the *_Mirrored variants. We branch out early so the rest of
+      // PLACE_PIECE doesn't have to special-case it.
+      if (state.mode === 'mirror') {
+        if (!canPlacePieceMirrored(state.board, piece, action.origin)) return state;
+
+        const undoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+        ];
+
+        let mboard = placePieceMirrored(state.board, piece, action.origin);
+        let mscore = state.score + calculatePlacementScore(piece) * 2;
+        let mcombo = state.combo;
+        const { rows: mrows, cols: mcols } = detectCompletedLines(mboard);
+        const mlinesCleared = mrows.length + mcols.length;
+        if (mlinesCleared > 0) {
+          mboard = clearLines(mboard, mrows, mcols);
+          mscore += calculateClearScore(mlinesCleared, mcombo) * 2;
+          mcombo += 1;
+        } else {
+          mcombo = 0;
+        }
+
+        const mNewTray = [...state.tray];
+        mNewTray[action.trayIndex] = null;
+        const mAllPlaced = mNewTray.every((s) => s === null);
+        const mTarget = state.puzzleTarget;
+        const mDifficulty = state.mirrorDifficulty;
+
+        if (mAllPlaced) {
+          const solved = mTarget !== null && boardMatchesTarget(mboard, mTarget);
+          if (solved) mscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(mscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('mirror', mDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: mboard,
+            tray: mNewTray,
+            score: mscore,
+            bestScore,
+            combo: solved ? mcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            puzzleUndoStack: undoStack,
+          };
+        }
+
+        const isGameOver = !hasValidMirrorMoves(mboard, mNewTray);
+        const bestScore = Math.max(mscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('mirror', mDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: mboard,
+          tray: mNewTray,
+          score: mscore,
+          bestScore,
+          combo: mcombo,
+          isGameOver,
+          puzzleResult: isGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: undoStack,
+        };
+      }
+
       const enforceColorAdjacency = state.mode === 'chroma';
       if (!canPlacePiece(state.board, piece, action.origin, { enforceColorAdjacency })) return state;
 
@@ -1335,6 +1554,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.chromaDifficulty,
             state.gravityDifficulty,
             state.dropDifficulty,
+            state.mirrorDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -1344,6 +1564,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.chromaDifficulty,
           state.gravityDifficulty,
           state.dropDifficulty,
+          state.mirrorDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1356,6 +1577,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.puzzleDifficulty,
           state.gravityDifficulty,
           state.dropDifficulty,
+          state.mirrorDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1368,6 +1590,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.puzzleDifficulty,
           state.chromaDifficulty,
           state.dropDifficulty,
+          state.mirrorDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1380,7 +1603,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.puzzleDifficulty,
           state.chromaDifficulty,
           state.gravityDifficulty,
+          state.mirrorDifficulty,
           loadBestScore('drop', state.dropDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'mirror') {
+        return freshMirrorState(
+          state.mirrorDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -1391,6 +1628,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1407,6 +1645,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1425,6 +1664,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.chromaDifficulty,
           state.gravityDifficulty,
           state.dropDifficulty,
+          state.mirrorDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -1439,6 +1679,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -1456,6 +1697,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.puzzleDifficulty,
         state.chromaDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1472,7 +1714,25 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.puzzleDifficulty,
         state.chromaDifficulty,
         state.gravityDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('drop', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_MIRROR_DIFFICULTY': {
+      if (!MIRROR_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveMirrorDifficulty(action.difficulty);
+      saveMode('mirror');
+      return freshMirrorState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
       );
@@ -1489,10 +1749,26 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
         { forceNew: true }
+      );
+    }
+
+    case 'NEW_MIRROR_PUZZLE': {
+      if (state.mode !== 'mirror') return state;
+      return freshMirrorState(
+        state.mirrorDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved
       );
     }
 
@@ -1511,6 +1787,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1531,6 +1808,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.chromaDifficulty,
           state.gravityDifficulty,
           state.dropDifficulty,
+          state.mirrorDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -1544,6 +1822,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -1559,12 +1838,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.chromaDifficulty,
         state.gravityDifficulty,
         state.dropDifficulty,
+        state.mirrorDifficulty,
         state.puzzleEverSolved
       );
     }
 
     case 'UNDO_PLACEMENT': {
-      if (state.mode !== 'puzzle') return state;
+      if (state.mode !== 'puzzle' && state.mode !== 'mirror') return state;
       const stack = state.puzzleUndoStack;
       if (stack.length === 0) return state;
       // Pop the most recent snapshot; leave the rest of the history
@@ -1588,10 +1868,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'RESTART': {
-      // Puzzle mode: reset to the CURRENT puzzle's initial position without
-      // generating a new one. The same board, tray, and target are restored;
-      // only score / combo / result flags are wiped.
-      if (state.mode === 'puzzle' && state.puzzleInitialBoard && state.puzzleInitialTray) {
+      // Puzzle / Mirror mode: reset to the CURRENT puzzle's initial
+      // position without generating a new one. The same board, tray, and
+      // target are restored; only score / combo / result flags are wiped.
+      if (
+        (state.mode === 'puzzle' || state.mode === 'mirror') &&
+        state.puzzleInitialBoard &&
+        state.puzzleInitialTray
+      ) {
         return {
           ...state,
           board: cloneBoard(state.puzzleInitialBoard),
