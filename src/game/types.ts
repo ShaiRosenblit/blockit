@@ -19,7 +19,7 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror';
+export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -32,6 +32,16 @@ export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
  * persistence keys stay independent per mode.
  */
 export type MirrorDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Breathe mode difficulty. Three rungs to keep the picker compact for a
+ * puzzle-like mode where the trick (every 2×2 must keep at least one hole
+ * on the WINNING board) already produces meaningful tension at standard
+ * piece counts. Kept as its own literal union — not aliased to
+ * `MirrorDifficulty` — so future Breathe-only tuning stays a typed
+ * breaking change and persistence keys stay independent per-mode.
+ */
+export type BreatheDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -81,7 +91,8 @@ export type ModeSelection =
   | { mode: 'chroma'; difficulty: ChromaDifficulty }
   | { mode: 'gravity'; difficulty: GravityDifficulty }
   | { mode: 'drop'; difficulty: DropDifficulty }
-  | { mode: 'mirror'; difficulty: MirrorDifficulty };
+  | { mode: 'mirror'; difficulty: MirrorDifficulty }
+  | { mode: 'breathe'; difficulty: BreatheDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -105,6 +116,12 @@ export const DROP_DIFFICULTIES: readonly DropDifficulty[] = [
 ] as const;
 
 export const MIRROR_DIFFICULTIES: readonly MirrorDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const BREATHE_DIFFICULTIES: readonly BreatheDifficulty[] = [
   'easy',
   'normal',
   'hard',

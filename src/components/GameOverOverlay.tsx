@@ -69,7 +69,8 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
 
   const isPuzzle = state.mode === 'puzzle';
   const isMirror = state.mode === 'mirror';
-  const isPuzzleLike = isPuzzle || isMirror;
+  const isBreathe = state.mode === 'breathe';
+  const isPuzzleLike = isPuzzle || isMirror || isBreathe;
   const solved = isPuzzleLike && state.puzzleResult === 'solved';
   const failed = isPuzzleLike && state.puzzleResult === 'failed';
   const isTutorial = isPuzzle && state.puzzleDifficulty === 'tutorial';
@@ -113,11 +114,15 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? solved
           ? 'Reflection complete!'
           : 'Reflection broken'
-        : solved
-          ? 'Pattern matched!'
-          : failed
-            ? 'Pattern not matched'
-            : 'Game Over';
+        : isBreathe
+          ? solved
+            ? 'The board breathes.'
+            : 'Suffocated'
+          : solved
+            ? 'Pattern matched!'
+            : failed
+              ? 'Pattern not matched'
+              : 'Game Over';
 
   const subline = isTutorial
     ? solved
@@ -131,7 +136,11 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? solved
           ? 'Symmetry, sealed. Beautiful work.'
           : 'Tip: every piece writes its reflection — plan both halves at once.'
-        : isPuzzle
+        : isBreathe
+          ? solved
+            ? 'Solved without suffocating — every 2×2 keeps a hole.'
+            : 'Tip: a packed 2×2 anywhere on the final board breaks the rule. Carve a vent before the last piece.'
+          : isPuzzle
           ? solved
             ? 'Nicely done.'
             : 'Tip: row/column clears can remove unwanted cells — plan the order.'
@@ -143,7 +152,9 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
       ? `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`
       : isMirror
         ? `Mirror · ${state.mirrorDifficulty.charAt(0).toUpperCase()}${state.mirrorDifficulty.slice(1)}`
-        : state.mode === 'chroma'
+        : isBreathe
+          ? `Breathe · ${state.breatheDifficulty.charAt(0).toUpperCase()}${state.breatheDifficulty.slice(1)}`
+          : state.mode === 'chroma'
           ? 'Chroma'
           : state.mode === 'gravity'
             ? `Gravity · ${state.gravityDifficulty}`
@@ -292,6 +303,52 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                   onClick={() => dispatch({ type: 'NEW_MIRROR_PUZZLE' })}
                 >
                   New mirror
+                </button>
+              </>
+            )}
+          </>
+        ) : isBreathe ? (
+          <>
+            {solved ? (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'NEW_BREATHE_PUZZLE' })}
+                >
+                  New puzzle
+                </button>
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Replay
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Retry
+                </button>
+                {state.puzzleUndoStack.length > 0 && (
+                  <button
+                    className="game-over-panel__btn"
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'UNDO_PLACEMENT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u21A9'}</span> Undo last move
+                  </button>
+                )}
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'NEW_BREATHE_PUZZLE' })}
+                >
+                  New puzzle
                 </button>
               </>
             )}

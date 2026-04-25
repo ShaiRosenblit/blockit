@@ -130,6 +130,34 @@ export function boardMatchesTarget(board: BoardGrid, target: TargetPattern): boo
   return true;
 }
 
+/**
+ * Breathe mode helper: true iff some 2×2 subgrid of the board has all
+ * four cells non-null. Walks each (r, c) with r ≤ BOARD_SIZE-2 and
+ * c ≤ BOARD_SIZE-2, checking the four cells (r,c), (r+1,c), (r,c+1),
+ * (r+1,c+1). The Breathe win check forbids any such fully-packed 2×2
+ * on the WINNING board — intermediate boards may freely contain them.
+ */
+export function hasSolid2x2(board: BoardGrid): boolean {
+  for (let r = 0; r < BOARD_SIZE - 1; r++) {
+    for (let c = 0; c < BOARD_SIZE - 1; c++) {
+      if (
+        board[r][c] !== null &&
+        board[r + 1][c] !== null &&
+        board[r][c + 1] !== null &&
+        board[r + 1][c + 1] !== null
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Inverse of `hasSolid2x2` — every 2×2 has at least one hole. */
+export function boardSatisfiesBreathe(board: BoardGrid): boolean {
+  return !hasSolid2x2(board);
+}
+
 /** True when every cell is empty. */
 export function boardIsEmpty(board: BoardGrid): boolean {
   for (let r = 0; r < BOARD_SIZE; r++) {
