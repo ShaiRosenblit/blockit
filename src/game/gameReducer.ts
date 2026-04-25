@@ -13,6 +13,7 @@ import type {
   PipelineDifficulty,
   PuzzleDifficulty,
   PuzzleLevel,
+  ScarDifficulty,
   TargetPattern,
   TraySlot,
 } from './types';
@@ -24,6 +25,7 @@ import {
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
+  SCAR_DIFFICULTIES,
   isPuzzleLevel,
 } from './types';
 import {
@@ -52,6 +54,13 @@ import {
 } from './puzzleGenerator';
 import { generateMirrorPuzzle } from './mirrorPuzzleGenerator';
 import { generateBreathePuzzle } from './breathePuzzleGenerator';
+import {
+  applyScars,
+  clearLinesPreservingScars,
+  mulberry32,
+  pickScarCells,
+  scarsPerEvent,
+} from './scar';
 import {
   calculatePlacementScore,
   calculateClearScore,
@@ -97,6 +106,18 @@ export type GameState = {
    * fresh-state factories do. Always `0` outside of Pipeline mode.
    */
   pipelinePhase: 0 | 1 | 2;
+  /** Remembered Scar-mode difficulty. */
+  scarDifficulty: ScarDifficulty;
+  /**
+   * Per-run RNG seed for Scar mode's scar-burst placement. Initialised on
+   * `freshScarState` (e.g. `Date.now() ^ Math.floor(Math.random() *
+   * 0x100000000)`); incremented after each scar burst so subsequent
+   * bursts are deterministic-given-seed but visibly vary turn to turn.
+   * Not persisted across sessions — every `freshScarState` rerolls.
+   * Outside Scar mode this field is set but unused; we keep a numeric
+   * default rather than `null` so the type stays simple.
+   */
+  scarRngSeed: number;
   /** Only set when a puzzle round ends. */
   puzzleResult: null | 'solved' | 'failed';
   /**
@@ -192,6 +213,7 @@ export type GameAction =
   | { type: 'SET_MIRROR_DIFFICULTY'; difficulty: MirrorDifficulty }
   | { type: 'SET_BREATHE_DIFFICULTY'; difficulty: BreatheDifficulty }
   | { type: 'SET_PIPELINE_DIFFICULTY'; difficulty: PipelineDifficulty }
+  | { type: 'SET_SCAR_DIFFICULTY'; difficulty: ScarDifficulty }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
@@ -231,6 +253,7 @@ const DROP_DIFFICULTY_KEY = 'blockit-drop-difficulty';
 const MIRROR_DIFFICULTY_KEY = 'blockit-mirror-difficulty';
 const BREATHE_DIFFICULTY_KEY = 'blockit-breathe-difficulty';
 const PIPELINE_DIFFICULTY_KEY = 'blockit-pipeline-difficulty';
+const SCAR_DIFFICULTY_KEY = 'blockit-scar-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -254,6 +277,7 @@ function bestScoreKey(
     | MirrorDifficulty
     | BreatheDifficulty
     | PipelineDifficulty
+    | ScarDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -273,6 +297,7 @@ function loadBestScore(
     | MirrorDifficulty
     | BreatheDifficulty
     | PipelineDifficulty
+    | ScarDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -291,7 +316,8 @@ function saveBestScore(
     | DropDifficulty
     | MirrorDifficulty
     | BreatheDifficulty
-    | PipelineDifficulty,
+    | PipelineDifficulty
+    | ScarDifficulty,
   score: number
 ) {
   try {
@@ -499,7 +525,8 @@ function loadMode(): GameMode {
       stored === 'drop' ||
       stored === 'mirror' ||
       stored === 'breathe' ||
-      stored === 'pipeline'
+      stored === 'pipeline' ||
+      stored === 'scar'
     ) {
       return stored;
     }
@@ -665,6 +692,31 @@ function savePipelineDifficulty(difficulty: PipelineDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadScarDifficulty(): ScarDifficulty {
+  try {
+    const stored = localStorage.getItem(SCAR_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'normal';
+}
+
+function saveScarDifficulty(difficulty: ScarDifficulty) {
+  try {
+    localStorage.setItem(SCAR_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Fresh seed for a Scar run's RNG. XOR with a random 32-bit chunk on top
+ * of `Date.now()` so two Scar runs started in the same millisecond still
+ * diverge — important on auto-restart loops in tests / dev.
+ */
+function freshScarRngSeed(): number {
+  return ((Date.now() & 0xffffffff) ^ Math.floor(Math.random() * 0x100000000)) >>> 0;
+}
+
 /**
  * Shape of the active puzzle as persisted to localStorage. Storing the
  * puzzle's starting position (not mid-game state) means refresh restores the
@@ -738,6 +790,7 @@ function freshPuzzleState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -769,6 +822,8 @@ function freshPuzzleState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -796,6 +851,7 @@ function freshTutorialState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -817,6 +873,8 @@ function freshTutorialState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -844,6 +902,7 @@ function freshPuzzleStateFromShared(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -865,6 +924,8 @@ function freshPuzzleStateFromShared(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -886,6 +947,7 @@ function freshClassicState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -908,6 +970,8 @@ function freshClassicState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -934,6 +998,7 @@ function freshChromaState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -956,6 +1021,8 @@ function freshChromaState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -983,6 +1050,7 @@ function freshGravityState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1005,6 +1073,8 @@ function freshGravityState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1032,6 +1102,7 @@ function freshDropState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1054,6 +1125,8 @@ function freshDropState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1087,6 +1160,7 @@ function freshMirrorState(
   dropDifficulty: DropDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1109,6 +1183,8 @@ function freshMirrorState(
     breatheDifficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
@@ -1142,6 +1218,7 @@ function freshBreatheState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1164,6 +1241,8 @@ function freshBreatheState(
     breatheDifficulty: difficulty,
     pipelineDifficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
@@ -1196,6 +1275,7 @@ function freshPipelineState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  scarDifficulty: ScarDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1218,6 +1298,62 @@ function freshPipelineState(
     breatheDifficulty,
     pipelineDifficulty: difficulty,
     pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Scar state. Score-attack like Classic — empty board,
+ * Classic piece weights, classic line-clear logic — except every cleared
+ * line triggers a "scar burst" that permanently damages a few empty
+ * cells (see `scar.ts` for the mechanics). Each entry into the mode
+ * rerolls `scarRngSeed` so two consecutive runs play out differently
+ * even when the player makes identical moves.
+ */
+function freshScarState(
+  difficulty: ScarDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const board = createEmptyBoard();
+  return {
+    board,
+    tray: generateClassicTray(difficulty, board),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'scar',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty: difficulty,
+    scarRngSeed: freshScarRngSeed(),
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1240,6 +1376,7 @@ export function createInitialState(): GameState {
   const mirrorDifficulty = loadMirrorDifficulty();
   const breatheDifficulty = loadBreatheDifficulty();
   const pipelineDifficulty = loadPipelineDifficulty();
+  const scarDifficulty = loadScarDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -1265,6 +1402,7 @@ export function createInitialState(): GameState {
         mirrorDifficulty,
         breatheDifficulty,
         pipelineDifficulty,
+        scarDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -1287,6 +1425,7 @@ export function createInitialState(): GameState {
         mirrorDifficulty,
         breatheDifficulty,
         pipelineDifficulty,
+        scarDifficulty,
         puzzleEverSolved
       );
     }
@@ -1299,6 +1438,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1315,6 +1455,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1331,6 +1472,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1347,6 +1489,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1363,6 +1506,7 @@ export function createInitialState(): GameState {
       dropDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1379,6 +1523,7 @@ export function createInitialState(): GameState {
       dropDifficulty,
       mirrorDifficulty,
       pipelineDifficulty,
+      scarDifficulty,
       loadBestScore('breathe', breatheDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1395,7 +1540,25 @@ export function createInitialState(): GameState {
       dropDifficulty,
       mirrorDifficulty,
       breatheDifficulty,
+      scarDifficulty,
       loadBestScore('pipeline', pipelineDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'scar') {
+    return freshScarState(
+      scarDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      loadBestScore('scar', scarDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1410,6 +1573,7 @@ export function createInitialState(): GameState {
     mirrorDifficulty,
     breatheDifficulty,
     pipelineDifficulty,
+    scarDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1468,6 +1632,91 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // phase advance + game-over check applied at the tail.
       if (state.mode === 'pipeline' && action.trayIndex !== state.pipelinePhase) {
         return state;
+      }
+
+      // Scar mode: classic-style score-attack with one twist — every
+      // placement that triggers a line clear "scars" a few empty cells,
+      // turning them into permanent blockers. Branched out early so the
+      // shared mid-section below stays Classic / Chroma / Gravity / Drop
+      // / Puzzle exactly as it was. We deliberately route the cleared-
+      // cells through `clearLinesPreservingScars` (NOT the shared
+      // `clearLines`) — that's option 1 from the design spec, kept local
+      // so other modes' clear semantics stay untouched.
+      if (state.mode === 'scar') {
+        // canPlacePiece already rejects any non-null cell, and SCAR_COLOR
+        // cells are non-null — so scar overlap is rejected here without
+        // any extra logic. (The sentinel-color trick is what makes this
+        // mode so cheap to bolt on.)
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        let board = placePiece(state.board, piece, action.origin);
+        let score = state.score + calculatePlacementScore(piece);
+        let combo = state.combo;
+        let scarRngSeed = state.scarRngSeed;
+
+        // Scar cells count as filled by `detectCompletedLines` (they're
+        // non-null), which is exactly what we want — a row containing a
+        // scar can still be cleared, just like in Classic. The
+        // preserve-scars clearer below leaves the scar in place when the
+        // row is wiped, so the damaged terrain stays damaged.
+        const { rows, cols } = detectCompletedLines(board);
+        const linesCleared = rows.length + cols.length;
+
+        if (linesCleared > 0) {
+          board = clearLinesPreservingScars(board, rows, cols);
+          score += calculateClearScore(linesCleared, combo);
+          combo += 1;
+
+          // One scar burst per clear EVENT, not per cleared line —
+          // predictable damage cost regardless of how many lines you
+          // collapse in a single placement. Difficulty controls only the
+          // burst size.
+          const k = scarsPerEvent(state.scarDifficulty);
+          const avoidClusters = state.scarDifficulty === 'hard';
+          const rng = mulberry32(scarRngSeed);
+          const scarCells = pickScarCells(board, k, rng, { avoidClusters });
+          board = applyScars(board, scarCells);
+          // Bump the seed so the next burst (deterministic given the
+          // seed) varies turn-to-turn rather than landing in identical
+          // patterns when the post-clear board happens to look the same.
+          scarRngSeed = (scarRngSeed + 1) >>> 0;
+        } else {
+          combo = 0;
+        }
+
+        const newTray = [...state.tray];
+        newTray[action.trayIndex] = null;
+        const allPlaced = newTray.every((s) => s === null);
+        // Classic piece weights across all difficulties — Scar's challenge
+        // is environmental (the scars), not the piece mix.
+        const finalTray = allPlaced
+          ? generateClassicTray(state.scarDifficulty, board)
+          : newTray;
+
+        const bestScore = Math.max(score, state.bestScore);
+        // Game-over is the standard Classic-style check. `canPlacePiece`
+        // (used inside `hasValidMoves`) already rejects scar cells via the
+        // non-null sentinel, so no scar-aware variant is needed here.
+        const isGameOver = !hasValidMoves(board, finalTray);
+
+        if (bestScore > state.bestScore) {
+          saveBestScore('scar', state.scarDifficulty, bestScore);
+        }
+
+        return {
+          ...state,
+          board,
+          tray: finalTray,
+          score,
+          bestScore,
+          combo,
+          isGameOver,
+          scarRngSeed,
+          puzzleResult: null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: [],
+        };
       }
 
       // Mirror mode: every placement also writes its horizontal reflection.
@@ -1945,6 +2194,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.mirrorDifficulty,
             state.breatheDifficulty,
             state.pipelineDifficulty,
+            state.scarDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -1957,6 +2207,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1972,6 +2223,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1987,6 +2239,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2002,6 +2255,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2017,6 +2271,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2032,6 +2287,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2047,7 +2303,24 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.scarDifficulty,
           loadBestScore('pipeline', state.pipelineDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'scar') {
+        return freshScarState(
+          state.scarDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          loadBestScore('scar', state.scarDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -2061,6 +2334,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2080,6 +2354,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2101,6 +2376,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -2118,6 +2394,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -2138,6 +2415,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2157,6 +2435,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2176,6 +2455,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2195,6 +2475,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('breathe', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2214,7 +2495,28 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.scarDifficulty,
         loadBestScore('pipeline', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_SCAR_DIFFICULTY': {
+      if (!SCAR_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveScarDifficulty(action.difficulty);
+      saveMode('scar');
+      return freshScarState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        loadBestScore('scar', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
       );
@@ -2234,6 +2536,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -2252,6 +2555,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2269,6 +2573,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2293,6 +2598,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2316,6 +2622,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.scarDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -2332,6 +2639,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -2350,6 +2658,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.scarDifficulty,
         state.puzzleEverSolved
       );
     }

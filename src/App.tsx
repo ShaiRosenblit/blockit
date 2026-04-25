@@ -24,6 +24,7 @@ import {
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
+  SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
@@ -40,6 +41,7 @@ import { PuzzleLegend } from './components/PuzzleLegend';
 import { MirrorIntro } from './components/MirrorIntro';
 import { BreatheIntro } from './components/BreatheIntro';
 import { PipelineIntro } from './components/PipelineIntro';
+import { ScarIntro } from './components/ScarIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -1039,12 +1041,13 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe' | 'pipeline'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe' | 'pipeline' | 'scar'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
     { id: 'pipeline', label: 'Pipeline' },
+    { id: 'scar', label: 'Scar' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
@@ -1115,6 +1118,10 @@ export default function App() {
     if (state.mode === 'pipeline') {
       const d = state.pipelineDifficulty;
       return `Pipeline · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'scar') {
+      const d = state.scarDifficulty;
+      return `Scar · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1302,6 +1309,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'scar' &&
+                  SCAR_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.scarDifficulty}
+                      className={`difficulty-btn${d === state.scarDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.scarDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_SCAR_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1446,6 +1471,7 @@ export default function App() {
           </>
         )}
         {state.mode === 'pipeline' && <PipelineIntro />}
+        {state.mode === 'scar' && <ScarIntro />}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
@@ -1488,7 +1514,9 @@ export default function App() {
                     ? 'Breathe · the winning board must keep every 2×2 breathing'
                     : state.mode === 'pipeline'
                       ? 'Pipeline · only the highlighted piece can be placed — order is fixed'
-                      : state.mode === 'chroma'
+                      : state.mode === 'scar'
+                        ? 'Scar · clears damage the field — empty cells crack and never heal'
+                        : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
                         ? 'Gravity · clears make blocks fall — chain reactions score big'
