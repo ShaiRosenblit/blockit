@@ -54,6 +54,8 @@ export function Board({
   const target = state.puzzleTarget;
   const isPuzzle = state.mode === 'puzzle';
   const isMirror = state.mode === 'mirror';
+  const isMonolith = state.mode === 'monolith';
+  const isBreathe = state.mode === 'breathe';
   const renderBoard = overrideBoard ?? state.board;
 
   const cells: React.ReactNode[] = [];
@@ -94,6 +96,8 @@ export function Board({
   let boardClass = 'board';
   if (isPuzzle) boardClass += ' board--puzzle';
   if (isMirror) boardClass += ' board--puzzle board--mirror';
+  if (isBreathe) boardClass += ' board--puzzle';
+  if (isMonolith) boardClass += ' board--puzzle';
   if (shake) boardClass += ' board--cascade-shake';
 
   return (
