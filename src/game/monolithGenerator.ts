@@ -522,7 +522,7 @@ export function generateMonolithPuzzle(options: {
   const rng = mulberry32(seed);
   const pool = poolForSpec(spec);
 
-  for (let attempt = 0; attempt < 240; attempt++) {
+  for (let attempt = 0; attempt < 600; attempt++) {
     const seedSize =
       spec.minSeedCells +
       Math.floor(rng() * (spec.maxSeedCells - spec.minSeedCells + 1));
