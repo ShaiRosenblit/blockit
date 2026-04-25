@@ -1212,6 +1212,108 @@ body {
   transform: translateY(1px);
 }
 
+/*
+ * Pipeline mode one-shot intro card. Same shape language as the mirror
+ * intro (so it slots cleanly above the board on first entry into
+ * Pipeline), but tinted with an amber accent — the "now serving" /
+ * queue connotation reads naturally as warm/orange and stays distinct
+ * from Mirror's violet halo and the puzzle ring blue.
+ */
+.pipeline-intro {
+  width: min(100%, var(--panel-max));
+  padding: 0.75rem 1rem 0.875rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 159, 64, 0.13),
+    rgba(255, 159, 64, 0.04)
+  );
+  border: 1px solid rgba(255, 159, 64, 0.34);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 0 18px rgba(255, 159, 64, 0.08);
+}
+
+.pipeline-intro__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.pipeline-intro__eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #FF9F40;
+}
+
+.pipeline-intro__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.pipeline-intro__text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.pipeline-intro__text strong {
+  color: #FF9F40;
+  font-weight: 700;
+}
+
+.pipeline-intro__tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.pipeline-intro__tips li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.pipeline-intro__tips li > span:first-child {
+  color: #FF9F40;
+  width: 1.1rem;
+  text-align: center;
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.pipeline-intro__btn {
+  align-self: flex-end;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 159, 64, 0.55);
+  background: rgba(255, 159, 64, 0.18);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.pipeline-intro__btn:hover {
+  background: rgba(255, 159, 64, 0.28);
+}
+
+.pipeline-intro__btn:active {
+  transform: translateY(1px);
+}
+
 /* Piece tray */
 .piece-tray-wrap {
   display: flex;
@@ -1310,6 +1412,50 @@ body {
 .piece-slot--dragging {
   opacity: 0.2;
   transform: scale(0.9);
+}
+
+/*
+ * Pipeline mode round-robin highlight. Exactly one slot at a time gets
+ * `--active` (the cursor) and the others get `--locked` (dimmed +
+ * unclickable). The amber accent is shared with `.pipeline-intro` so
+ * "now serving this slot" reads consistently across the intro card and
+ * the live tray. Other modes never set these classes, so this rule is
+ * a no-op for them.
+ */
+.piece-slot--active {
+  border: 1px solid rgba(255, 159, 64, 0.7);
+  background: linear-gradient(
+    160deg,
+    rgba(255, 159, 64, 0.16),
+    rgba(255, 159, 64, 0.03)
+  );
+  box-shadow:
+    0 0 0 2px rgba(255, 159, 64, 0.25),
+    0 0 18px rgba(255, 159, 64, 0.35);
+  animation: pipeline-active-pulse 1.6s ease-in-out infinite;
+}
+
+.piece-slot--locked {
+  opacity: 0.45;
+  filter: saturate(0.4);
+  cursor: not-allowed;
+}
+
+.piece-slot--locked:active {
+  cursor: not-allowed;
+}
+
+@keyframes pipeline-active-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 159, 64, 0.25),
+      0 0 18px rgba(255, 159, 64, 0.30);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 159, 64, 0.45),
+      0 0 24px rgba(255, 159, 64, 0.50);
+  }
 }
 
 .mini-grid {

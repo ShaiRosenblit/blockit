@@ -70,6 +70,7 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const isPuzzle = state.mode === 'puzzle';
   const isMirror = state.mode === 'mirror';
   const isBreathe = state.mode === 'breathe';
+  const isPipeline = state.mode === 'pipeline';
   const isPuzzleLike = isPuzzle || isMirror || isBreathe;
   const solved = isPuzzleLike && state.puzzleResult === 'solved';
   const failed = isPuzzleLike && state.puzzleResult === 'failed';
@@ -118,11 +119,13 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           ? solved
             ? 'The board breathes.'
             : 'Suffocated'
-          : solved
-            ? 'Pattern matched!'
-            : failed
-              ? 'Pattern not matched'
-              : 'Game Over';
+          : isPipeline
+            ? 'Pipeline jammed'
+            : solved
+              ? 'Pattern matched!'
+              : failed
+                ? 'Pattern not matched'
+                : 'Game Over';
 
   const subline = isTutorial
     ? solved
@@ -140,11 +143,13 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           ? solved
             ? 'Solved without suffocating — every 2×2 keeps a hole.'
             : 'Tip: a packed 2×2 anywhere on the final board breaks the rule. Carve a vent before the last piece.'
-          : isPuzzle
-          ? solved
-            ? 'Nicely done.'
-            : 'Tip: row/column clears can remove unwanted cells — plan the order.'
-          : null;
+          : isPipeline
+            ? 'No move for your next piece.'
+            : isPuzzle
+              ? solved
+                ? 'Nicely done.'
+                : 'Tip: row/column clears can remove unwanted cells — plan the order.'
+              : null;
 
   const selectionLabel = isTutorial
     ? `Tutorial · Step ${state.tutorialStep + 1} of ${TUTORIAL_STEP_COUNT}`
@@ -154,13 +159,15 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? `Mirror · ${state.mirrorDifficulty.charAt(0).toUpperCase()}${state.mirrorDifficulty.slice(1)}`
         : isBreathe
           ? `Breathe · ${state.breatheDifficulty.charAt(0).toUpperCase()}${state.breatheDifficulty.slice(1)}`
-          : state.mode === 'chroma'
-          ? 'Chroma'
-          : state.mode === 'gravity'
-            ? `Gravity · ${state.gravityDifficulty}`
-            : state.mode === 'drop'
-              ? `Drop · ${state.dropDifficulty}`
-              : `Classic · ${state.classicDifficulty}`;
+          : isPipeline
+            ? `Pipeline · ${state.pipelineDifficulty.charAt(0).toUpperCase()}${state.pipelineDifficulty.slice(1)}`
+            : state.mode === 'chroma'
+              ? 'Chroma'
+              : state.mode === 'gravity'
+                ? `Gravity · ${state.gravityDifficulty}`
+                : state.mode === 'drop'
+                  ? `Drop · ${state.dropDifficulty}`
+                  : `Classic · ${state.classicDifficulty}`;
 
   // Puzzle and Mirror modes are binary solve/not-solve challenges, so
   // numeric score and per-difficulty best aren't meaningful feedback —
@@ -172,7 +179,9 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? `Best (${state.gravityDifficulty})`
         : state.mode === 'drop'
           ? `Best (${state.dropDifficulty})`
-          : `Best (${state.classicDifficulty})`
+          : isPipeline
+            ? `Best (${state.pipelineDifficulty})`
+            : `Best (${state.classicDifficulty})`
     : null;
   const showStats = !isPuzzleLike;
 

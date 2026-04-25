@@ -23,6 +23,7 @@ import {
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
+  PIPELINE_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
@@ -38,6 +39,7 @@ import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
 import { MirrorIntro } from './components/MirrorIntro';
 import { BreatheIntro } from './components/BreatheIntro';
+import { PipelineIntro } from './components/PipelineIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -98,6 +100,22 @@ export default function App() {
   } | null>(null);
 
   const lastTrayIndexRef = useRef<number | null>(null);
+  /**
+   * Live mirror of the current Pipeline lock so the pendingTray effect's
+   * `onUp` handler — which is closed over the snapshot of state at the
+   * time the pointerdown fired — still sees the latest mode/phase when
+   * it eventually runs. The pendingTray effect deliberately doesn't take
+   * state.mode/state.pipelinePhase as deps because re-binding the
+   * pointermove/pointerup listeners mid-tap would drop the in-flight
+   * gesture; a ref skirts that.
+   */
+  const pipelineLockRef = useRef<{ mode: string; phase: number }>({
+    mode: 'classic',
+    phase: 0,
+  });
+  useEffect(() => {
+    pipelineLockRef.current = { mode: state.mode, phase: state.pipelinePhase };
+  }, [state.mode, state.pipelinePhase]);
 
   const [preview, setPreview] = useState<{
     cells: Map<string, 'valid' | 'invalid'>;
@@ -888,8 +906,16 @@ export default function App() {
 
     const onUp = () => {
       if (!becameDrag) {
-        dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: index });
-        sounds.rotate();
+        // Pipeline locks rotation to the active slot — match the reducer
+        // and skip the rotate sound for a locked tap so the player gets
+        // unambiguous "nothing happened" feedback.
+        const lock = pipelineLockRef.current;
+        const isLockedPipelineSlot =
+          lock.mode === 'pipeline' && index !== lock.phase;
+        if (!isLockedPipelineSlot) {
+          dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: index });
+          sounds.rotate();
+        }
       }
       setPendingTray(null);
     };
@@ -930,13 +956,17 @@ export default function App() {
       const idx = drag?.index ?? lastTrayIndexRef.current;
       if (idx === null) return;
       if (!state.tray[idx]) return;
+      // Pipeline only lets the active slot rotate — same gate as the
+      // reducer enforces. Bail early so we don't even play the rotate
+      // sound on a locked slot.
+      if (state.mode === 'pipeline' && idx !== state.pipelinePhase) return;
       e.preventDefault();
       dispatch({ type: 'ROTATE_TRAY_PIECE', trayIndex: idx });
       sounds.rotate();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, state.tray, state.mode, state.puzzleUndoStack, dispatch]);
+  }, [drag, state.tray, state.mode, state.pipelinePhase, state.puzzleUndoStack, dispatch]);
 
   // Refresh placement preview when the tray piece changes during drag (e.g. rotate).
   // Pointer moves call updatePreview in the drag listener — do not also depend on `drag`
@@ -1009,11 +1039,12 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe' | 'pipeline'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
+    { id: 'pipeline', label: 'Pipeline' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
@@ -1080,6 +1111,10 @@ export default function App() {
     if (state.mode === 'breathe') {
       const d = state.breatheDifficulty;
       return `Breathe · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'pipeline') {
+      const d = state.pipelineDifficulty;
+      return `Pipeline · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1249,6 +1284,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'pipeline' &&
+                  PIPELINE_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.pipelineDifficulty}
+                      className={`difficulty-btn${d === state.pipelineDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.pipelineDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_PIPELINE_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1287,7 +1340,7 @@ export default function App() {
              * content and would yank the player out of the mode they
              * picked.
              */}
-            {state.mode !== 'chroma' && state.mode !== 'gravity' && state.mode !== 'drop' && (
+            {state.mode !== 'chroma' && state.mode !== 'gravity' && state.mode !== 'drop' && state.mode !== 'pipeline' && (
               <button
                 type="button"
                 className="chrome-menu__custom-link"
@@ -1392,6 +1445,7 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'pipeline' && <PipelineIntro />}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
@@ -1420,7 +1474,11 @@ export default function App() {
                 </button>
               </div>
             )}
-            <PieceTray onTrayPointerDown={handleTrayPointerDown} draggingIndex={drag?.index ?? null} />
+            <PieceTray
+              onTrayPointerDown={handleTrayPointerDown}
+              draggingIndex={drag?.index ?? null}
+              activeIndex={state.mode === 'pipeline' ? state.pipelinePhase : undefined}
+            />
             <p className="piece-tray-hint">
               {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
@@ -1428,7 +1486,9 @@ export default function App() {
                   ? 'Mirror · piece + reflection must dodge blockers on both halves'
                   : state.mode === 'breathe'
                     ? 'Breathe · the winning board must keep every 2×2 breathing'
-                    : state.mode === 'chroma'
+                    : state.mode === 'pipeline'
+                      ? 'Pipeline · only the highlighted piece can be placed — order is fixed'
+                      : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
                         ? 'Gravity · clears make blocks fall — chain reactions score big'

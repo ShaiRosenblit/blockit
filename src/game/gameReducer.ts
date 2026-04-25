@@ -10,6 +10,7 @@ import type {
   GravityDifficulty,
   MirrorDifficulty,
   PieceShape,
+  PipelineDifficulty,
   PuzzleDifficulty,
   PuzzleLevel,
   TargetPattern,
@@ -22,6 +23,7 @@ import {
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
+  PIPELINE_DIFFICULTIES,
   isPuzzleLevel,
 } from './types';
 import {
@@ -35,6 +37,7 @@ import {
   hasValidMoves,
   hasValidDrops,
   hasValidMirrorMoves,
+  hasValidPipelineMoves,
   rotatePiece90Clockwise,
   applySlabCollapse,
   boardMatchesTarget,
@@ -84,6 +87,16 @@ export type GameState = {
   mirrorDifficulty: MirrorDifficulty;
   /** Remembered Breathe-mode difficulty. */
   breatheDifficulty: BreatheDifficulty;
+  /** Remembered Pipeline-mode difficulty (mirrors classic rungs). */
+  pipelineDifficulty: PipelineDifficulty;
+  /**
+   * Pipeline-mode round-robin cursor: the only tray slot the player is
+   * allowed to place from on the next move. Cycles 0 → 1 → 2 → 0 after
+   * every successful placement, regardless of refill — i.e. starting a
+   * fresh tray does NOT reset the phase, only RESTART / mode change /
+   * fresh-state factories do. Always `0` outside of Pipeline mode.
+   */
+  pipelinePhase: 0 | 1 | 2;
   /** Only set when a puzzle round ends. */
   puzzleResult: null | 'solved' | 'failed';
   /**
@@ -178,6 +191,7 @@ export type GameAction =
   | { type: 'SET_DROP_DIFFICULTY'; difficulty: DropDifficulty }
   | { type: 'SET_MIRROR_DIFFICULTY'; difficulty: MirrorDifficulty }
   | { type: 'SET_BREATHE_DIFFICULTY'; difficulty: BreatheDifficulty }
+  | { type: 'SET_PIPELINE_DIFFICULTY'; difficulty: PipelineDifficulty }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
@@ -216,6 +230,7 @@ const GRAVITY_DIFFICULTY_KEY = 'blockit-gravity-difficulty';
 const DROP_DIFFICULTY_KEY = 'blockit-drop-difficulty';
 const MIRROR_DIFFICULTY_KEY = 'blockit-mirror-difficulty';
 const BREATHE_DIFFICULTY_KEY = 'blockit-breathe-difficulty';
+const PIPELINE_DIFFICULTY_KEY = 'blockit-pipeline-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -238,6 +253,7 @@ function bestScoreKey(
     | DropDifficulty
     | MirrorDifficulty
     | BreatheDifficulty
+    | PipelineDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -256,6 +272,7 @@ function loadBestScore(
     | DropDifficulty
     | MirrorDifficulty
     | BreatheDifficulty
+    | PipelineDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -273,7 +290,8 @@ function saveBestScore(
     | GravityDifficulty
     | DropDifficulty
     | MirrorDifficulty
-    | BreatheDifficulty,
+    | BreatheDifficulty
+    | PipelineDifficulty,
   score: number
 ) {
   try {
@@ -480,7 +498,8 @@ function loadMode(): GameMode {
       stored === 'gravity' ||
       stored === 'drop' ||
       stored === 'mirror' ||
-      stored === 'breathe'
+      stored === 'breathe' ||
+      stored === 'pipeline'
     ) {
       return stored;
     }
@@ -625,6 +644,27 @@ function saveBreatheDifficulty(difficulty: BreatheDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadPipelineDifficulty(): PipelineDifficulty {
+  try {
+    const stored = localStorage.getItem(PIPELINE_DIFFICULTY_KEY);
+    if (
+      stored === 'zen' ||
+      stored === 'easy' ||
+      stored === 'normal' ||
+      stored === 'hard'
+    ) {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'normal';
+}
+
+function savePipelineDifficulty(difficulty: PipelineDifficulty) {
+  try {
+    localStorage.setItem(PIPELINE_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
 /**
  * Shape of the active puzzle as persisted to localStorage. Storing the
  * puzzle's starting position (not mid-game state) means refresh restores the
@@ -697,6 +737,7 @@ function freshPuzzleState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -726,6 +767,8 @@ function freshPuzzleState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -752,6 +795,7 @@ function freshTutorialState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -771,6 +815,8 @@ function freshTutorialState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -797,6 +843,7 @@ function freshPuzzleStateFromShared(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -816,6 +863,8 @@ function freshPuzzleStateFromShared(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -836,6 +885,7 @@ function freshClassicState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -856,6 +906,8 @@ function freshClassicState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -881,6 +933,7 @@ function freshChromaState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -901,6 +954,8 @@ function freshChromaState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -927,6 +982,7 @@ function freshGravityState(
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -947,6 +1003,8 @@ function freshGravityState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -973,6 +1031,7 @@ function freshDropState(
   gravityDifficulty: GravityDifficulty,
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -993,6 +1052,8 @@ function freshDropState(
     dropDifficulty: difficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1025,6 +1086,7 @@ function freshMirrorState(
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
   breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1045,6 +1107,8 @@ function freshMirrorState(
     dropDifficulty,
     mirrorDifficulty: difficulty,
     breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
@@ -1077,6 +1141,7 @@ function freshBreatheState(
   gravityDifficulty: GravityDifficulty,
   dropDifficulty: DropDifficulty,
   mirrorDifficulty: MirrorDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1097,10 +1162,66 @@ function freshBreatheState(
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty: difficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
     puzzleInitialTray: cloneTray(tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Pipeline state. Same skeleton as Classic (empty board,
+ * random tray drawn from the classic-weighted pool, score-tracked) — the
+ * twist is the round-robin tray-slot lock, not the piece vocabulary, so
+ * we reuse `generateClassicTray` and let `mode: 'pipeline'` plus
+ * `pipelinePhase` drive the placement-rule branching in the reducer.
+ *
+ * `pipelinePhase` is reset to 0 here (and on RESTART / mode change /
+ * difficulty change), giving the player a predictable "always start at
+ * slot 0" anchor even when they hop between modes.
+ */
+function freshPipelineState(
+  difficulty: PipelineDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const board = createEmptyBoard();
+  return {
+    board,
+    tray: generateClassicTray(difficulty, board),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'pipeline',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty: difficulty,
+    pipelinePhase: 0,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
@@ -1118,6 +1239,7 @@ export function createInitialState(): GameState {
   const dropDifficulty = loadDropDifficulty();
   const mirrorDifficulty = loadMirrorDifficulty();
   const breatheDifficulty = loadBreatheDifficulty();
+  const pipelineDifficulty = loadPipelineDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -1142,6 +1264,7 @@ export function createInitialState(): GameState {
         dropDifficulty,
         mirrorDifficulty,
         breatheDifficulty,
+        pipelineDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -1163,6 +1286,7 @@ export function createInitialState(): GameState {
         dropDifficulty,
         mirrorDifficulty,
         breatheDifficulty,
+        pipelineDifficulty,
         puzzleEverSolved
       );
     }
@@ -1174,6 +1298,7 @@ export function createInitialState(): GameState {
       dropDifficulty,
       mirrorDifficulty,
       breatheDifficulty,
+      pipelineDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1189,6 +1314,7 @@ export function createInitialState(): GameState {
       dropDifficulty,
       mirrorDifficulty,
       breatheDifficulty,
+      pipelineDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1204,6 +1330,7 @@ export function createInitialState(): GameState {
       dropDifficulty,
       mirrorDifficulty,
       breatheDifficulty,
+      pipelineDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1219,6 +1346,7 @@ export function createInitialState(): GameState {
       gravityDifficulty,
       mirrorDifficulty,
       breatheDifficulty,
+      pipelineDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1234,6 +1362,7 @@ export function createInitialState(): GameState {
       gravityDifficulty,
       dropDifficulty,
       breatheDifficulty,
+      pipelineDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1249,7 +1378,24 @@ export function createInitialState(): GameState {
       gravityDifficulty,
       dropDifficulty,
       mirrorDifficulty,
+      pipelineDifficulty,
       loadBestScore('breathe', breatheDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'pipeline') {
+    return freshPipelineState(
+      pipelineDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      loadBestScore('pipeline', pipelineDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1263,6 +1409,7 @@ export function createInitialState(): GameState {
     dropDifficulty,
     mirrorDifficulty,
     breatheDifficulty,
+    pipelineDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1274,6 +1421,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'ROTATE_TRAY_PIECE': {
       const { trayIndex } = action;
       if (trayIndex < 0 || trayIndex >= state.tray.length) return state;
+      // Pipeline mode locks rotation to the active slot. The chosen design
+      // is "only the active piece can be rotated" (vs. "all rotate but
+      // only active is placeable") — easier to read at a glance: if you
+      // can't rotate it, you can't place it either, so it's clearly inert
+      // until its turn. Non-active rotation requests are silent no-ops.
+      if (state.mode === 'pipeline' && trayIndex !== state.pipelinePhase) {
+        return state;
+      }
       const piece = state.tray[trayIndex];
       if (!piece) return state;
       const newTray = [...state.tray];
@@ -1282,7 +1437,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const isGameOver =
         state.mode === 'mirror'
           ? !hasValidMirrorMoves(state.board, newTray)
-          : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
+          : state.mode === 'pipeline'
+            ? !hasValidPipelineMoves(state.board, newTray, state.pipelinePhase)
+            : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
         (state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe') && isGameOver
           ? 'failed'
@@ -1300,6 +1457,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'PLACE_PIECE': {
       const piece = state.tray[action.trayIndex];
       if (!piece) return state;
+
+      // Pipeline mode: the tray is a strict round-robin queue, so only the
+      // currently-active slot is legal to place from. Any other index gets
+      // bounced just like an off-board placement — UI dispatchers treat the
+      // returned-unchanged state as "drop rejected" so the player gets their
+      // piece back. This guard runs BEFORE we fall into the shared
+      // classic-style placement flow below; the rest of the branch (score,
+      // clears, refill) is unchanged from Classic, with the post-placement
+      // phase advance + game-over check applied at the tail.
+      if (state.mode === 'pipeline' && action.trayIndex !== state.pipelinePhase) {
+        return state;
+      }
 
       // Mirror mode: every placement also writes its horizontal reflection.
       // Validation, board mutation, line clearing, and win/lose detection
@@ -1692,6 +1861,48 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
+      if (state.mode === 'pipeline') {
+        // Pipeline tray refill mirrors Classic: only refill once ALL three
+        // slots are empty, so the round-robin phase has actually completed
+        // a full cycle (0 → 1 → 2 → refill → 0). Refilling earlier would
+        // shrink the cycle and break the "no cherry-picking" promise.
+        const finalTray = allPlaced
+          ? generateClassicTray(state.pipelineDifficulty, board)
+          : newTray;
+
+        // Advance the cursor regardless of refill: the player just placed
+        // from `pipelinePhase`, so the next legal slot is the next index
+        // mod 3. If we just placed at slot 2 and refilled, the new active
+        // slot is 0 (which is now filled with a fresh piece) — that's the
+        // intended start-of-cycle, not a reset.
+        const nextPhase = (((state.pipelinePhase + 1) % 3) as 0 | 1 | 2);
+
+        const bestScore = Math.max(score, state.bestScore);
+        // Game over: ONLY checks the next active piece, not the whole tray.
+        // This is the key UX promise — "No move for your next piece." —
+        // and is what makes Pipeline meaningfully different from Classic.
+        const isGameOver = !hasValidPipelineMoves(board, finalTray, nextPhase);
+
+        if (bestScore > state.bestScore) {
+          saveBestScore('pipeline', state.pipelineDifficulty, bestScore);
+        }
+
+        return {
+          ...state,
+          board,
+          tray: finalTray,
+          score,
+          bestScore,
+          combo,
+          isGameOver,
+          pipelinePhase: nextPhase,
+          puzzleResult: null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: [],
+        };
+      }
+
       const finalTray = allPlaced ? generateClassicTray(state.classicDifficulty, board) : newTray;
 
       const bestScore = Math.max(score, state.bestScore);
@@ -1733,6 +1944,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.dropDifficulty,
             state.mirrorDifficulty,
             state.breatheDifficulty,
+            state.pipelineDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -1744,6 +1956,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1758,6 +1971,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1772,6 +1986,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1786,6 +2001,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.gravityDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1800,6 +2016,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.gravityDifficulty,
           state.dropDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -1814,7 +2031,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.gravityDifficulty,
           state.dropDifficulty,
           state.mirrorDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'pipeline') {
+        return freshPipelineState(
+          state.pipelineDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          loadBestScore('pipeline', state.pipelineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -1827,6 +2060,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1845,6 +2079,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1865,6 +2100,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -1881,6 +2117,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -1900,6 +2137,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1918,6 +2156,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1936,6 +2175,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.dropDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -1954,7 +2194,27 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.dropDifficulty,
         state.mirrorDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('breathe', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_PIPELINE_DIFFICULTY': {
+      if (!PIPELINE_DIFFICULTIES.includes(action.difficulty)) return state;
+      savePipelineDifficulty(action.difficulty);
+      saveMode('pipeline');
+      return freshPipelineState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        loadBestScore('pipeline', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
       );
@@ -1973,6 +2233,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -1990,6 +2251,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.dropDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2006,6 +2268,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.dropDifficulty,
         state.mirrorDifficulty,
+        state.pipelineDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2029,6 +2292,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2051,6 +2315,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.dropDifficulty,
           state.mirrorDifficulty,
           state.breatheDifficulty,
+          state.pipelineDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -2066,6 +2331,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -2083,6 +2349,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.dropDifficulty,
         state.mirrorDifficulty,
         state.breatheDifficulty,
+        state.pipelineDifficulty,
         state.puzzleEverSolved
       );
     }
