@@ -18,6 +18,7 @@ import { GameOverOverlay } from './components/GameOverOverlay';
 import type { CascadeStep, Coord } from './game/types';
 import {
   BOARD_SIZE,
+  BREATHE_DIFFICULTIES,
   CLASSIC_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
@@ -36,6 +37,7 @@ import { Wordmark } from './components/Wordmark';
 import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
 import { MirrorIntro } from './components/MirrorIntro';
+import { BreatheIntro } from './components/BreatheIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -553,7 +555,7 @@ export default function App() {
         // feedback, and orbs flying out of a board that's mid-cascade
         // reads as visual noise against the rising/falling tiles. Mirror
         // mode follows Puzzle (target-pattern-based, no score display).
-        if (state.mode !== 'puzzle' && state.mode !== 'gravity' && state.mode !== 'mirror') {
+        if (state.mode !== 'puzzle' && state.mode !== 'gravity' && state.mode !== 'mirror' && state.mode !== 'breathe') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
           spawnScorePopup(totalPopup, origin);
@@ -674,7 +676,7 @@ export default function App() {
   // otherwise the confetti lands on the board mid-clear animation.
   const lastSolveKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (state.mode !== 'puzzle' && state.mode !== 'mirror') return;
+    if (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe') return;
     if (state.puzzleResult !== 'solved') {
       // Reset tracker so the next solve of the same puzzle re-fires.
       lastSolveKeyRef.current = null;
@@ -683,7 +685,9 @@ export default function App() {
     const key =
       state.mode === 'mirror'
         ? `mirror:${state.mirrorDifficulty}`
-        : `${state.puzzleDifficulty}:${state.tutorialStep}`;
+        : state.mode === 'breathe'
+          ? `breathe:${state.breatheDifficulty}`
+          : `${state.puzzleDifficulty}:${state.tutorialStep}`;
     if (lastSolveKeyRef.current === key) return;
     lastSolveKeyRef.current = key;
 
@@ -699,6 +703,15 @@ export default function App() {
         state.mirrorDifficulty === 'hard'
           ? 0.85
           : state.mirrorDifficulty === 'normal'
+            ? 0.55
+            : 0.35;
+    } else if (state.mode === 'breathe') {
+      // Breathe tier → intensity. Same shape as Mirror; the rule is harder
+      // to satisfy by accident at higher tiers, so the celebration scales.
+      intensity =
+        state.breatheDifficulty === 'hard'
+          ? 0.85
+          : state.breatheDifficulty === 'normal'
             ? 0.55
             : 0.35;
     } else {
@@ -722,6 +735,7 @@ export default function App() {
     state.puzzleResult,
     state.puzzleDifficulty,
     state.mirrorDifficulty,
+    state.breatheDifficulty,
     state.tutorialStep,
     state.puzzleLevelUp,
   ]);
@@ -899,7 +913,7 @@ export default function App() {
       // at least one snapshot to revert.
       if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (
-          (state.mode !== 'puzzle' && state.mode !== 'mirror') ||
+          (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe') ||
           state.puzzleUndoStack.length === 0
         )
           return;
@@ -995,10 +1009,11 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'mirror', label: 'Mirror' },
+    { id: 'breathe', label: 'Breathe' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
@@ -1061,6 +1076,10 @@ export default function App() {
     if (state.mode === 'mirror') {
       const d = state.mirrorDifficulty;
       return `Mirror · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'breathe') {
+      const d = state.breatheDifficulty;
+      return `Breathe · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1212,6 +1231,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'breathe' &&
+                  BREATHE_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.breatheDifficulty}
+                      className={`difficulty-btn${d === state.breatheDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.breatheDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_BREATHE_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1264,7 +1301,7 @@ export default function App() {
             )}
           </div>
         )}
-        {state.mode !== 'puzzle' && state.mode !== 'mirror' && <ScoreBar scoreValueRef={scoreValueRef} />}
+        {state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
             className="board-restart-btn"
@@ -1296,6 +1333,19 @@ export default function App() {
               title="Generate a new mirror puzzle"
               onClick={() => {
                 dispatch({ type: 'NEW_MIRROR_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
+          {state.mode === 'breathe' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new breathe puzzle"
+              title="Generate a new breathe puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_BREATHE_PUZZLE' });
               }}
             >
               <span aria-hidden>{'\u2728'}</span>
@@ -1336,11 +1386,17 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'breathe' && (
+          <>
+            <BreatheIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1370,13 +1426,15 @@ export default function App() {
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
                 : state.mode === 'mirror'
                   ? 'Mirror · piece + reflection must dodge blockers on both halves'
-                  : state.mode === 'chroma'
-                    ? "Chroma · pieces can't touch a different color"
-                    : state.mode === 'gravity'
-                      ? 'Gravity · clears make blocks fall — chain reactions score big'
-                      : state.mode === 'drop'
-                        ? 'Drop · pieces fall from release — clear rows to survive'
-                        : 'Tap to rotate · drag to place'}
+                  : state.mode === 'breathe'
+                    ? 'Breathe · the winning board must keep every 2×2 breathing'
+                    : state.mode === 'chroma'
+                      ? "Chroma · pieces can't touch a different color"
+                      : state.mode === 'gravity'
+                        ? 'Gravity · clears make blocks fall — chain reactions score big'
+                        : state.mode === 'drop'
+                          ? 'Drop · pieces fall from release — clear rows to survive'
+                          : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}

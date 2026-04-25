@@ -1073,6 +1073,145 @@ body {
   transform: translateY(1px);
 }
 
+/* Breathe-mode intro card. Same one-shot welcome shape as mirror-intro
+   but in a cyan/teal palette so the two modes feel distinct at a
+   glance. The accent (#5EEAD4 — Tailwind teal-300) reads as airy /
+   "breathing" against the dark UI without competing with the magenta
+   used by Mirror. */
+.breathe-intro {
+  width: min(100%, var(--panel-max));
+  padding: 0.75rem 1rem 0.875rem;
+  background: linear-gradient(
+    135deg,
+    rgba(94, 234, 212, 0.13),
+    rgba(94, 234, 212, 0.04)
+  );
+  border: 1px solid rgba(94, 234, 212, 0.34);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 0 18px rgba(94, 234, 212, 0.08);
+}
+
+.breathe-intro__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.breathe-intro__eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5EEAD4;
+}
+
+.breathe-intro__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.breathe-intro__text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.breathe-intro__text strong {
+  color: #5EEAD4;
+  font-weight: 700;
+}
+
+/* Two side-by-side mini-2×2 demos: "OK" with a single dimmed cell and
+   "Suffocates" with all four cells filled. Showing the rule visually
+   reads instantly — much faster than parsing the prose. */
+.breathe-intro__demo {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.breathe-intro__demo-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.4rem 0.55rem 0.3rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.breathe-intro__demo-cell--ok {
+  color: #5EEAD4;
+  border-color: rgba(94, 234, 212, 0.55);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.breathe-intro__demo-cell--bad {
+  color: #F87171;
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.breathe-intro__demo-label {
+  color: inherit;
+}
+
+.breathe-intro__tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.breathe-intro__tips li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.breathe-intro__tips li > span:first-child {
+  color: #5EEAD4;
+  width: 1.1rem;
+  text-align: center;
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.breathe-intro__btn {
+  align-self: flex-end;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(94, 234, 212, 0.55);
+  background: rgba(94, 234, 212, 0.18);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.breathe-intro__btn:hover {
+  background: rgba(94, 234, 212, 0.28);
+}
+
+.breathe-intro__btn:active {
+  transform: translateY(1px);
+}
+
 /* Piece tray */
 .piece-tray-wrap {
   display: flex;
