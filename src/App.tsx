@@ -1041,9 +1041,21 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'breathe' | 'pipeline' | 'scar'; label: string }[] = [
+  // Puzzle is the headline mode; everything else is a side experiment.
+  // Splitting them into a prominent primary pill and a quiet "Other modes"
+  // chip row keeps the menu legible as we keep adding new variants — a
+  // single 9-wide row was getting too packed to scan.
+  type SecondaryModeId =
+    | 'classic'
+    | 'chroma'
+    | 'gravity'
+    | 'drop'
+    | 'mirror'
+    | 'breathe'
+    | 'pipeline'
+    | 'scar';
+  const secondaryModes: { id: SecondaryModeId; label: string }[] = [
     { id: 'classic', label: 'Classic' },
-    { id: 'puzzle', label: 'Puzzle' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
     { id: 'pipeline', label: 'Pipeline' },
@@ -1179,23 +1191,26 @@ export default function App() {
         </div>
         {menuOpen && (
           <div id="chrome-menu" className="chrome-menu">
-            <div className="mode-selector" role="tablist" aria-label="Game mode">
-              {modes.map((m) => (
-                <button
-                  key={m.id}
-                  role="tab"
-                  aria-selected={m.id === state.mode}
-                  className={`mode-btn${m.id === state.mode ? ' mode-btn--active' : ''}`}
-                  onClick={() => {
-                    if (m.id !== state.mode) {
-                      clearShareHash();
-                      dispatch({ type: 'SET_MODE', mode: m.id });
-                    }
-                  }}
-                >
-                  {m.label}
-                </button>
-              ))}
+            {/*
+             * Primary mode pill — Puzzle is the headline experience, so it
+             * gets a wide, full-width button at the top of the drawer. The
+             * secondary chip row below carries the rest. This visual split
+             * keeps the menu scannable as the secondary catalogue grows.
+             */}
+            <div className="mode-selector mode-selector--primary" role="tablist" aria-label="Game mode">
+              <button
+                role="tab"
+                aria-selected={state.mode === 'puzzle'}
+                className={`mode-btn mode-btn--primary${state.mode === 'puzzle' ? ' mode-btn--active' : ''}`}
+                onClick={() => {
+                  if (state.mode !== 'puzzle') {
+                    clearShareHash();
+                    dispatch({ type: 'SET_MODE', mode: 'puzzle' });
+                  }
+                }}
+              >
+                Puzzle
+              </button>
             </div>
             {state.mode !== 'chroma' && (
               <div className="difficulty-selector" role="tablist" aria-label="Difficulty">
@@ -1353,6 +1368,39 @@ export default function App() {
                   })}
               </div>
             )}
+            {/*
+             * Secondary modes — wrapped chip row, visually demoted from the
+             * primary Puzzle pill. The "Other modes" label keeps the
+             * hierarchy obvious; the active state still floats here when
+             * the player has picked a non-puzzle variant.
+             */}
+            <div className="chrome-menu__section">
+              <span className="chrome-menu__section-label" id="other-modes-label">
+                Other modes
+              </span>
+              <div
+                className="mode-selector mode-selector--secondary"
+                role="tablist"
+                aria-labelledby="other-modes-label"
+              >
+                {secondaryModes.map((m) => (
+                  <button
+                    key={m.id}
+                    role="tab"
+                    aria-selected={m.id === state.mode}
+                    className={`mode-btn mode-btn--secondary${m.id === state.mode ? ' mode-btn--active' : ''}`}
+                    onClick={() => {
+                      if (m.id !== state.mode) {
+                        clearShareHash();
+                        dispatch({ type: 'SET_MODE', mode: m.id });
+                      }
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
              * link tucked under the difficulty row so it doesn't compete
