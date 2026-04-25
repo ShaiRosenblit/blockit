@@ -1369,7 +1369,7 @@ export default function App() {
               {state.mode === 'puzzle' && state.puzzleDifficulty !== 'tutorial'
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
                 : state.mode === 'mirror'
-                  ? 'Mirror · every piece places its reflection too'
+                  ? 'Mirror · piece + reflection must dodge blockers on both halves'
                   : state.mode === 'chroma'
                     ? "Chroma · pieces can't touch a different color"
                     : state.mode === 'gravity'

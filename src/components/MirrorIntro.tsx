@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'blockit:mirror:introDismissed';
+// v2: intro was rewritten when Mirror mode picked up asymmetric blockers,
+// so we use a fresh key here to re-introduce the new mechanic to anyone
+// who'd dismissed the original "place once, land twice" version.
+const STORAGE_KEY = 'blockit:mirror:introDismissed:v2';
 
 function loadDismissed(): boolean {
   try {
@@ -43,18 +46,22 @@ export function MirrorIntro() {
       </header>
       <p className="mirror-intro__text">
         Every piece you place also writes its <strong>reflection</strong> across the
-        center line. Match the symmetric target to win — every move is two moves at
-        once.
+        center line. The catch: each side starts with its own{' '}
+        <strong>asymmetric blockers</strong> — so a placement only works when{' '}
+        <em>both</em> halves dodge them. Neither side can be solved on its own.
       </p>
       <ul className="mirror-intro__tips">
         <li>
-          <span aria-hidden>↔︎</span> Drag pieces anywhere — both halves must fit.
+          <span aria-hidden>▣</span> Slate cells are blockers — different on each
+          side, never mirrored.
         </li>
         <li>
-          <span aria-hidden>○</span> Hollow rings show the target you&rsquo;re building.
+          <span aria-hidden>↔︎</span> A piece is legal only if it AND its reflection
+          fit, dodging blockers on both halves.
         </li>
         <li>
-          <span aria-hidden>↩</span> Tap Undo if a placement breaks symmetry.
+          <span aria-hidden>○</span> Match the asymmetric target — clears can wipe
+          blockers if you set them up.
         </li>
       </ul>
       <button

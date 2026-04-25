@@ -15,21 +15,36 @@ import { PIECE_CATALOG } from './pieces';
  *
  * Mirror mode plays like Puzzle mode but every placement also writes its
  * horizontal reflection (about the vertical axis between cols 3 and 4)
- * to the board as part of the same atomic step. The target pattern is
- * therefore symmetric by construction: we forward-simulate a sequence
- * of mirrored placements (with normal row/col clears applied along the
- * way) and snapshot the resulting board as the target.
+ * to the board as part of the same atomic step.
  *
+ * The mirror constraint is only interesting if the player has to consider
+ * BOTH halves at once — without something breaking symmetry, picking a
+ * placement on the left trivially auto-solves the right. So every mirror
+ * puzzle starts with a sprinkling of asymmetric blocker cells, placed
+ * with the strict invariant that NO blocker has a blocker at its mirror
+ * partner. This means the left and right halves end up with two
+ * different sets of "off-limits" cells, so a placement is only valid if
+ * it dodges blockers on BOTH sides — neither half alone is enough to
+ * solve.
+ *
+ * The target is built by forward simulation: starting from the
+ * blocker-bearing board, we play a sequence of mirrored placements (with
+ * row/column clears applied as they trigger) and snapshot the result.
  * Forward simulation guarantees solvability — the simulation IS a valid
- * solution. Quality filters reject targets that are too sparse, too
- * dense, or geometrically degenerate (e.g. a single column).
+ * solution. We additionally require the target to be visibly asymmetric
+ * (otherwise the blockers cancelled out and we wasted them); generation
+ * retries until that holds.
  */
+
+const BLOCKER_COLOR = '#4a5168';
 
 export type MirrorDifficultySpec = {
   difficulty: MirrorDifficulty;
   pieceCount: number;
   minPieceCells: number;
   maxPieceCells: number;
+  /** Asymmetric blockers seeded onto the starting board. */
+  blockerCount: number;
   minTargetCells: number;
   maxTargetCells: number;
 };
@@ -40,23 +55,26 @@ const DIFFICULTY_SPECS: Record<MirrorDifficulty, MirrorDifficultySpec> = {
     pieceCount: 2,
     minPieceCells: 2,
     maxPieceCells: 3,
-    minTargetCells: 6,
-    maxTargetCells: 14,
+    blockerCount: 3,
+    minTargetCells: 7,
+    maxTargetCells: 16,
   },
   normal: {
     difficulty: 'normal',
     pieceCount: 3,
     minPieceCells: 3,
     maxPieceCells: 4,
+    blockerCount: 5,
     minTargetCells: 14,
-    maxTargetCells: 26,
+    maxTargetCells: 28,
   },
   hard: {
     difficulty: 'hard',
     pieceCount: 4,
     minPieceCells: 3,
-    maxPieceCells: 5,
-    minTargetCells: 22,
+    maxPieceCells: 4,
+    blockerCount: 7,
+    minTargetCells: 20,
     maxTargetCells: 38,
   },
 };
@@ -170,6 +188,53 @@ function isTargetShapeOk(target: TargetPattern): boolean {
   return rowsTouched.size >= 2 && colsTouched.size >= 2;
 }
 
+/**
+ * The whole point of Mirror mode is that the player has to think about
+ * both halves at once. If the target ends up perfectly symmetric (e.g.
+ * all blockers got cancelled out by clears during simulation), the
+ * puzzle collapses back into a trivial half-board exercise. Reject any
+ * such target so we keep regenerating until asymmetry survives.
+ */
+function isTargetAsymmetric(target: TargetPattern): boolean {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE / 2; c++) {
+      if (target[r][c] !== target[r][BOARD_SIZE - 1 - c]) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Seed the starting board with `count` blocker cells, scattered such
+ * that NO blocker shares its row with a blocker at its mirror column.
+ * This is what makes left-half and right-half thinking BOTH necessary:
+ * a placement at (r, c) is only valid when neither (r, c) nor its
+ * mirror (r, 7-c) collides with a blocker, and the two sets of blockers
+ * are disjoint by construction.
+ */
+function placeBlockers(count: number, rng: () => number): BoardGrid {
+  const board = createEmptyBoard();
+  const positions: Coord[] = [];
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      positions.push({ row: r, col: c });
+    }
+  }
+  shuffleInPlace(positions, rng);
+
+  let placed = 0;
+  for (const p of positions) {
+    if (placed >= count) break;
+    const mirror = BOARD_SIZE - 1 - p.col;
+    // Skip if the mirror partner is already a blocker — pairs cancel
+    // out and contribute zero asymmetry.
+    if (board[p.row][mirror] !== null) continue;
+    board[p.row][p.col] = BLOCKER_COLOR;
+    placed++;
+  }
+  return board;
+}
+
 function poolForSpec(spec: MirrorDifficultySpec): PieceShape[] {
   return PIECE_CATALOG.filter((p) => {
     const n = p.cells.length;
@@ -190,11 +255,11 @@ function pickPieces(spec: MirrorDifficultySpec, rng: () => number): PieceShape[]
 /**
  * Apply a mirrored placement, then immediately clear any rows/columns
  * that became full. Mirrors `applyPlacementAndClear` for Mirror mode.
- * Because the board stays globally symmetric across the vertical axis
- * (we only ever write mirrored placements onto an initially-empty
- * board), every full row and every full column is itself symmetric, so
- * the post-clear board also stays symmetric — no special handling
- * needed.
+ * Note: with asymmetric blockers seeded on the starting board, a row
+ * or column clear can absorb blockers asymmetrically (e.g. a column
+ * clear on col 2 wipes a blocker there but leaves col 5 untouched if
+ * col 5 wasn't full). That's exactly the kind of asymmetric target
+ * we want, so we don't try to suppress it.
  */
 function applyMirroredPlacementAndClear(
   board: BoardGrid,
@@ -264,11 +329,11 @@ function buildCandidate(
   spec: MirrorDifficultySpec,
   rng: () => number
 ): BuiltPuzzle | null {
-  for (let attempt = 0; attempt < 80; attempt++) {
+  for (let attempt = 0; attempt < 120; attempt++) {
     const pieces = pickPieces(spec, rng);
     if (pieces.length !== spec.pieceCount) continue;
 
-    const startBoard = createEmptyBoard();
+    const startBoard = placeBlockers(spec.blockerCount, rng);
     const finalBoard = simulateForwardMirrored(startBoard, pieces, rng);
     if (!finalBoard) continue;
 
@@ -277,6 +342,11 @@ function buildCandidate(
     if (targetCells < spec.minTargetCells) continue;
     if (targetCells > spec.maxTargetCells) continue;
     if (!isTargetShapeOk(target)) continue;
+    // Without this, blockers that all happened to land in a row/col
+    // that got cleared during simulation would leave us with a
+    // perfectly symmetric target — i.e. the trivial half-puzzle the
+    // whole "asymmetric blockers" idea was meant to avoid.
+    if (!isTargetAsymmetric(target)) continue;
 
     const trayTemplates = shuffleInPlace([...pieces], rng);
     // Random rotations for visual variety, just like classic puzzle.
@@ -307,9 +377,9 @@ function isRecentlySeen(d: MirrorDifficulty, signature: string): boolean {
 
 /**
  * Hard-coded fallback used if generation repeatedly fails to meet a
- * spec. Two horizontal trominoes mirror cleanly into a recognisable
- * symmetric target — readable enough that the player still gets a valid
- * Mirror experience even when the RNG let us down.
+ * spec. Two horizontal trominoes plus a couple of asymmetric blockers
+ * give us a small but legitimately asymmetric Mirror puzzle, so the
+ * player still gets the real mechanic even when the RNG let us down.
  */
 function buildFallback(): BuiltPuzzle {
   const rng = mulberry32(0xab4ba5e);
@@ -318,6 +388,8 @@ function buildFallback(): BuiltPuzzle {
     PIECE_CATALOG.find((p) => p.id === 'h3')!,
   ];
   const startBoard = createEmptyBoard();
+  startBoard[1][1] = BLOCKER_COLOR;
+  startBoard[6][5] = BLOCKER_COLOR;
   const finalBoard = simulateForwardMirrored(startBoard, pieces, rng);
   if (!finalBoard) throw new Error('Mirror fallback simulation failed.');
   const target = boardToTarget(finalBoard);
