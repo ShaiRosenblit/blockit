@@ -28,7 +28,8 @@ export type GameMode =
   | 'mirror'
   | 'breathe'
   | 'pipeline'
-  | 'scar';
+  | 'scar'
+  | 'monolith';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -62,6 +63,14 @@ export type BreatheDifficulty = 'easy' | 'normal' | 'hard';
  * stays a typed, breaking change.
  */
 export type ScarDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Monolith mode difficulty. Three rungs control |T|, |seed|, block count,
+ * and tray length. Kept as its own literal union (not aliased to other
+ * three-rung modes) so future Monolith-only tuning stays a typed
+ * breaking change and persistence keys stay independent per-mode.
+ */
+export type MonolithDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -124,7 +133,8 @@ export type ModeSelection =
   | { mode: 'mirror'; difficulty: MirrorDifficulty }
   | { mode: 'breathe'; difficulty: BreatheDifficulty }
   | { mode: 'pipeline'; difficulty: PipelineDifficulty }
-  | { mode: 'scar'; difficulty: ScarDifficulty };
+  | { mode: 'scar'; difficulty: ScarDifficulty }
+  | { mode: 'monolith'; difficulty: MonolithDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -167,6 +177,12 @@ export const PIPELINE_DIFFICULTIES: readonly PipelineDifficulty[] = [
 ] as const;
 
 export const SCAR_DIFFICULTIES: readonly ScarDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const MONOLITH_DIFFICULTIES: readonly MonolithDifficulty[] = [
   'easy',
   'normal',
   'hard',

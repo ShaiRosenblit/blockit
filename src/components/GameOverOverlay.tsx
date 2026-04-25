@@ -72,7 +72,8 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
   const isBreathe = state.mode === 'breathe';
   const isPipeline = state.mode === 'pipeline';
   const isScar = state.mode === 'scar';
-  const isPuzzleLike = isPuzzle || isMirror || isBreathe;
+  const isMonolith = state.mode === 'monolith';
+  const isPuzzleLike = isPuzzle || isMirror || isBreathe || isMonolith;
   const solved = isPuzzleLike && state.puzzleResult === 'solved';
   const failed = isPuzzleLike && state.puzzleResult === 'failed';
   const isTutorial = isPuzzle && state.puzzleDifficulty === 'tutorial';
@@ -120,15 +121,19 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           ? solved
             ? 'The board breathes.'
             : 'Suffocated'
-          : isPipeline
-            ? 'Pipeline jammed'
-            : isScar
-              ? 'No room left in the ruins.'
-              : solved
-                ? 'Pattern matched!'
-                : failed
-                  ? 'Pattern not matched'
-                  : 'Game Over';
+          : isMonolith
+            ? solved
+              ? 'Monolith complete.'
+              : 'Monolith fractured'
+            : isPipeline
+              ? 'Pipeline jammed'
+              : isScar
+                ? 'No room left in the ruins.'
+                : solved
+                  ? 'Pattern matched!'
+                  : failed
+                    ? 'Pattern not matched'
+                    : 'Game Over';
 
   const subline = isTutorial
     ? solved
@@ -146,7 +151,11 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
           ? solved
             ? 'Solved without suffocating — every 2×2 keeps a hole.'
             : 'Tip: a packed 2×2 anywhere on the final board breaks the rule. Carve a vent before the last piece.'
-          : isPipeline
+          : isMonolith
+            ? solved
+              ? 'One stone, one piece — the monolith holds.'
+              : 'Tip: every piece must extend the monolith, and clears can sever it. Plan the touch chain before you commit.'
+            : isPipeline
             ? 'No move for your next piece.'
             : isScar
               ? 'The scars closed the field in. Restart to clear the rust and run again.'
@@ -164,6 +173,8 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
         ? `Mirror · ${state.mirrorDifficulty.charAt(0).toUpperCase()}${state.mirrorDifficulty.slice(1)}`
         : isBreathe
           ? `Breathe · ${state.breatheDifficulty.charAt(0).toUpperCase()}${state.breatheDifficulty.slice(1)}`
+          : isMonolith
+            ? `Monolith · ${state.monolithDifficulty.charAt(0).toUpperCase()}${state.monolithDifficulty.slice(1)}`
           : isPipeline
             ? `Pipeline · ${state.pipelineDifficulty.charAt(0).toUpperCase()}${state.pipelineDifficulty.slice(1)}`
             : isScar
@@ -367,6 +378,52 @@ export function GameOverOverlay({ onShare, shareStatus = null }: Props = {}) {
                   onClick={() => dispatch({ type: 'NEW_BREATHE_PUZZLE' })}
                 >
                   New puzzle
+                </button>
+              </>
+            )}
+          </>
+        ) : isMonolith ? (
+          <>
+            {solved ? (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'NEW_MONOLITH_PUZZLE' })}
+                >
+                  New monolith
+                </button>
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Replay
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="game-over-panel__btn game-over-panel__btn--primary"
+                  onClick={() => dispatch({ type: 'RESTART' })}
+                >
+                  Retry
+                </button>
+                {state.puzzleUndoStack.length > 0 && (
+                  <button
+                    className="game-over-panel__btn"
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'UNDO_PLACEMENT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u21A9'}</span> Undo last move
+                  </button>
+                )}
+                <button
+                  className="game-over-panel__btn"
+                  onClick={() => dispatch({ type: 'NEW_MONOLITH_PUZZLE' })}
+                >
+                  New monolith
                 </button>
               </>
             )}

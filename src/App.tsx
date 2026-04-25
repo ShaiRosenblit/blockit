@@ -2,6 +2,7 @@ import { useReducer, useRef, useState, useCallback, useEffect, useLayoutEffect }
 import { gameReducer, createInitialState, savePuzzleEverSolved } from './game/gameReducer';
 import {
   canPlacePiece,
+  canPlaceMonolith,
   canPlacePieceMirrored,
   placePiece,
   placePieceMirrored,
@@ -23,6 +24,7 @@ import {
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
+  MONOLITH_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
@@ -42,6 +44,7 @@ import { MirrorIntro } from './components/MirrorIntro';
 import { BreatheIntro } from './components/BreatheIntro';
 import { PipelineIntro } from './components/PipelineIntro';
 import { ScarIntro } from './components/ScarIntro';
+import { MonolithIntro } from './components/MonolithIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -368,6 +371,8 @@ export default function App() {
       } else if (isMirror) {
         // Mirror mode: validate that BOTH the piece and its reflection fit.
         valid = canPlacePieceMirrored(state.board, piece, cursorOrigin);
+      } else if (state.mode === 'monolith') {
+        valid = canPlaceMonolith(state.board, piece, cursorOrigin);
       } else {
         const enforceColorAdjacency = state.mode === 'chroma';
         valid = canPlacePiece(state.board, piece, cursorOrigin, { enforceColorAdjacency });
@@ -525,6 +530,8 @@ export default function App() {
       const enforceColorAdjacency = state.mode === 'chroma';
       if (isMirror) {
         if (!canPlacePieceMirrored(state.board, piece, origin)) return;
+      } else if (state.mode === 'monolith') {
+        if (!canPlaceMonolith(state.board, piece, origin)) return;
       } else if (!canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
         return;
       }
@@ -575,7 +582,7 @@ export default function App() {
         // feedback, and orbs flying out of a board that's mid-cascade
         // reads as visual noise against the rising/falling tiles. Mirror
         // mode follows Puzzle (target-pattern-based, no score display).
-        if (state.mode !== 'puzzle' && state.mode !== 'gravity' && state.mode !== 'mirror' && state.mode !== 'breathe') {
+        if (state.mode !== 'puzzle' && state.mode !== 'gravity' && state.mode !== 'mirror' && state.mode !== 'breathe' && state.mode !== 'monolith') {
           const clearScore = calculateClearScore(linesCleared, state.combo);
           const totalPopup = calculatePlacementScore(piece) + clearScore;
           spawnScorePopup(totalPopup, origin);
@@ -696,7 +703,7 @@ export default function App() {
   // otherwise the confetti lands on the board mid-clear animation.
   const lastSolveKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe') return;
+    if (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe' && state.mode !== 'monolith') return;
     if (state.puzzleResult !== 'solved') {
       // Reset tracker so the next solve of the same puzzle re-fires.
       lastSolveKeyRef.current = null;
@@ -707,7 +714,9 @@ export default function App() {
         ? `mirror:${state.mirrorDifficulty}`
         : state.mode === 'breathe'
           ? `breathe:${state.breatheDifficulty}`
-          : `${state.puzzleDifficulty}:${state.tutorialStep}`;
+          : state.mode === 'monolith'
+            ? `monolith:${state.monolithDifficulty}`
+            : `${state.puzzleDifficulty}:${state.tutorialStep}`;
     if (lastSolveKeyRef.current === key) return;
     lastSolveKeyRef.current = key;
 
@@ -734,6 +743,13 @@ export default function App() {
           : state.breatheDifficulty === 'normal'
             ? 0.55
             : 0.35;
+    } else if (state.mode === 'monolith') {
+      intensity =
+        state.monolithDifficulty === 'hard'
+          ? 0.85
+          : state.monolithDifficulty === 'normal'
+            ? 0.55
+            : 0.35;
     } else {
       const baseIntensity = difficultyToCelebrationIntensity(
         state.puzzleDifficulty,
@@ -756,6 +772,7 @@ export default function App() {
     state.puzzleDifficulty,
     state.mirrorDifficulty,
     state.breatheDifficulty,
+    state.monolithDifficulty,
     state.tutorialStep,
     state.puzzleLevelUp,
   ]);
@@ -941,7 +958,7 @@ export default function App() {
       // at least one snapshot to revert.
       if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (
-          (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe') ||
+          (state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe' && state.mode !== 'monolith') ||
           state.puzzleUndoStack.length === 0
         )
           return;
@@ -1009,6 +1026,11 @@ export default function App() {
               handlePlace(drag.index, origin);
               placed = true;
             }
+          } else if (state.mode === 'monolith') {
+            if (canPlaceMonolith(state.board, piece, origin)) {
+              handlePlace(drag.index, origin);
+              placed = true;
+            }
           } else {
             const enforceColorAdjacency = state.mode === 'chroma';
             if (canPlacePiece(state.board, piece, origin, { enforceColorAdjacency })) {
@@ -1053,9 +1075,11 @@ export default function App() {
     | 'mirror'
     | 'breathe'
     | 'pipeline'
-    | 'scar';
+    | 'scar'
+    | 'monolith';
   const secondaryModes: { id: SecondaryModeId; label: string }[] = [
     { id: 'classic', label: 'Classic' },
+    { id: 'monolith', label: 'Monolith' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
     { id: 'pipeline', label: 'Pipeline' },
@@ -1134,6 +1158,10 @@ export default function App() {
     if (state.mode === 'scar') {
       const d = state.scarDifficulty;
       return `Scar · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'monolith') {
+      const d = state.monolithDifficulty;
+      return `Monolith · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1342,6 +1370,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'monolith' &&
+                  MONOLITH_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.monolithDifficulty}
+                      className={`difficulty-btn${d === state.monolithDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.monolithDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_MONOLITH_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1427,7 +1473,7 @@ export default function App() {
             )}
           </div>
         )}
-        {state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe' && <ScoreBar scoreValueRef={scoreValueRef} />}
+        {state.mode !== 'puzzle' && state.mode !== 'mirror' && state.mode !== 'breathe' && state.mode !== 'monolith' && <ScoreBar scoreValueRef={scoreValueRef} />}
         <div className="board-controls">
           <button
             className="board-restart-btn"
@@ -1478,6 +1524,19 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'monolith' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new monolith puzzle"
+              title="Generate a new monolith puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_MONOLITH_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1520,11 +1579,17 @@ export default function App() {
         )}
         {state.mode === 'pipeline' && <PipelineIntro />}
         {state.mode === 'scar' && <ScarIntro />}
+        {state.mode === 'monolith' && (
+          <>
+            <MonolithIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1564,7 +1629,9 @@ export default function App() {
                       ? 'Pipeline · only the highlighted piece can be placed — order is fixed'
                       : state.mode === 'scar'
                         ? 'Scar · clears damage the field — empty cells crack and never heal'
-                        : state.mode === 'chroma'
+                        : state.mode === 'monolith'
+                          ? 'Monolith · every piece must extend the seed and stay connected'
+                          : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
                         ? 'Gravity · clears make blocks fall — chain reactions score big'

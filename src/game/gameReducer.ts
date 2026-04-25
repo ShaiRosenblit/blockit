@@ -9,6 +9,7 @@ import type {
   GameMode,
   GravityDifficulty,
   MirrorDifficulty,
+  MonolithDifficulty,
   PieceShape,
   PipelineDifficulty,
   PuzzleDifficulty,
@@ -24,12 +25,14 @@ import {
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
+  MONOLITH_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
   isPuzzleLevel,
 } from './types';
 import {
   createEmptyBoard,
+  canPlaceMonolith,
   canPlacePiece,
   canPlacePieceMirrored,
   placePiece,
@@ -39,6 +42,7 @@ import {
   hasValidMoves,
   hasValidDrops,
   hasValidMirrorMoves,
+  hasValidMonolithMoves,
   hasValidPipelineMoves,
   rotatePiece90Clockwise,
   applySlabCollapse,
@@ -54,6 +58,7 @@ import {
 } from './puzzleGenerator';
 import { generateMirrorPuzzle } from './mirrorPuzzleGenerator';
 import { generateBreathePuzzle } from './breathePuzzleGenerator';
+import { generateMonolithPuzzle } from './monolithGenerator';
 import {
   applyScars,
   clearLinesPreservingScars,
@@ -108,6 +113,8 @@ export type GameState = {
   pipelinePhase: 0 | 1 | 2;
   /** Remembered Scar-mode difficulty. */
   scarDifficulty: ScarDifficulty;
+  /** Remembered Monolith-mode difficulty. */
+  monolithDifficulty: MonolithDifficulty;
   /**
    * Per-run RNG seed for Scar mode's scar-burst placement. Initialised on
    * `freshScarState` (e.g. `Date.now() ^ Math.floor(Math.random() *
@@ -214,10 +221,13 @@ export type GameAction =
   | { type: 'SET_BREATHE_DIFFICULTY'; difficulty: BreatheDifficulty }
   | { type: 'SET_PIPELINE_DIFFICULTY'; difficulty: PipelineDifficulty }
   | { type: 'SET_SCAR_DIFFICULTY'; difficulty: ScarDifficulty }
+  | { type: 'SET_MONOLITH_DIFFICULTY'; difficulty: MonolithDifficulty }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_BREATHE_PUZZLE' }
+  /** Discard the active monolith puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_MONOLITH_PUZZLE' }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -254,6 +264,7 @@ const MIRROR_DIFFICULTY_KEY = 'blockit-mirror-difficulty';
 const BREATHE_DIFFICULTY_KEY = 'blockit-breathe-difficulty';
 const PIPELINE_DIFFICULTY_KEY = 'blockit-pipeline-difficulty';
 const SCAR_DIFFICULTY_KEY = 'blockit-scar-difficulty';
+const MONOLITH_DIFFICULTY_KEY = 'blockit-monolith-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -278,6 +289,7 @@ function bestScoreKey(
     | BreatheDifficulty
     | PipelineDifficulty
     | ScarDifficulty
+    | MonolithDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -298,6 +310,7 @@ function loadBestScore(
     | BreatheDifficulty
     | PipelineDifficulty
     | ScarDifficulty
+    | MonolithDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -317,7 +330,8 @@ function saveBestScore(
     | MirrorDifficulty
     | BreatheDifficulty
     | PipelineDifficulty
-    | ScarDifficulty,
+    | ScarDifficulty
+    | MonolithDifficulty,
   score: number
 ) {
   try {
@@ -526,7 +540,8 @@ function loadMode(): GameMode {
       stored === 'mirror' ||
       stored === 'breathe' ||
       stored === 'pipeline' ||
-      stored === 'scar'
+      stored === 'scar' ||
+      stored === 'monolith'
     ) {
       return stored;
     }
@@ -708,6 +723,22 @@ function saveScarDifficulty(difficulty: ScarDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadMonolithDifficulty(): MonolithDifficulty {
+  try {
+    const stored = localStorage.getItem(MONOLITH_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+function saveMonolithDifficulty(difficulty: MonolithDifficulty) {
+  try {
+    localStorage.setItem(MONOLITH_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
 /**
  * Fresh seed for a Scar run's RNG. XOR with a random 32-bit chunk on top
  * of `Date.now()` so two Scar runs started in the same millisecond still
@@ -791,6 +822,7 @@ function freshPuzzleState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -824,6 +856,7 @@ function freshPuzzleState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(stored.target),
     puzzleInitialBoard: cloneBoard(stored.board),
@@ -852,6 +885,7 @@ function freshTutorialState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -875,6 +909,7 @@ function freshTutorialState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(data.target),
     puzzleInitialBoard: cloneBoard(data.board),
@@ -903,6 +938,7 @@ function freshPuzzleStateFromShared(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -926,6 +962,7 @@ function freshPuzzleStateFromShared(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(shared.target),
     puzzleInitialBoard: cloneBoard(shared.board),
@@ -948,6 +985,7 @@ function freshClassicState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -972,6 +1010,7 @@ function freshClassicState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -999,6 +1038,7 @@ function freshChromaState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1023,6 +1063,7 @@ function freshChromaState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1051,6 +1092,7 @@ function freshGravityState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1075,6 +1117,7 @@ function freshGravityState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1103,6 +1146,7 @@ function freshDropState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1127,6 +1171,7 @@ function freshDropState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1161,6 +1206,7 @@ function freshMirrorState(
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1185,6 +1231,7 @@ function freshMirrorState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
@@ -1219,6 +1266,7 @@ function freshBreatheState(
   mirrorDifficulty: MirrorDifficulty,
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1243,6 +1291,7 @@ function freshBreatheState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: cloneTarget(target),
     puzzleInitialBoard: cloneBoard(board),
@@ -1276,6 +1325,7 @@ function freshPipelineState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1300,6 +1350,7 @@ function freshPipelineState(
     pipelinePhase: 0,
     scarDifficulty,
     scarRngSeed: 0,
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
@@ -1330,6 +1381,7 @@ function freshScarState(
   mirrorDifficulty: MirrorDifficulty,
   breatheDifficulty: BreatheDifficulty,
   pipelineDifficulty: PipelineDifficulty,
+  monolithDifficulty: MonolithDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1354,10 +1406,71 @@ function freshScarState(
     pipelinePhase: 0,
     scarDifficulty: difficulty,
     scarRngSeed: freshScarRngSeed(),
+    monolithDifficulty,
     puzzleResult: null,
     puzzleTarget: null,
     puzzleInitialBoard: null,
     puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Monolith state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Monolith is a puzzle-style
+ * mode with a target pattern and a finite tray. The placement pipeline
+ * keys off `mode === 'monolith'` to enforce the "must touch monolith"
+ * + "single 4-connected component after clears" invariants.
+ *
+ * Like Mirror/Breathe, Monolith puzzles aren't persisted to localStorage
+ * — generation is fast and a fresh puzzle on each entry keeps the
+ * experience surprising while keeping the storage footprint tiny.
+ */
+function freshMonolithState(
+  difficulty: MonolithDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const { board, tray, target } = generateMonolithPuzzle({ difficulty });
+  return {
+    board: cloneBoard(board),
+    tray: cloneTray(tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'monolith',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty: difficulty,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(target),
+    puzzleInitialBoard: cloneBoard(board),
+    puzzleInitialTray: cloneTray(tray),
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
@@ -1377,6 +1490,7 @@ export function createInitialState(): GameState {
   const breatheDifficulty = loadBreatheDifficulty();
   const pipelineDifficulty = loadPipelineDifficulty();
   const scarDifficulty = loadScarDifficulty();
+  const monolithDifficulty = loadMonolithDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -1403,6 +1517,7 @@ export function createInitialState(): GameState {
         breatheDifficulty,
         pipelineDifficulty,
         scarDifficulty,
+        monolithDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -1426,6 +1541,7 @@ export function createInitialState(): GameState {
         breatheDifficulty,
         pipelineDifficulty,
         scarDifficulty,
+        monolithDifficulty,
         puzzleEverSolved
       );
     }
@@ -1439,6 +1555,7 @@ export function createInitialState(): GameState {
       breatheDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1456,6 +1573,7 @@ export function createInitialState(): GameState {
       breatheDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1473,6 +1591,7 @@ export function createInitialState(): GameState {
       breatheDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1490,6 +1609,7 @@ export function createInitialState(): GameState {
       breatheDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1507,6 +1627,7 @@ export function createInitialState(): GameState {
       breatheDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1524,6 +1645,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       pipelineDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('breathe', breatheDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1541,6 +1663,7 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       scarDifficulty,
+      monolithDifficulty,
       loadBestScore('pipeline', pipelineDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1558,7 +1681,26 @@ export function createInitialState(): GameState {
       mirrorDifficulty,
       breatheDifficulty,
       pipelineDifficulty,
+      monolithDifficulty,
       loadBestScore('scar', scarDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'monolith') {
+    return freshMonolithState(
+      monolithDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      loadBestScore('monolith', monolithDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1574,6 +1716,7 @@ export function createInitialState(): GameState {
     breatheDifficulty,
     pipelineDifficulty,
     scarDifficulty,
+    monolithDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1601,11 +1744,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const isGameOver =
         state.mode === 'mirror'
           ? !hasValidMirrorMoves(state.board, newTray)
-          : state.mode === 'pipeline'
-            ? !hasValidPipelineMoves(state.board, newTray, state.pipelinePhase)
-            : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
+          : state.mode === 'monolith'
+            ? !hasValidMonolithMoves(state.board, newTray)
+            : state.mode === 'pipeline'
+              ? !hasValidPipelineMoves(state.board, newTray, state.pipelinePhase)
+              : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
-        (state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe') && isGameOver
+        (state.mode === 'puzzle' ||
+          state.mode === 'mirror' ||
+          state.mode === 'breathe' ||
+          state.mode === 'monolith') &&
+        isGameOver
           ? 'failed'
           : state.puzzleResult;
       return {
@@ -1716,6 +1865,82 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleLevelUp: null,
           lastCascade: null,
           puzzleUndoStack: [],
+        };
+      }
+
+      // Monolith mode: every placement must touch the existing monolith
+      // (SEED + previously-placed cells), and after any line clears the
+      // remaining monolith-fill cells must form a single 4-connected
+      // component. `canPlaceMonolith` enforces both invariants. Like
+      // Mirror/Breathe this is a target-pattern + finite-tray puzzle, so
+      // we reuse the puzzle-mode undo/restart scaffolding and check
+      // `boardMatchesTarget` on tray-empty.
+      if (state.mode === 'monolith') {
+        if (!canPlaceMonolith(state.board, piece, action.origin)) return state;
+
+        const monolithUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+        ];
+
+        let mboard = placePiece(state.board, piece, action.origin);
+        let mscore = state.score + calculatePlacementScore(piece);
+        let mcombo = state.combo;
+        const { rows: mrows, cols: mcols } = detectCompletedLines(mboard);
+        const mlinesCleared = mrows.length + mcols.length;
+        if (mlinesCleared > 0) {
+          mboard = clearLines(mboard, mrows, mcols);
+          mscore += calculateClearScore(mlinesCleared, mcombo);
+          mcombo += 1;
+        } else {
+          mcombo = 0;
+        }
+
+        const mNewTray = [...state.tray];
+        mNewTray[action.trayIndex] = null;
+        const mAllPlaced = mNewTray.every((s) => s === null);
+        const mTarget = state.puzzleTarget;
+        const mDifficulty = state.monolithDifficulty;
+
+        if (mAllPlaced) {
+          const solved = mTarget !== null && boardMatchesTarget(mboard, mTarget);
+          if (solved) mscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(mscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('monolith', mDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: mboard,
+            tray: mNewTray,
+            score: mscore,
+            bestScore,
+            combo: solved ? mcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            puzzleUndoStack: monolithUndoStack,
+          };
+        }
+
+        const isGameOver = !hasValidMonolithMoves(mboard, mNewTray);
+        const bestScore = Math.max(mscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('monolith', mDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: mboard,
+          tray: mNewTray,
+          score: mscore,
+          bestScore,
+          combo: mcombo,
+          isGameOver,
+          puzzleResult: isGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: monolithUndoStack,
         };
       }
 
@@ -2195,6 +2420,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.breatheDifficulty,
             state.pipelineDifficulty,
             state.scarDifficulty,
+            state.monolithDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -2208,6 +2434,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2224,6 +2451,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2240,6 +2468,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2256,6 +2485,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2272,6 +2502,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2288,6 +2519,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2304,6 +2536,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('pipeline', state.pipelineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2320,7 +2553,25 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mirrorDifficulty,
           state.breatheDifficulty,
           state.pipelineDifficulty,
+          state.monolithDifficulty,
           loadBestScore('scar', state.scarDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'monolith') {
+        return freshMonolithState(
+          state.monolithDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          loadBestScore('monolith', state.monolithDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -2335,6 +2586,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2355,6 +2607,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2377,6 +2630,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -2395,6 +2649,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -2416,6 +2671,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2436,6 +2692,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2456,6 +2713,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2476,6 +2734,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('breathe', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2496,6 +2755,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('pipeline', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2516,7 +2776,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mirrorDifficulty,
         state.breatheDifficulty,
         state.pipelineDifficulty,
+        state.monolithDifficulty,
         loadBestScore('scar', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_MONOLITH_DIFFICULTY': {
+      if (!MONOLITH_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveMonolithDifficulty(action.difficulty);
+      saveMode('monolith');
+      return freshMonolithState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        loadBestScore('monolith', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
       );
@@ -2537,6 +2819,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -2556,6 +2839,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2572,6 +2856,26 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.gravityDifficulty,
         state.dropDifficulty,
         state.mirrorDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'NEW_MONOLITH_PUZZLE': {
+      if (state.mode !== 'monolith') return state;
+      return freshMonolithState(
+        state.monolithDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.bestScore,
@@ -2599,6 +2903,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2623,6 +2928,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.scarDifficulty,
+          state.monolithDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -2640,6 +2946,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -2659,6 +2966,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.breatheDifficulty,
         state.pipelineDifficulty,
         state.scarDifficulty,
+        state.monolithDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -2667,7 +2975,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (
         state.mode !== 'puzzle' &&
         state.mode !== 'mirror' &&
-        state.mode !== 'breathe'
+        state.mode !== 'breathe' &&
+        state.mode !== 'monolith'
       )
         return state;
       const stack = state.puzzleUndoStack;
@@ -2698,7 +3007,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // tray, and target are restored; only score / combo / result
       // flags are wiped.
       if (
-        (state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe') &&
+        (state.mode === 'puzzle' ||
+          state.mode === 'mirror' ||
+          state.mode === 'breathe' ||
+          state.mode === 'monolith') &&
         state.puzzleInitialBoard &&
         state.puzzleInitialTray
       ) {

@@ -1,4 +1,4 @@
-import type { BoardGrid, CascadeStep, Coord, PieceShape, TargetPattern } from './types';
+import type { BoardCell, BoardGrid, CascadeStep, Coord, PieceShape, TargetPattern } from './types';
 import { BOARD_SIZE } from './types';
 
 export function createEmptyBoard(): BoardGrid {
@@ -510,6 +510,165 @@ export function hasValidMirrorMoves(
       for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
         for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
           if (canPlacePieceMirrored(board, variant, { row: r, col: c })) return true;
+        }
+      }
+      variant = rotatePiece90Clockwise(variant);
+    }
+  }
+  return false;
+}
+
+/**
+ * Monolith mode helpers — the player extends a single 4-connected
+ * "monolith" component made of SEED pre-fill plus their placed pieces.
+ * Block pre-fill (regular `'#5c6b7a'` color) sits separately on the
+ * board; clearing a row/column that includes blocks evicts them, but
+ * the same clear may also remove monolith cells and fragment the
+ * component. Both invariants — touch on placement, single-component
+ * after clears — are checked by `canPlaceMonolith`.
+ *
+ * Sentinel color marking SEED cells: a deep teal that doesn't appear in
+ * `COLORS`, in `CHROMA_COLORS`, in the regular pre-fill color
+ * (`'#5c6b7a'`), or in `SCAR_COLOR` (`'#5a3030'`). Cell components key
+ * off this exact string to apply seed styling.
+ */
+export const MONOLITH_SEED_COLOR = '#2d7a7a';
+
+const MONOLITH_BLOCK_COLOR = '#5c6b7a';
+
+export function isMonolithSeed(cell: BoardCell): boolean {
+  return cell === MONOLITH_SEED_COLOR;
+}
+
+export function isMonolithBlock(cell: BoardCell): boolean {
+  return cell === MONOLITH_BLOCK_COLOR;
+}
+
+/**
+ * True when the cell counts toward the monolith — i.e. it's filled
+ * with anything other than a block sentinel. SEED cells and PLACED
+ * (piece) cells both qualify; BLOCK cells and empty cells do not.
+ */
+export function isMonolithFill(cell: BoardCell): boolean {
+  return cell !== null && cell !== MONOLITH_BLOCK_COLOR;
+}
+
+/**
+ * Count the number of distinct 4-connected components formed by all
+ * monolith-fill cells (SEED + PLACED) on the board. A return value of
+ * 0 means there are no monolith cells; 1 means the monolith is
+ * connected; 2+ means it has fragmented.
+ */
+export function monolithComponentCount(board: BoardGrid): number {
+  const visited: boolean[][] = Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => false)
+  );
+  let components = 0;
+  for (let r0 = 0; r0 < BOARD_SIZE; r0++) {
+    for (let c0 = 0; c0 < BOARD_SIZE; c0++) {
+      if (visited[r0][c0]) continue;
+      if (!isMonolithFill(board[r0][c0])) continue;
+      components++;
+      const stack: Coord[] = [{ row: r0, col: c0 }];
+      visited[r0][c0] = true;
+      while (stack.length > 0) {
+        const { row, col } = stack.pop()!;
+        const neighbors: Coord[] = [
+          { row: row - 1, col },
+          { row: row + 1, col },
+          { row, col: col - 1 },
+          { row, col: col + 1 },
+        ];
+        for (const n of neighbors) {
+          if (n.row < 0 || n.row >= BOARD_SIZE || n.col < 0 || n.col >= BOARD_SIZE) continue;
+          if (visited[n.row][n.col]) continue;
+          if (!isMonolithFill(board[n.row][n.col])) continue;
+          visited[n.row][n.col] = true;
+          stack.push(n);
+        }
+      }
+    }
+  }
+  return components;
+}
+
+/**
+ * True iff the placement at `origin` extends the monolith — i.e. at
+ * least one footprint cell is 4-adjacent to an existing monolith-fill
+ * (SEED or PLACED) cell. Returns true for the very first placement
+ * onto an empty-except-blocks board only when the board has at least
+ * one SEED cell adjacent to the footprint; the generator guarantees
+ * SEED ≥ 3 cells, so the first move always has SOMETHING to touch.
+ */
+function placementTouchesMonolith(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): boolean {
+  for (const cell of piece.cells) {
+    const r = origin.row + cell.row;
+    const c = origin.col + cell.col;
+    const neighbors: Coord[] = [
+      { row: r - 1, col: c },
+      { row: r + 1, col: c },
+      { row: r, col: c - 1 },
+      { row: r, col: c + 1 },
+    ];
+    for (const n of neighbors) {
+      if (n.row < 0 || n.row >= BOARD_SIZE || n.col < 0 || n.col >= BOARD_SIZE) continue;
+      if (isMonolithFill(board[n.row][n.col])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Monolith-mode placement validator. A placement is legal iff:
+ *   1. Standard placement geometry (cells empty + in-bounds).
+ *   2. The piece's footprint touches the existing monolith (at least
+ *      one footprint cell 4-adjacent to a SEED or PLACED cell).
+ *   3. After placement and any line clears, the union of remaining
+ *      SEED + PLACED cells (excluding BLOCK cells) forms a single
+ *      4-connected component.
+ *
+ * Returns `false` when ANY of the three invariants is violated. Used
+ * by both the gameReducer (to reject illegal placements) and the
+ * monolith generator (to enumerate legal forward-sim placements).
+ */
+export function canPlaceMonolith(
+  board: BoardGrid,
+  piece: PieceShape,
+  origin: Coord
+): boolean {
+  if (!canPlacePiece(board, piece, origin)) return false;
+  if (!placementTouchesMonolith(board, piece, origin)) return false;
+  // Simulate the placement + any resulting clears, then check that
+  // the post-clear board has a single monolith component (or none, in
+  // the degenerate case where the player cleared the entire monolith
+  // out — also illegal for the same reason: the round becomes
+  // unwinnable).
+  const placed = placePiece(board, piece, origin);
+  const { rows, cols } = detectCompletedLines(placed);
+  const after =
+    rows.length > 0 || cols.length > 0 ? clearLines(placed, rows, cols) : placed;
+  return monolithComponentCount(after) === 1;
+}
+
+/**
+ * Monolith-mode game-over probe. True iff at least one tray piece has
+ * some (rotation, origin) where `canPlaceMonolith` returns true.
+ */
+export function hasValidMonolithMoves(
+  board: BoardGrid,
+  tray: (PieceShape | null)[]
+): boolean {
+  for (const piece of tray) {
+    if (!piece) continue;
+    let variant = piece;
+    for (let rot = 0; rot < 4; rot++) {
+      for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
+        for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
+          if (canPlaceMonolith(board, variant, { row: r, col: c })) return true;
         }
       }
       variant = rotatePiece90Clockwise(variant);
