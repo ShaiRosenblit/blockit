@@ -1,3 +1,5 @@
+import { SCAR_COLOR } from '../game/scar';
+
 type CellProps = {
   color: string | null;
   preview?: 'valid' | 'invalid' | null;
@@ -60,6 +62,12 @@ export function Cell({
   } else if (color) {
     className += ' cell--filled';
     if (justPlaced) className += ' cell--just-placed';
+    // Scar mode's sentinel color: tag with `cell--scar` so the CSS can apply
+    // the cracked-rust look that visually separates "permanent damage" from
+    // ordinary placed pieces. The damage class is purely additive — the
+    // backgroundColor is still set so any environment that ignores the
+    // class (e.g. screenshots without the stylesheet) still shows SOMETHING.
+    if (color === SCAR_COLOR) className += ' cell--scar';
     style = { backgroundColor: color };
   }
 

@@ -1073,6 +1073,150 @@ body {
   transform: translateY(1px);
 }
 
+/*
+ * Scar mode visuals
+ *
+ * Scar cells use a dedicated `cell--scar` class on top of the normal
+ * `cell--filled` so they read as "permanent terrain damage" instead of a
+ * placed piece — desaturated rust base, dimmer than colored pieces, with a
+ * cracked-X overlay drawn from two pseudo-element diagonals. The two lines
+ * are deliberately faint and slightly off-axis so the texture suggests
+ * craquelure rather than a Tic-Tac-Toe X. Colours are intentionally far
+ * from Mirror's slate blockers so a player who plays both modes never
+ * confuses "blocker I started with" for "blocker I caused".
+ */
+.cell--scar {
+  border: 1px solid rgba(255, 200, 170, 0.18);
+  /* Slight inner darkening sells "weathered" — softer than pure SCAR_COLOR alone */
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.28);
+  /* Subtle rust grain via layered gradients on top of the SCAR_COLOR fill */
+  background-image:
+    radial-gradient(circle at 30% 25%, rgba(255, 180, 140, 0.10), transparent 55%),
+    radial-gradient(circle at 70% 75%, rgba(0, 0, 0, 0.22), transparent 60%);
+}
+
+.cell--scar::before,
+.cell--scar::after {
+  content: '';
+  position: absolute;
+  /* Two thin diagonals across the cell; rotated separately to read as a crack pattern */
+  top: 18%;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: rgba(20, 10, 6, 0.55);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.cell--scar::before {
+  transform: rotate(28deg);
+}
+
+.cell--scar::after {
+  top: 62%;
+  transform: rotate(-22deg);
+  background: rgba(255, 220, 200, 0.12);
+}
+
+/* Intro card for Scar mode — same shape as MirrorIntro, rust accent */
+.scar-intro {
+  width: min(100%, var(--panel-max));
+  padding: 0.75rem 1rem 0.875rem;
+  background: linear-gradient(
+    135deg,
+    rgba(200, 122, 74, 0.14),
+    rgba(200, 122, 74, 0.04)
+  );
+  border: 1px solid rgba(200, 122, 74, 0.36);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 0 18px rgba(200, 122, 74, 0.10);
+}
+
+.scar-intro__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.scar-intro__eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d8895c;
+}
+
+.scar-intro__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.scar-intro__text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.scar-intro__text strong {
+  color: #d8895c;
+  font-weight: 700;
+}
+
+.scar-intro__tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.scar-intro__tips li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.scar-intro__tips li > span:first-child {
+  color: #d8895c;
+  width: 1.1rem;
+  text-align: center;
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.scar-intro__btn {
+  align-self: flex-end;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(200, 122, 74, 0.55);
+  background: rgba(200, 122, 74, 0.20);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.scar-intro__btn:hover {
+  background: rgba(200, 122, 74, 0.32);
+}
+
+.scar-intro__btn:active {
+  transform: translateY(1px);
+}
+
 /* Piece tray */
 .piece-tray-wrap {
   display: flex;

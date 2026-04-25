@@ -19,7 +19,7 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror';
+export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'scar';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -32,6 +32,17 @@ export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
  * persistence keys stay independent per mode.
  */
 export type MirrorDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Scar mode difficulty. Three rungs control how many scar cells (permanent
+ * blockers) are seeded on the board after each clear event. Same string
+ * values as Mirror — the levels mean different things per mode but the
+ * compact ramp keeps the difficulty button row consistent across modes.
+ * Kept as its own literal union (not an alias) so future Scar-only tuning
+ * (e.g. an Expert rung that scars 5 cells, or a clusters-allowed rung)
+ * stays a typed, breaking change.
+ */
+export type ScarDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -81,7 +92,8 @@ export type ModeSelection =
   | { mode: 'chroma'; difficulty: ChromaDifficulty }
   | { mode: 'gravity'; difficulty: GravityDifficulty }
   | { mode: 'drop'; difficulty: DropDifficulty }
-  | { mode: 'mirror'; difficulty: MirrorDifficulty };
+  | { mode: 'mirror'; difficulty: MirrorDifficulty }
+  | { mode: 'scar'; difficulty: ScarDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -105,6 +117,12 @@ export const DROP_DIFFICULTIES: readonly DropDifficulty[] = [
 ] as const;
 
 export const MIRROR_DIFFICULTIES: readonly MirrorDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const SCAR_DIFFICULTIES: readonly ScarDifficulty[] = [
   'easy',
   'normal',
   'hard',

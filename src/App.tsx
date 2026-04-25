@@ -22,6 +22,7 @@ import {
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
+  SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
@@ -36,6 +37,7 @@ import { Wordmark } from './components/Wordmark';
 import { Monogram } from './components/Monogram';
 import { PuzzleLegend } from './components/PuzzleLegend';
 import { MirrorIntro } from './components/MirrorIntro';
+import { ScarIntro } from './components/ScarIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -995,10 +997,11 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror'; label: string }[] = [
+  const modes: { id: 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror' | 'scar'; label: string }[] = [
     { id: 'classic', label: 'Classic' },
     { id: 'puzzle', label: 'Puzzle' },
     { id: 'mirror', label: 'Mirror' },
+    { id: 'scar', label: 'Scar' },
     { id: 'chroma', label: 'Chroma' },
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
@@ -1061,6 +1064,10 @@ export default function App() {
     if (state.mode === 'mirror') {
       const d = state.mirrorDifficulty;
       return `Mirror · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'scar') {
+      const d = state.scarDifficulty;
+      return `Scar · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1212,6 +1219,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'scar' &&
+                  SCAR_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.scarDifficulty}
+                      className={`difficulty-btn${d === state.scarDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.scarDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_SCAR_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1336,6 +1361,7 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'scar' && <ScarIntro />}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
@@ -1370,13 +1396,15 @@ export default function App() {
                 ? `${puzzleDifficultyLabel(state.puzzleDifficulty)} puzzle · tap to rotate · drag to place`
                 : state.mode === 'mirror'
                   ? 'Mirror · piece + reflection must dodge blockers on both halves'
-                  : state.mode === 'chroma'
-                    ? "Chroma · pieces can't touch a different color"
-                    : state.mode === 'gravity'
-                      ? 'Gravity · clears make blocks fall — chain reactions score big'
-                      : state.mode === 'drop'
-                        ? 'Drop · pieces fall from release — clear rows to survive'
-                        : 'Tap to rotate · drag to place'}
+                  : state.mode === 'scar'
+                    ? 'Scar · clears damage the field — empty cells crack and never heal'
+                    : state.mode === 'chroma'
+                      ? "Chroma · pieces can't touch a different color"
+                      : state.mode === 'gravity'
+                        ? 'Gravity · clears make blocks fall — chain reactions score big'
+                        : state.mode === 'drop'
+                          ? 'Drop · pieces fall from release — clear rows to survive'
+                          : 'Tap to rotate · drag to place'}
             </p>
           </div>
         )}
