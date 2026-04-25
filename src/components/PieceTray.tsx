@@ -6,6 +6,15 @@ import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from '../dragConstants';
 type PieceTrayProps = {
   onTrayPointerDown: (index: number, e: React.PointerEvent) => void;
   draggingIndex: number | null;
+  /**
+   * When set, the slot at this index renders with the `is-active`
+   * highlight and every other slot renders with the `is-locked` dim
+   * treatment. Used by Pipeline mode to make the round-robin queue
+   * cursor visible. Undefined (the default) means "no highlighting" —
+   * every other mode passes nothing here so the rendering matches the
+   * pre-Pipeline behaviour exactly.
+   */
+  activeIndex?: number;
 };
 
 const MINI_GAP_PX = 2;
@@ -76,12 +85,16 @@ function TraySlot({
   index,
   dense,
   dragging,
+  active,
+  locked,
   onPointerDown,
 }: {
   piece: PieceShape | null;
   index: number;
   dense: boolean;
   dragging: boolean;
+  active: boolean;
+  locked: boolean;
   onPointerDown: (index: number, e: React.PointerEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -111,8 +124,8 @@ function TraySlot({
   return (
     <div
       ref={ref}
-      className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${dragging ? ' piece-slot--dragging' : ''}`}
-      onPointerDown={(e) => piece && onPointerDown(index, e)}
+      className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${dragging ? ' piece-slot--dragging' : ''}${active ? ' piece-slot--active' : ''}${locked ? ' piece-slot--locked' : ''}`}
+      onPointerDown={(e) => piece && !locked && onPointerDown(index, e)}
       style={{ touchAction: 'none' }}
     >
       {piece && !dragging && <PieceMiniGrid piece={piece} slotInnerPx={innerPx} />}
@@ -120,7 +133,7 @@ function TraySlot({
   );
 }
 
-export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) {
+export function PieceTray({ onTrayPointerDown, draggingIndex, activeIndex }: PieceTrayProps) {
   const { state } = useGame();
   const dense = state.mode === 'puzzle' && state.tray.length > 3;
 
@@ -145,16 +158,27 @@ export function PieceTray({ onTrayPointerDown, draggingIndex }: PieceTrayProps) 
       className={`piece-tray${dense ? ' piece-tray--dense' : ''}`}
       style={{ ['--tray-cols' as string]: String(trayCols) }}
     >
-      {state.tray.map((piece, i) => (
-        <TraySlot
-          key={i}
-          piece={piece}
-          index={i}
-          dense={dense}
-          dragging={draggingIndex === i}
-          onPointerDown={onTrayPointerDown}
-        />
-      ))}
+      {state.tray.map((piece, i) => {
+        // `activeIndex === undefined` means "no highlighting" (every mode
+        // except Pipeline). When defined, exactly one slot is `active` and
+        // the others are `locked` — the locked treatment dims the slot
+        // and disables pointer-down so a stray drag attempt from a
+        // non-active slot does nothing visible at all.
+        const isActive = activeIndex !== undefined && i === activeIndex;
+        const isLocked = activeIndex !== undefined && i !== activeIndex;
+        return (
+          <TraySlot
+            key={i}
+            piece={piece}
+            index={i}
+            dense={dense}
+            dragging={draggingIndex === i}
+            active={isActive}
+            locked={isLocked}
+            onPointerDown={onTrayPointerDown}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -19,7 +19,14 @@ export type BoardGrid = BoardCell[][];
  */
 export type TargetPattern = boolean[][];
 
-export type GameMode = 'classic' | 'puzzle' | 'chroma' | 'gravity' | 'drop' | 'mirror';
+export type GameMode =
+  | 'classic'
+  | 'puzzle'
+  | 'chroma'
+  | 'gravity'
+  | 'drop'
+  | 'mirror'
+  | 'pipeline';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -52,6 +59,16 @@ export type GravityDifficulty = ClassicDifficulty;
 export type DropDifficulty = ClassicDifficulty;
 
 /**
+ * Pipeline mode shares the classic difficulty rungs — same piece pool, same
+ * weights — because the twist is the round-robin tray-slot lock, not the
+ * piece vocabulary. Kept as its own alias so best-score storage keys stay
+ * independent per-mode and any future Pipeline-only tuning (e.g. a rung
+ * that varies cycle length) stays a typed, breaking change the compiler
+ * can hunt down.
+ */
+export type PipelineDifficulty = ClassicDifficulty;
+
+/**
  * Chroma mode v1 ships with a single difficulty. The type is kept as a
  * literal union (not just the string) so adding more rungs later — e.g.
  * `'easy' | 'normal' | 'hard'` — stays a typed, breaking change the
@@ -81,7 +98,8 @@ export type ModeSelection =
   | { mode: 'chroma'; difficulty: ChromaDifficulty }
   | { mode: 'gravity'; difficulty: GravityDifficulty }
   | { mode: 'drop'; difficulty: DropDifficulty }
-  | { mode: 'mirror'; difficulty: MirrorDifficulty };
+  | { mode: 'mirror'; difficulty: MirrorDifficulty }
+  | { mode: 'pipeline'; difficulty: PipelineDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -105,6 +123,13 @@ export const DROP_DIFFICULTIES: readonly DropDifficulty[] = [
 ] as const;
 
 export const MIRROR_DIFFICULTIES: readonly MirrorDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const PIPELINE_DIFFICULTIES: readonly PipelineDifficulty[] = [
+  'zen',
   'easy',
   'normal',
   'hard',

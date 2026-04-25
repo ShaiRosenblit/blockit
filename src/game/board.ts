@@ -515,6 +515,34 @@ export function rotatePiece90Clockwise(piece: PieceShape): PieceShape {
   };
 }
 
+/**
+ * Pipeline-mode game-over probe. Pipeline only allows placement from the
+ * round-robin "active" slot — so the round ends precisely when the active
+ * piece itself has no fit, regardless of whether the other tray slots
+ * could be placed. Returns false when the active slot is empty (defensive:
+ * normal play keeps the active slot filled because refill happens when all
+ * three are empty, but the explicit guard keeps callers honest).
+ */
+export function hasValidPipelineMoves(
+  board: BoardGrid,
+  tray: (PieceShape | null)[],
+  requiredIndex: number
+): boolean {
+  if (requiredIndex < 0 || requiredIndex >= tray.length) return false;
+  const piece = tray[requiredIndex];
+  if (!piece) return false;
+  let variant = piece;
+  for (let rot = 0; rot < 4; rot++) {
+    for (let r = 0; r <= BOARD_SIZE - variant.height; r++) {
+      for (let c = 0; c <= BOARD_SIZE - variant.width; c++) {
+        if (canPlacePiece(board, variant, { row: r, col: c })) return true;
+      }
+    }
+    variant = rotatePiece90Clockwise(variant);
+  }
+  return false;
+}
+
 export function hasValidMoves(
   board: BoardGrid,
   tray: (PieceShape | null)[],
