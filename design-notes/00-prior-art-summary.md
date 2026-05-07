@@ -1,79 +1,61 @@
-# Prior-art summary (must understand before designing)
+# Prior-art summary — written before any candidate generation
 
-## Forward-simulation generation
+## Forward-simulation generation (the puzzle-mode template)
 
-`puzzleGenerator.ts` is the canonical pattern. To generate a winnable instance:
+`puzzleGenerator.ts::buildCandidate` is the pattern every generator in this run will follow:
 
-1. Pick a difficulty spec (piece count, cell-count band, target cell band, pre-fill amount, minimum pre-fill cleared).
-2. Seed an empty (or pre-filled) `BoardGrid`.
-3. Sample N piece templates from the `PIECE_CATALOG` (filtered by cell-count band).
-4. **Forward-simulate**: enumerate every legal `(rotation, origin)` for each piece in turn, pick one at random, apply `applyPlacementAndClear` (place + clear full rows/cols), repeat. If at any step there are zero legal placements, abandon the candidate.
-5. Snapshot the resulting board occupancy — that becomes the **target pattern**.
-6. Apply quality filters (target cells in band, target spans ≥2 rows AND ≥2 cols, enough pre-fill cleared).
-7. Shuffle / re-orient the same N templates → that becomes the player's tray. Because the simulation walked a legal sequence with these exact templates, **a solution provably exists**.
-8. Reject duplicate signatures across recent generations to keep replays varied.
-9. Hard-coded fallback (`buildFallback`) if generation fails repeatedly.
+1. Pick a difficulty spec (piece count, cell-count band, target-cell band, pre-fill range).
+2. Seed a starting board (here: scattered pre-fill cells of a sentinel "blocker" color).
+3. Sample a tray of pieces.
+4. Forward-simulate: walk the tray in order, at each step enumerate every legal `(orientation, origin)` for the piece against the current board, pick one uniformly at random, then call `applyPlacementAndClear` (place + detect full rows/cols + clear them).
+5. Snapshot the resulting board as the target. Because the simulation is itself a valid solution, every generated puzzle is **provably solvable**.
+6. Apply quality filters: target cell count in band, target touches ≥ 2 rows AND ≥ 2 cols, ≥ N pre-fill cells must end up outside the target (so pre-fill is meaningful, not decoration), no recently-seen signature.
+7. Shuffle tray order, randomly rotate each tray piece for visual variety, paint with random colors, return.
 
-Validators: `boardMatchesTarget` for solvability check, `canReachTarget` (BFS over occupancy×remaining-multiset, capped at 120k expansions) for stronger verification on small instances.
+Key invariants preserved across modes: `mulberry32` PRNG (so `seed` round-trips deterministically), an `orientations()` helper that dedupes rotations of a piece, and a fallback puzzle hard-coded for the rare case the spec is unsatisfiable. The optional `canReachTarget` BFS exists for tests but is not used in generation hot paths.
 
-Mirror, Breathe, Monolith generators all follow this shape: extra invariant baked into either (a) the placement validator, (b) the line-clear semantics, or (c) the post-sim acceptance test, plus optional pre-fill (blockers, seed cells, blocks).
+## Reducer dispatch (gameReducer.ts)
 
-## Reducer dispatch pattern
+The reducer is a single `switch (action.type)` with one branch per action. Mode-specific behavior lives **inside each case** as early `if (state.mode === 'X') { ... return ... }` branches. `PLACE_PIECE` is the canonical example — Pipeline guard first (gate on `pipelinePhase`), then early returns for Scar / Monolith / Quarantine / Mirror / Breathe / Drop / Gravity / Puzzle, each with its own placement validator, clear semantics, score add, tray refill (or no-refill for finite trays), undo-stack push, and win/lose check, falling through to Classic only at the end. `ROTATE_TRAY_PIECE` does the analogous fan-out for rotation legality. `SET_MODE` and `SET_*_DIFFICULTY` route through per-mode `freshXState(...)` factories that build initial `GameState` from generators + persisted best scores.
 
-`gameReducer.ts` uses one big `switch (action.type)`. For `PLACE_PIECE`, mode-specific logic lives in early-return branches:
-- `if (state.mode === 'pipeline' && trayIndex !== state.pipelinePhase) return state;` — round-robin gate before any work.
-- `if (state.mode === 'scar') { … return … }` — full inline sub-block: place, detect clears, run `clearLinesPreservingScars`, drop scar burst, refill tray, classic-style game-over check, return.
-- `if (state.mode === 'monolith') { … }` — extends the puzzle pattern with `canPlaceMonolith` validator + target check on tray-empty.
-- `if (state.mode === 'mirror') { … }` — uses `placePieceMirrored` + `canPlacePieceMirrored` + target check.
-- Default fallthrough handles classic / chroma / gravity / drop / puzzle / breathe with shared mid-section.
+State is a flat record (no per-mode sub-objects) — fields that are inert outside their owner mode get sentinel defaults (e.g. `pipelinePhase = 0`, `quarantineRegions = null`, `scarRngSeed` unused but always set). This keeps the reducer's return shape stable across modes.
 
-Each new mode adds:
-1. A literal in `GameMode` union + a `*Difficulty` type + a `*_DIFFICULTIES` const + a `ModeSelection` arm in `types.ts`.
-2. A generator file (or no generator if it's score-attack like Scar).
-3. A reducer branch in `PLACE_PIECE` (and possibly `ROTATE_TRAY_PIECE`'s game-over check).
-4. Game-over probe variants in `board.ts` (`hasValidXxxMoves`).
-5. A persistence key + `freshXxxState` factory in the reducer (`localStorage` for difficulty + best score).
-6. UI: experimental-mode chip in `App.tsx` (`experimentalModes` array), difficulty chip block, Intro component, optional placement-validator branch in drag/place handlers.
+Persistence: every mode has its own `blockit-best-<mode>-<difficulty>` localStorage key; puzzle-style modes also persist the active puzzle JSON under `blockit-puzzle-<difficulty>` so refresh restores the same instance. Migration code lives in `migrateLegacyKeys`.
 
-## UI primitives
+## UI primitives that already exist
 
-- 8×8 `Board` component with cell highlight (preview, will-clear, target overlay, blockers, sentinel-color cells).
-- 3-slot `Tray` with rotation gesture; pieces are colored from `COLORS` (or `CHROMA_COLORS`).
-- Drag-from-tray placement with hover preview and snap-to-cell. Drop landing simulator for Drop mode.
-- Score bar + combo + best score.
-- Target overlay (Puzzle / Mirror / Breathe / Monolith): renders the goal pattern as faint filled cells underneath the live board.
-- Status indicators for mode-specific state (Pipeline phase pill, scar count, monolith component count).
-- Drawer-based mode picker; per-mode Intro components on first entry.
-- No new piece shapes, no board-size change, no mid-game color reassignment, no resource bar widget.
+- An 8×8 board grid (`Cell` component) which renders cells colored by their string value. Sentinel colors trigger special CSS classes (`cell--scar`, `cell--will-clear`, wall styling, monolith seed styling).
+- A 3-slot tray showing piece previews; pieces drag from tray onto board.
+- Per-piece rotate button (active subject to mode lock — Pipeline grays out non-active slots).
+- A score bar with score, best, combo readout.
+- A target overlay (puzzle/mirror/breathe/monolith): dim cells that should end empty, outlined cells that must end filled.
+- A mode/difficulty picker row.
+- A status indicator slot (Pipeline uses this for the round-robin "Slot 2 active" label; Quarantine uses it to show region empty-counts vs. targets).
+- Game-over overlay with restart, level-up CTA, share, etc.
+- A legend for sentinel-color cells.
 
-## Why each of the four bad modes is bad (mechanics-speak)
+This is the entire toolkit. New modes will be built strictly on top of these.
 
-### Mirror
+## Why the four shipped modes are bad — one paragraph each, mechanics-speak
 
-> Every placement also writes the same cells reflected across the vertical axis between cols 3 and 4. Pre-fill is asymmetric blockers. Win = match target.
+**Mirror.** Every placement writes the chosen footprint plus its reflection across the vertical axis. The blocker pre-fill is asymmetric, which the design hopes makes "both halves matter," but in practice the placement decision is single: the player picks a left-half origin, and the right half is fully determined by it. There is no second decision being asked. The rule expands what gets written without expanding what the player chooses. This is **Mirror disease** in pure form: the new constraint is a function of an existing decision.
 
-**Mirror disease**: The "what to place on the right half" is a function of "what I placed on the left half" — fully determined, never a real second decision. The only *real* decision the player makes is unchanged from Puzzle: where to put the piece. The mirror writes itself; the player asks the same single question per placement that Puzzle already asks. The asymmetric blockers gate the legal set but don't add a second axis of choice — they just shrink the legal set the player was already searching. **No new question per placement**.
+**Breathe.** Standard puzzle mode plus a win-time check that the final board contains no fully-filled 2×2. The forward-simulation generator already produces target patterns that satisfy this (it filters with `targetSatisfiesBreathe`), so when the player matches the target, the 2×2 rule is trivially satisfied. The extra rule is auto-satisfied by the existing rule. This is **Breathe disease** in pure form: a constraint implied by the others.
 
-### Breathe
+**Pipeline.** Classic with a tray-slot lock — the player can only place from the round-robin "active" slot. Pure subtraction: the player still places pieces and clears lines, but loses the agency to pick which slot to use. Nothing new is added — no resource to manage, no antagonist to defeat, no new placement question — the choice space is just smaller. This is **Pipeline disease**: agency removed without compensating agency added.
 
-> Final board must satisfy: every 2×2 sub-square contains at least one empty cell.
+**Scar.** Score-attack like Classic, but every clear permanently scars a small random number of empty cells. The scars are picked by RNG (with a mild anti-clustering bias on Hard) and the player cannot direct, predict, or exploit them. The pressure they create is real but unlearnable — the rule "do not cause a clear in a position that scars a critical row" cannot be applied because the player does not know which empty cells will be hit. This is **Scar disease** in pure form: random uncontrollable punishment.
 
-**Breathe disease**: For a generated target T that already satisfies the no-2×2 constraint, the player's job is to reach T. If they reach T, the constraint is automatically satisfied (because T satisfies it). Mid-game 2×2s are allowed, so the constraint imposes no choice during play — only at the very end. The win-condition is the conjunction of "match T" and "no solid 2×2," but since T was generated to satisfy the latter, it's redundant. **The new rule is auto-satisfied by the rule it was layered onto**.
+## What this run will do differently
 
-### Pipeline
+Every candidate must:
 
-> Three-slot tray + a round-robin lock: only slot `pipelinePhase` is legal, and `pipelinePhase` cycles 0→1→2→0 after every placement.
+- Pass the 10th-play test (a new question on the 10th attempt that Classic doesn't already ask).
+- Have a named antagonist (something on the board the player must actively defeat).
+- Use a single primitive that is simultaneously wanted and feared (line clears, rotation, color, the tray itself).
+- Make order materially matter (placement decisions coupled across pieces).
+- Make negative space matter (where you don't place is constrained).
+- Be solvable by construction (forward-simulation or equivalent constructive proof).
+- Survive being stress-tested against all four anti-patterns by name.
 
-**Pipeline disease**: Classic asks "given 3 pieces and the current board, which one and where?" Pipeline asks "given the *forced* piece and the current board, where?" One degree of freedom (piece choice) is removed; nothing is added in its place. The player can still *see* the upcoming pieces, but seeing isn't deciding. **Agency removed without comparable agency added** — the mode is strictly Classic minus the piece-pick decision.
-
-### Scar
-
-> Every line clear leaves K cells of the just-cleared region permanently impassable, picked at random by the engine. K = 1/2/3 by difficulty.
-
-**Scar disease**: The scar destination is RNG. The player can decide *whether* to clear (because clearing damages terrain), but they cannot *direct* where damage lands once they commit. Across 10 plays the player learns "fewer clears" — but cannot learn a placement *rule* that lets them choose where the next scar lands relative to their plan. The penalty is uncontrollable. **Random uncontrollable punishment** that the player can only minimize globally, not steer locally.
-
-## Implication for new candidates
-
-A good new mode must produce a **second axis of decision** at placement time that genuinely couples to the existing one (placement geometry). The dual-purpose mechanic is the fastest test: does some primitive (clears / rotation / color / tray order / a finite resource) flip its sign — wanted in some contexts, feared in others — based on board state the player has to read?
-
-If "the new question per placement" reduces to "where does this piece fit best?" you have not added a mode, you have added a skin.
+If a candidate description starts to drift into experiential phrasing ("makes the player think about…", "adds tension…"), it gets rewritten in mechanics-speak (state transitions, what changes on the board, what the player is choosing between) before being added to the registry.
