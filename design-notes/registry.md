@@ -33,7 +33,31 @@ underestimated to 4); "Echo" → Echo-I..Echo-IV; "Vault" → Vault-I..II;
 
 Raw per-lens files have been deleted — evaluators must not see lineage.
 
-## Stage 2 — first-pass structural filter (in progress)
+## Stage 2 — first-pass structural filter (complete)
 
-Survivors: TBD
+- First-pass evaluators (4 parallel, slices A/B/C/D): kept 34 of 64.
+- Second-pass cross-mix tightening (1 evaluator on full mixed pool, with explicit cluster-cap diversity rule): kept 11 of 34.
+- See `stage2-eval-{A,B,C,D}.md` (per-slice verdicts) and `stage2-final.md` (final survivors with per-candidate rationale + cluster-cap accounting).
+
+**11 survivors entering Stage 3:**
+
+| ID | Name | Cluster |
+| --- | --- | --- |
+| C04 (was kept first-pass; cut here) | Tide-I | topology — eaten by Carousel |
+| C11 | Erasures | resource |
+| C13 | Echo-III | deduction |
+| C14 | Decay | topology (temporal) |
+| C30 | Hollow | negative-space (must-empty mask) |
+| C39 | Heading | coupling (orientation → clear half) |
+| C43 | Carve | inversion |
+| C45 | Vermin | spreading-antagonist (pursuit) |
+| C47 | Fuse | spreading-antagonist (timer) |
+| C49 | Census | negative-space (component histogram) |
+| C58 | Carousel | topology (spatial drift) |
+| C62 | Tether | coupling (origin → origin) |
+
+(Tide-I was kept first-pass; second-pass tighten dropped it because Carousel covers the same topology question more cleanly. Final list: 11.)
+
+## Stage 3 — reducer simulation traces (in progress)
+
 
