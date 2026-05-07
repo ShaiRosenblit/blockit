@@ -137,6 +137,27 @@ Browser-based playtest via Playwright across all 5 modes. See
 | Heading  | FIX    | per-slot heading-glyph badge missing → fixed in `620df41` |
 | Tether   | VERIFY | tether-window outline confirmed by code-review path inspection (Playwright drag flakiness blocked visual verification but the code path is sound) |
 
+## Stage 8 — comparative evaluation (complete)
+
+1 evaluator, all 5 modes voted MERGE. Best thread = **Fuse**. See
+`stage8-evaluation.md` for the per-mode structured analysis and the
+structural ranking. Ranking 1=Fuse, 2=Decay, 3=Tether, 4=Heading,
+5=Erasures.
+
+## Stage 9 — final polish + merge (complete)
+
+- Build + lint clean throughout (3 lint errors confirmed pre-existing).
+- Exploration branch `mode-explore-20260507-1410` pushed to `origin`.
+- Merge commit on main: `2f84176` (`--no-ff` to preserve per-stage history).
+- `main` pushed to remote.
+- 5 modes shipped, no reverts.
+
+## Stage 10 — final report (complete)
+
+See `design-notes/final-report.md` (full candidate funnel, anti-pattern
+proofs per survivor, comparison against Puzzle, suggested future
+exploration directions, and merge metadata).
+
 All 5 modes load without console errors, accept difficulty switching,
 render their distinctive UI element, and survive at least one placement
 attempt. No structural flaws revealed. No mode dropped at this stage.

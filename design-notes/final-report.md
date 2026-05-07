@@ -257,6 +257,44 @@ NEW agency does this add?" caught all of them in Stage 2.
    ripe, some still ripening) could create a different planning
    shape worth exploring.
 
+## Branch and merge metadata
+
+- **Exploration branch**: `mode-explore-20260507-1410` (pushed to `origin`)
+- **Merge commit on main**: `2f84176` (Merge mode-explore-20260507-1410: ship Heading, Decay, Fuse, Erasures, Tether)
+- **Pre-merge main HEAD**: `1e14682` (Quarantine: fix invisible target badges)
+
+### Per-mode commits (chronological, on the exploration branch)
+
+| Stage | Commit | Subject |
+| --- | --- | --- |
+| 0 | `f736308` | Stage 0: branch setup, prior-art summary, empty registry/status |
+| 1 | `4c75d54` | Stage 1: 64 mode candidates pooled (anonymous, shuffled) |
+| 2 | `c3c671e` | Stage 2: filter 64 -> 11 across 8 clusters |
+| 3 | `4611303` | Stage 3: simulation traces, 11 -> 5 survivors |
+| 4–5 | `a914ca1` | Stage 4-5: feasibility verdicts and 5-candidate slate locked |
+| 6 | `e949b0e` | implement Heading mode (orientation -> clear-half coupling) |
+| 6 | `14cb8b4` | implement Decay mode (cell age gates line clears) |
+| 6 | `0523482` | implement Fuse mode (countdown antagonist coupled to line clears) |
+| 6 | `397c4c8` | implement Erasures mode (finite erase tokens delete player components) |
+| 6 | `97635ea` | implement Tether mode (paired-slot Chebyshev-2 origin coupling) |
+| 6 | `d3da1f7` | design-notes: Stage 6 complete (5 modes shipped) |
+| 7 | `620df41` | Stage 7 fix: render Heading per-slot glyph; verify Tether window |
+| 7 | `81de794` | design-notes: Stage 7 complete (1 UI fix, all 5 modes stable) |
+| 7 | `c6544fb` | gitignore: exclude .playwright-mcp/ snapshots |
+| 8–10 | `9ea344a` | Stage 8-10: comparative eval (5/5 MERGE), final report drafted |
+
+### No reverts
+
+No mode was cut after Stage 8. No revert commits exist in this run's
+history. All 5 candidates that entered Stage 6 implementation also
+appear on remote `main` after the merge.
+
+### Run is complete
+
+Per the spec: "the run is not complete unless at least 3 fully implemented
+modes survive final evaluation and are merged and pushed to remote main."
+**5 modes survive** and are on remote main as of merge commit `2f84176`.
+
 5. **Negative space, retried.** None of the negative-space candidates
    shipped. A future run could push harder on the "empty cells form
    a target shape" idea with a generator that proves matchability via

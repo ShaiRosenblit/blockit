@@ -14,8 +14,8 @@ Branch: mode-explore-20260507-1410
 - [x] Stage 6 — Full implementation (all 5 modes shipped, build clean)
 - [x] Stage 7 — Internal playtesting + debugging (1 fix shipped, all 5 stable)
 - [x] Stage 8 — Comparative evaluation (5 → 5 MERGE; best thread = Fuse)
-- [ ] Stage 9 — Final polish and merge decision
-- [x] Stage 10 — Final report (final-report.md drafted; merge metadata pending)
+- [x] Stage 9 — Final polish and merge decision (merged 2f84176, pushed to remote main)
+- [x] Stage 10 — Final report (complete with merge metadata)
 
 ## Resource budget
 
