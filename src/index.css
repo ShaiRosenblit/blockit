@@ -1406,6 +1406,48 @@ body {
 }
 
 /*
+ * Fuse mode visuals
+ *
+ * Fuse cells use a dedicated `cell--fuse` class on top of the normal
+ * `cell--filled` so the player parses them as "live countdowns" rather
+ * than placed pieces. The base is a deep clay-red (the FUSE_COLOR
+ * sentinel) with a subtle radial highlight to suggest a glowing core,
+ * plus a heavy inset shadow so the cell reads as raised even with
+ * Quarantine-style walls also on the board. The countdown number is
+ * rendered as a child `.cell__fuse-count` element — a centered numeric
+ * badge sized in container-query units so it tracks the live cell
+ * pitch the same way the Quarantine target badges do.
+ */
+.cell--fuse {
+  border: 1px solid rgba(255, 200, 170, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.32),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.32),
+    inset 0 2px 4px rgba(255, 180, 140, 0.18);
+  background-image:
+    radial-gradient(circle at 50% 35%, rgba(255, 200, 160, 0.25), transparent 60%),
+    radial-gradient(circle at 70% 80%, rgba(0, 0, 0, 0.28), transparent 65%);
+}
+
+.cell__fuse-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 8 cells across, so 1 cell ≈ 12cqi; 7cqi keeps the digit centred and
+     well within the cell at every viewport size without piping a
+     JS-derived --cell-size. */
+  font-size: 7cqi;
+  font-weight: 700;
+  color: rgba(255, 240, 230, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/*
  * Quarantine target badge — a small rounded chip rendered as a grid
  * child of `.board`, occupying the same grid cell as its region's
  * anchor cell. Sized in container-query inline units (`cqi`) so the

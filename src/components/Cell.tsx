@@ -1,5 +1,6 @@
 import { SCAR_COLOR } from '../game/scar';
 import { WALL_COLOR } from '../game/board';
+import { FUSE_COLOR } from '../game/fuse';
 
 type CellProps = {
   color: string | null;
@@ -36,6 +37,14 @@ type CellProps = {
    * outside Decay or for freshly-placed cells (age 0).
    */
   decayAge?: number;
+  /**
+   * Fuse-mode countdown for this cell. Set on cells whose colour is
+   * `FUSE_COLOR` — the integer countdown remaining before the fuse
+   * expires. Rendered as a small numeric badge overlaying the cell so
+   * the player can read each fuse's deadline at a glance. Undefined
+   * outside Fuse mode and on non-fuse cells.
+   */
+  fuseCountdown?: number;
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -59,6 +68,7 @@ export function Cell({
   fallRows,
   fallCellSize,
   decayAge,
+  fuseCountdown,
 }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
@@ -83,6 +93,11 @@ export function Cell({
     // never the target of a piece, so they need a visually distinct
     // affordance from ordinary fills.
     if (color === WALL_COLOR) className += ' cell--wall';
+    // Fuse mode's countdown sentinel: tag with `cell--fuse` so the CSS
+    // can render the clay-red base + a small numeric badge with the
+    // countdown rendered on the cell itself. The badge content is
+    // emitted as a child element below; the class enables the styling.
+    if (color === FUSE_COLOR) className += ' cell--fuse';
     style = { backgroundColor: color };
   }
 
@@ -114,6 +129,19 @@ export function Cell({
       ...style,
       ['--cell-fall-offset' as string]: `${offsetPx}px`,
     } as React.CSSProperties;
+  }
+
+  // Fuse mode: when this cell is a live fuse AND we have a countdown to
+  // show, render the integer as a child span that the CSS positions as
+  // a small badge over the cell. We branch the JSX so non-fuse cells
+  // stay as a self-closing div (every other mode hits this path) and
+  // never carry a stray empty child node.
+  if (color === FUSE_COLOR && fuseCountdown !== undefined) {
+    return (
+      <div className={className} style={style} data-coord={coord} data-fuse-count={fuseCountdown}>
+        <span className="cell__fuse-count" aria-hidden>{fuseCountdown}</span>
+      </div>
+    );
   }
 
   return <div className={className} style={style} data-coord={coord} />;

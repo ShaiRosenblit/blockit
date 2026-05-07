@@ -23,6 +23,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
+  FUSE_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
@@ -1107,8 +1108,10 @@ export default function App() {
     | 'monolith'
     | 'quarantine'
     | 'heading'
-    | 'decay';
+    | 'decay'
+    | 'fuse';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'fuse', label: 'Fuse' },
     { id: 'decay', label: 'Decay' },
     { id: 'heading', label: 'Heading' },
     { id: 'quarantine', label: 'Quarantine' },
@@ -1208,6 +1211,10 @@ export default function App() {
     if (state.mode === 'decay') {
       const d = state.decayDifficulty;
       return `Decay · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'fuse') {
+      const d = state.fuseDifficulty;
+      return `Fuse · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1502,6 +1509,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'fuse' &&
+                  FUSE_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.fuseDifficulty}
+                      className={`difficulty-btn${d === state.fuseDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.fuseDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_FUSE_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1695,6 +1720,19 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'fuse' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new fuse puzzle"
+              title="Generate a new fuse puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_FUSE_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1759,7 +1797,7 @@ export default function App() {
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading' || state.mode === 'fuse') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1807,6 +1845,8 @@ export default function App() {
                               ? `Heading · ${headingHintForTray(state.tray)} · clears erase only that half`
                             : state.mode === 'decay'
                               ? 'Decay · cells must age before their line can clear'
+                            : state.mode === 'fuse'
+                              ? 'Fuse · clear each fuse\'s line before its countdown hits 0'
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'

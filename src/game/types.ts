@@ -42,7 +42,8 @@ export type GameMode =
   | 'monolith'
   | 'quarantine'
   | 'heading'
-  | 'decay';
+  | 'decay'
+  | 'fuse';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -127,6 +128,22 @@ export type Heading = 'up' | 'right' | 'down' | 'left' | 'full';
 export type DecayDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
+ * Fuse mode difficulty. Three rungs control the count `K` of fuse cells
+ * pre-seeded onto the starting board. Each fuse carries an integer
+ * countdown; every placement decrements every fuse, and any fuse that
+ * reaches 0 explodes at the start of the next turn — its 4-neighbour
+ * empty cells (and the fuse cell itself) become permanent
+ * indestructible WALL cells. Win on tray-empty + target-match + zero
+ * fuses remaining (every fuse must have been swept away by a
+ * row/column clear, since walls torpedo the win check).
+ *
+ * Kept as its own literal union (not aliased to other three-rung modes)
+ * so future Fuse-only tuning stays a typed breaking change and
+ * persistence keys stay independent per-mode.
+ */
+export type FuseDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
  * weights) because the twist is in what happens after a line clears, not in
  * what pieces you get. Kept as its own alias so best-score storage keys stay
@@ -191,7 +208,8 @@ export type ModeSelection =
   | { mode: 'monolith'; difficulty: MonolithDifficulty }
   | { mode: 'quarantine'; difficulty: QuarantineDifficulty }
   | { mode: 'heading'; difficulty: HeadingDifficulty }
-  | { mode: 'decay'; difficulty: DecayDifficulty };
+  | { mode: 'decay'; difficulty: DecayDifficulty }
+  | { mode: 'fuse'; difficulty: FuseDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -258,6 +276,12 @@ export const HEADING_DIFFICULTIES: readonly HeadingDifficulty[] = [
 ] as const;
 
 export const DECAY_DIFFICULTIES: readonly DecayDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const FUSE_DIFFICULTIES: readonly FuseDifficulty[] = [
   'easy',
   'normal',
   'hard',

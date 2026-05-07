@@ -7,6 +7,7 @@ import type {
   Coord,
   DecayDifficulty,
   DropDifficulty,
+  FuseDifficulty,
   GameMode,
   GravityDifficulty,
   HeadingDifficulty,
@@ -27,6 +28,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
+  FUSE_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
@@ -71,6 +73,14 @@ import { generateBreathePuzzle } from './breathePuzzleGenerator';
 import { generateMonolithPuzzle } from './monolithGenerator';
 import { generateQuarantinePuzzle } from './quarantineGenerator';
 import { generateHeadingPuzzle, headingForPiece } from './headingPuzzleGenerator';
+import { generateFusePuzzle } from './fusePuzzleGenerator';
+import {
+  decrementFuses,
+  dropClearedFuses,
+  expireFuses,
+  noFusesRemaining,
+  type FuseCell,
+} from './fuse';
 import {
   advanceAges,
   applyDecayClears,
@@ -146,6 +156,25 @@ export type GameState = {
   headingDifficulty: HeadingDifficulty;
   /** Remembered Decay-mode difficulty. */
   decayDifficulty: DecayDifficulty;
+  /** Remembered Fuse-mode difficulty. */
+  fuseDifficulty: FuseDifficulty;
+  /**
+   * Fuse-mode active fuse list. Each entry is `{row, col, countdown}`
+   * — the cell painted with the `FUSE_COLOR` sentinel and the integer
+   * countdown remaining before expiry. Empty array outside Fuse mode
+   * (and when every fuse has been cleared / expired). Held as an
+   * array (not a Map) so the reducer's structural-clone-via-spread
+   * persistence path keeps working without bespoke serialisation.
+   */
+  fuseCells: FuseCell[];
+  /**
+   * Snapshot of the Fuse puzzle's starting fuse list for RESTART.
+   * Like `quarantineInitialRegions`, but for the Fuse `fuseCells`
+   * array so RESTART returns to the exact starting fuse layout
+   * (countdowns reset, walls retracted via the board snapshot).
+   * Empty array outside Fuse mode.
+   */
+  fuseInitialCells: FuseCell[];
   /**
    * Decay-mode per-cell age grid. `boardAges[r][c]` is the integer count
    * of placements that have happened since the cell at (r, c) was placed
@@ -255,6 +284,16 @@ export type PuzzleUndoSnapshot = {
   tray: TraySlot[];
   score: number;
   combo: number;
+  /**
+   * Fuse-mode fuse list snapshot. Stored alongside the board so undoing
+   * a Fuse placement also reverts every fuse's countdown AND any walls
+   * that the placement may have spawned via expiry — the board snapshot
+   * already captures the wall retraction (walls created post-placement
+   * weren't in the pre-placement board), and this field captures the
+   * fuse countdown rollback. Empty array outside Fuse mode; the field
+   * is always present so the snapshot shape stays uniform.
+   */
+  fuseCells: FuseCell[];
 };
 
 /**
@@ -286,6 +325,7 @@ export type GameAction =
   | { type: 'SET_QUARANTINE_DIFFICULTY'; difficulty: QuarantineDifficulty }
   | { type: 'SET_HEADING_DIFFICULTY'; difficulty: HeadingDifficulty }
   | { type: 'SET_DECAY_DIFFICULTY'; difficulty: DecayDifficulty }
+  | { type: 'SET_FUSE_DIFFICULTY'; difficulty: FuseDifficulty }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
@@ -295,6 +335,8 @@ export type GameAction =
   | { type: 'NEW_QUARANTINE_PUZZLE' }
   /** Discard the active heading puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_HEADING_PUZZLE' }
+  /** Discard the active fuse puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_FUSE_PUZZLE' }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -336,6 +378,8 @@ const QUARANTINE_DIFFICULTY_KEY = 'blockit-quarantine-difficulty';
 const HEADING_DIFFICULTY_KEY = 'blockit-heading-difficulty';
 const HEADING_PUZZLE_KEY_PREFIX = 'blockit-puzzle-heading-';
 const DECAY_DIFFICULTY_KEY = 'blockit-decay-difficulty';
+const FUSE_DIFFICULTY_KEY = 'blockit-fuse-difficulty';
+const FUSE_PUZZLE_KEY_PREFIX = 'blockit-puzzle-fuse-';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -364,6 +408,7 @@ function bestScoreKey(
     | QuarantineDifficulty
     | HeadingDifficulty
     | DecayDifficulty
+    | FuseDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -388,6 +433,7 @@ function loadBestScore(
     | QuarantineDifficulty
     | HeadingDifficulty
     | DecayDifficulty
+    | FuseDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -411,7 +457,8 @@ function saveBestScore(
     | MonolithDifficulty
     | QuarantineDifficulty
     | HeadingDifficulty
-    | DecayDifficulty,
+    | DecayDifficulty
+    | FuseDifficulty,
   score: number
 ) {
   try {
@@ -935,6 +982,100 @@ function saveHeadingPuzzle(p: StoredHeadingPuzzle) {
 }
 
 /**
+ * Read the player's last-selected Fuse difficulty from localStorage,
+ * defaulting to `'easy'` if the key is missing or invalid. Mirrors every
+ * other `load*Difficulty` helper — silent failure on storage errors so
+ * the game still boots in private-mode browsers.
+ */
+function loadFuseDifficulty(): FuseDifficulty {
+  try {
+    const stored = localStorage.getItem(FUSE_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+/**
+ * Persist the chosen Fuse difficulty so subsequent app loads resume on
+ * the same rung. Silent failure on storage errors (private-mode etc.).
+ */
+function saveFuseDifficulty(difficulty: FuseDifficulty) {
+  try {
+    localStorage.setItem(FUSE_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Shape of a stored Fuse puzzle. Mirrors the Heading skeleton — starting
+ * board (carries `FUSE_COLOR` sentinels), tray (random rotation +
+ * palette), target pattern, and the parallel fuse-cell list with each
+ * fuse's countdown. Persisted so a refresh restores the same challenge
+ * and Restart returns to this exact start.
+ */
+type StoredFusePuzzle = {
+  difficulty: FuseDifficulty;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+  fuseCells: FuseCell[];
+};
+
+function fusePuzzleStorageKey(difficulty: FuseDifficulty): string {
+  return `${FUSE_PUZZLE_KEY_PREFIX}${difficulty}`;
+}
+
+function isValidStoredFusePuzzle(
+  p: unknown,
+  expected: FuseDifficulty
+): p is StoredFusePuzzle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredFusePuzzle>;
+  if (r.difficulty !== expected) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.fuseCells)) return false;
+  for (const f of r.fuseCells) {
+    if (!f || typeof f !== 'object') return false;
+    const fc = f as Partial<FuseCell>;
+    if (
+      typeof fc.row !== 'number' ||
+      typeof fc.col !== 'number' ||
+      typeof fc.countdown !== 'number'
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function loadFusePuzzle(expected: FuseDifficulty): StoredFusePuzzle | null {
+  try {
+    const raw = localStorage.getItem(fusePuzzleStorageKey(expected));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredFusePuzzle(parsed, expected)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveFusePuzzle(p: StoredFusePuzzle) {
+  try {
+    localStorage.setItem(fusePuzzleStorageKey(p.difficulty), JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
+/**
  * Fresh seed for a Scar run's RNG. XOR with a random 32-bit chunk on top
  * of `Date.now()` so two Scar runs started in the same millisecond still
  * diverge — important on auto-restart loops in tests / dev.
@@ -998,6 +1139,9 @@ function cloneTarget(t: TargetPattern): TargetPattern {
 function cloneTray(t: PieceShape[]): PieceShape[] {
   return t.map((p) => ({ ...p, cells: p.cells.map((c) => ({ ...c })) }));
 }
+function cloneFuseCells(fuses: readonly FuseCell[]): FuseCell[] {
+  return fuses.map((f) => ({ row: f.row, col: f.col, countdown: f.countdown }));
+}
 
 /**
  * Build a fresh state for the given puzzle difficulty, reusing the passed-in
@@ -1021,6 +1165,7 @@ function freshPuzzleState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -1058,6 +1203,7 @@ function freshPuzzleState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1071,6 +1217,8 @@ function freshPuzzleState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1095,6 +1243,7 @@ function freshTutorialState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -1122,6 +1271,7 @@ function freshTutorialState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1135,6 +1285,8 @@ function freshTutorialState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1159,6 +1311,7 @@ function freshPuzzleStateFromShared(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1186,6 +1339,7 @@ function freshPuzzleStateFromShared(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1199,6 +1353,8 @@ function freshPuzzleStateFromShared(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1217,6 +1373,7 @@ function freshClassicState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1245,6 +1402,7 @@ function freshClassicState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1258,6 +1416,8 @@ function freshClassicState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1281,6 +1441,7 @@ function freshChromaState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1309,6 +1470,7 @@ function freshChromaState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1322,6 +1484,8 @@ function freshChromaState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1346,6 +1510,7 @@ function freshGravityState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1374,6 +1539,7 @@ function freshGravityState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1387,6 +1553,8 @@ function freshGravityState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1411,6 +1579,7 @@ function freshDropState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1439,6 +1608,7 @@ function freshDropState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1452,6 +1622,8 @@ function freshDropState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1482,6 +1654,7 @@ function freshMirrorState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1510,6 +1683,7 @@ function freshMirrorState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1523,6 +1697,8 @@ function freshMirrorState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1553,6 +1729,7 @@ function freshBreatheState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1581,6 +1758,7 @@ function freshBreatheState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1594,6 +1772,8 @@ function freshBreatheState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1623,6 +1803,7 @@ function freshPipelineState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1651,6 +1832,7 @@ function freshPipelineState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1664,6 +1846,8 @@ function freshPipelineState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1690,6 +1874,7 @@ function freshScarState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1718,6 +1903,7 @@ function freshScarState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1731,6 +1917,8 @@ function freshScarState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1761,6 +1949,7 @@ function freshMonolithState(
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1789,6 +1978,7 @@ function freshMonolithState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1802,6 +1992,8 @@ function freshMonolithState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1829,6 +2021,7 @@ function freshQuarantineState(
   monolithDifficulty: MonolithDifficulty,
   headingDifficulty: HeadingDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1857,6 +2050,7 @@ function freshQuarantineState(
     quarantineDifficulty: difficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: regions.map((r) => r.map((c) => ({ ...c }))),
     quarantineTargets: [...targets],
     quarantineInitialRegions: regions.map((r) => r.map((c) => ({ ...c }))),
@@ -1870,6 +2064,8 @@ function freshQuarantineState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1903,6 +2099,7 @@ function freshHeadingState(
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
   decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -1938,6 +2135,7 @@ function freshHeadingState(
     quarantineDifficulty,
     headingDifficulty: difficulty,
     decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1951,6 +2149,8 @@ function freshHeadingState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
     puzzleUndoStack: [],
   };
 }
@@ -1984,6 +2184,7 @@ function freshDecayState(
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
   headingDifficulty: HeadingDifficulty,
+  fuseDifficulty: FuseDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -2016,6 +2217,7 @@ function freshDecayState(
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty: difficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -2029,6 +2231,95 @@ function freshDecayState(
     puzzleEverSolved,
     lastCascade: null,
     boardAges: ages,
+    fuseCells: [],
+    fuseInitialCells: [],
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Fuse state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Fuse is a puzzle-style mode
+ * with a target pattern and a finite tray. The starting board carries
+ * `K = fuseCount(difficulty)` fuse-coloured cells, each with a positive
+ * countdown stored in `state.fuseCells`. The PLACE_PIECE branch keys
+ * off `mode === 'fuse'` to apply the canonical
+ * place → clear → drop-cleared-fuses → decrement → expire → win-check
+ * pipeline.
+ *
+ * Like Heading puzzles, Fuse puzzles ARE persisted to localStorage —
+ * the per-fuse countdown state means a refresh-and-resume needs the
+ * original tray, target, and fuse list to keep the same instance, and
+ * the `forceNew` knob lets NEW_FUSE_PUZZLE / SET_FUSE_DIFFICULTY blow
+ * the cache when the player explicitly asks for a fresh challenge.
+ */
+function freshFuseState(
+  difficulty: FuseDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
+  options: { forceNew?: boolean } = {}
+): GameState {
+  let stored = options.forceNew ? null : loadFusePuzzle(difficulty);
+  if (!stored) {
+    const { board, tray, target, fuseCells } = generateFusePuzzle({ difficulty });
+    stored = { difficulty, board, tray, target, fuseCells };
+    saveFusePuzzle(stored);
+  }
+
+  return {
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'fuse',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty: difficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(stored.target),
+    puzzleInitialBoard: cloneBoard(stored.board),
+    puzzleInitialTray: cloneTray(stored.tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: cloneFuseCells(stored.fuseCells),
+    fuseInitialCells: cloneFuseCells(stored.fuseCells),
     puzzleUndoStack: [],
   };
 }
@@ -2048,6 +2339,7 @@ export function createInitialState(): GameState {
   const quarantineDifficulty = loadQuarantineDifficulty();
   const headingDifficulty = loadHeadingDifficulty();
   const decayDifficulty = loadDecayDifficulty();
+  const fuseDifficulty = loadFuseDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -2078,6 +2370,7 @@ export function createInitialState(): GameState {
         quarantineDifficulty,
         headingDifficulty,
         decayDifficulty,
+        fuseDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -2105,6 +2398,7 @@ export function createInitialState(): GameState {
         quarantineDifficulty,
         headingDifficulty,
         decayDifficulty,
+        fuseDifficulty,
         puzzleEverSolved
       );
     }
@@ -2122,6 +2416,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2143,6 +2438,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2164,6 +2460,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2185,6 +2482,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2206,6 +2504,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2227,6 +2526,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('breathe', breatheDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2248,6 +2548,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('pipeline', pipelineDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2269,6 +2570,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('scar', scarDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2290,6 +2592,7 @@ export function createInitialState(): GameState {
       quarantineDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('monolith', monolithDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2311,6 +2614,7 @@ export function createInitialState(): GameState {
       monolithDifficulty,
       headingDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('quarantine', quarantineDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2332,6 +2636,7 @@ export function createInitialState(): GameState {
       monolithDifficulty,
       quarantineDifficulty,
       decayDifficulty,
+      fuseDifficulty,
       loadBestScore('heading', headingDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -2353,7 +2658,30 @@ export function createInitialState(): GameState {
       monolithDifficulty,
       quarantineDifficulty,
       headingDifficulty,
+      fuseDifficulty,
       loadBestScore('decay', decayDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'fuse') {
+    return freshFuseState(
+      fuseDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      loadBestScore('fuse', fuseDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -2373,6 +2701,7 @@ export function createInitialState(): GameState {
     quarantineDifficulty,
     headingDifficulty,
     decayDifficulty,
+    fuseDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -2421,7 +2750,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mode === 'breathe' ||
           state.mode === 'monolith' ||
           state.mode === 'quarantine' ||
-          state.mode === 'heading') &&
+          state.mode === 'heading' ||
+          state.mode === 'fuse') &&
         isGameOver
           ? 'failed'
           : state.puzzleResult;
@@ -2548,7 +2878,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const monolithUndoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
         ];
 
         let mboard = placePiece(state.board, piece, action.origin);
@@ -2623,7 +2953,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const qUndoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
         ];
 
         let qboard = placePiece(state.board, piece, action.origin);
@@ -2702,7 +3032,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const hUndoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
         ];
 
         let hboard = placePiece(state.board, piece, action.origin);
@@ -2849,6 +3179,133 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
+      // Fuse mode: structurally a puzzle (target pattern, finite tray,
+      // undo-able placements). The starting board carries K fuse cells
+      // painted with the FUSE_COLOR sentinel and tracked separately in
+      // `state.fuseCells` with each fuse's countdown. Per-placement
+      // pipeline (canonical order — see `fuse.ts` doc):
+      //   1. Validate placement (`canPlacePiece`).
+      //   2. Place the piece on the board.
+      //   3. Detect line clears (standard rules — fuses + walls count
+      //      as filled).
+      //   4. Apply clears via `clearLinesPreservingWalls` (walls
+      //      survive; fuses get destroyed by the clear).
+      //   5. Filter the fuse list down to fuses still present on the
+      //      post-clear board, then decrement every survivor by 1.
+      //   6. Expire any fuses whose countdown ≤ 0: the fuse cell and
+      //      each of its 4-neighbour empty cells become permanent
+      //      indestructible WALL_COLOR cells.
+      //   7. Win check on tray-empty: target match AND no fuses left.
+      // Standard puzzle game-over check; supports undo.
+      if (state.mode === 'fuse') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const fUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
+        ];
+
+        // Step 2 — place the piece.
+        let fboard = placePiece(state.board, piece, action.origin);
+        let fscore = state.score + calculatePlacementScore(piece);
+        let fcombo = state.combo;
+
+        // Step 3 — detect line clears. Fuse cells are non-null
+        // (FUSE_COLOR), so they count as filled by `detectCompletedLines`
+        // exactly the same way wall cells do. A row containing fuses
+        // can therefore complete and clear; the fuse goes with it.
+        const { rows: frows, cols: fcols } = detectCompletedLines(fboard);
+        const flinesCleared = frows.length + fcols.length;
+        if (flinesCleared > 0) {
+          // Step 4 — apply clears, preserving walls. (No walls exist
+          // yet on the very first placement of a fresh Fuse round —
+          // they only get created by fuse expiry — but the helper is
+          // forward-compatible with mid-round walls created by earlier
+          // expiries.)
+          fboard = clearLinesPreservingWalls(fboard, frows, fcols);
+          fscore += calculateClearScore(flinesCleared, fcombo);
+          fcombo += 1;
+        } else {
+          fcombo = 0;
+        }
+
+        // Step 5a — drop fuses whose cell got swept by a clear. Their
+        // countdowns must NOT be decremented in the next step (those
+        // fuses no longer exist).
+        let ffuses = dropClearedFuses(state.fuseCells, fboard);
+        // Step 5b — decrement every surviving fuse by exactly 1.
+        ffuses = decrementFuses(ffuses);
+
+        // Step 6 — expire any fuse whose countdown is now ≤ 0. Each
+        // expiring fuse turns its own cell + every 4-neighbour
+        // originally-empty cell into a permanent WALL_COLOR. The
+        // expiry helper takes a snapshot of the empties on the input
+        // board so iteration order can't bias the result.
+        const expiry = expireFuses(fboard, ffuses);
+        fboard = expiry.board;
+        ffuses = expiry.fuses;
+
+        const fNewTray = [...state.tray];
+        fNewTray[action.trayIndex] = null;
+        const fAllPlaced = fNewTray.every((s) => s === null);
+        const fTarget = state.puzzleTarget;
+        const fDifficulty = state.fuseDifficulty;
+
+        if (fAllPlaced) {
+          // Step 7 — win check. Tray empty + board matches target +
+          // every fuse cleared. Fuses still alive at tray-empty are an
+          // automatic loss (they'll never be cleared now), and so is
+          // any wall left over from an earlier expiry that bumps the
+          // board off the target pattern.
+          const solved =
+            fTarget !== null &&
+            boardMatchesTarget(fboard, fTarget) &&
+            noFusesRemaining(ffuses);
+          if (solved) fscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(fscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('fuse', fDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: fboard,
+            tray: fNewTray,
+            score: fscore,
+            bestScore,
+            combo: solved ? fcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            fuseCells: ffuses,
+            puzzleUndoStack: fUndoStack,
+          };
+        }
+
+        // Mid-round game-over: no remaining tray piece has any
+        // (rotation, origin) that fits. Fuses still ticking are fine
+        // mid-round — they only fail the win check at tray-empty.
+        const fIsGameOver = !hasValidMoves(fboard, fNewTray);
+        const bestScore = Math.max(fscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('fuse', fDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: fboard,
+          tray: fNewTray,
+          score: fscore,
+          bestScore,
+          combo: fcombo,
+          isGameOver: fIsGameOver,
+          puzzleResult: fIsGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          fuseCells: ffuses,
+          puzzleUndoStack: fUndoStack,
+        };
+      }
+
       // Mirror mode: every placement also writes its horizontal reflection.
       // Validation, board mutation, line clearing, and win/lose detection
       // all use the *_Mirrored variants. We branch out early so the rest of
@@ -2858,7 +3315,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const undoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
         ];
 
         let mboard = placePieceMirrored(state.board, piece, action.origin);
@@ -2935,7 +3392,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mode === 'puzzle' || state.mode === 'breathe'
           ? [
               ...state.puzzleUndoStack,
-              { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+              { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells },
             ]
           : [];
 
@@ -3329,6 +3786,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.quarantineDifficulty,
             state.headingDifficulty,
             state.decayDifficulty,
+            state.fuseDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -3346,6 +3804,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3366,6 +3825,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3386,6 +3846,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3406,6 +3867,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3426,6 +3888,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3446,6 +3909,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3466,6 +3930,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('pipeline', state.pipelineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3486,6 +3951,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('scar', state.scarDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3506,6 +3972,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('monolith', state.monolithDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3526,6 +3993,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.monolithDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('quarantine', state.quarantineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3546,6 +4014,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.monolithDifficulty,
           state.quarantineDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('heading', state.headingDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -3566,7 +4035,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.monolithDifficulty,
           state.quarantineDifficulty,
           state.headingDifficulty,
+          state.fuseDifficulty,
           loadBestScore('decay', state.decayDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'fuse') {
+        return freshFuseState(
+          state.fuseDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          loadBestScore('fuse', state.fuseDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -3585,6 +4076,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3609,6 +4101,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3635,6 +4128,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -3657,6 +4151,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3682,6 +4177,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3706,6 +4202,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3730,6 +4227,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3754,6 +4252,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('breathe', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3778,6 +4277,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('pipeline', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3802,6 +4302,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('scar', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3826,6 +4327,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('monolith', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3850,6 +4352,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.monolithDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('quarantine', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3874,6 +4377,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.monolithDifficulty,
         state.quarantineDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('heading', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3899,9 +4403,36 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.monolithDifficulty,
         state.quarantineDifficulty,
         state.headingDifficulty,
+        state.fuseDifficulty,
         loadBestScore('decay', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_FUSE_DIFFICULTY': {
+      if (!FUSE_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveFuseDifficulty(action.difficulty);
+      saveMode('fuse');
+      return freshFuseState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        loadBestScore('fuse', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
       );
     }
 
@@ -3924,6 +4455,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3947,6 +4479,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3969,6 +4502,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3991,6 +4525,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -4013,6 +4548,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.monolithDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -4034,6 +4570,31 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'NEW_FUSE_PUZZLE': {
+      if (state.mode !== 'fuse') return state;
+      return freshFuseState(
+        state.fuseDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
         state.decayDifficulty,
         state.bestScore,
         state.tutorialStep,
@@ -4065,6 +4626,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -4093,6 +4655,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.quarantineDifficulty,
           state.headingDifficulty,
           state.decayDifficulty,
+          state.fuseDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -4114,6 +4677,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -4137,6 +4701,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.quarantineDifficulty,
         state.headingDifficulty,
         state.decayDifficulty,
+        state.fuseDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -4148,7 +4713,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mode !== 'breathe' &&
         state.mode !== 'monolith' &&
         state.mode !== 'quarantine' &&
-        state.mode !== 'heading'
+        state.mode !== 'heading' &&
+        state.mode !== 'fuse'
       )
         return state;
       const stack = state.puzzleUndoStack;
@@ -4157,6 +4723,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // intact so the player can keep undoing back to the puzzle's
       // start. Wipe the terminal flags so a just-failed / just-solved
       // puzzle becomes playable again from the restored position.
+      // Fuse mode also restores the per-fuse countdown list captured
+      // in the snapshot — undoing a Fuse placement reverts countdowns
+      // and any walls the placement spawned (the board snapshot
+      // already captures wall retraction since walls created
+      // post-placement weren't in the pre-placement board).
       const snap = stack[stack.length - 1];
       const remaining = stack.slice(0, -1);
       return {
@@ -4169,6 +4740,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         puzzleResult: null,
         puzzleLevelUp: null,
         lastCascade: null,
+        fuseCells: cloneFuseCells(snap.fuseCells),
         puzzleUndoStack: remaining,
       };
     }
@@ -4185,7 +4757,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mode === 'monolith' ||
           state.mode === 'quarantine' ||
           state.mode === 'heading' ||
-          state.mode === 'decay') &&
+          state.mode === 'decay' ||
+          state.mode === 'fuse') &&
         state.puzzleInitialBoard &&
         state.puzzleInitialTray
       ) {
@@ -4206,6 +4779,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           quarantineTargets: state.quarantineInitialTargets
             ? [...state.quarantineInitialTargets]
             : state.quarantineTargets,
+          // Fuse mode: revert the active fuse list to the puzzle's
+          // starting state so countdowns reset alongside the board
+          // (which has its FUSE_COLOR sentinels back in place via
+          // `puzzleInitialBoard`). For other modes `fuseInitialCells`
+          // is `[]`, so this is a harmless no-op.
+          fuseCells: cloneFuseCells(state.fuseInitialCells),
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };

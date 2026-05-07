@@ -58,7 +58,18 @@ export function Board({
   const isBreathe = state.mode === 'breathe';
   const isQuarantine = state.mode === 'quarantine';
   const isDecay = state.mode === 'decay';
+  const isFuse = state.mode === 'fuse';
   const renderBoard = overrideBoard ?? state.board;
+
+  // Fuse mode: build an O(1) lookup from `r,c` → countdown for each
+  // live fuse so per-cell rendering doesn't have to scan the fuse list.
+  // Empty Map outside Fuse so the lookup is a no-op everywhere else.
+  const fuseCountdownByCell = new Map<string, number>();
+  if (isFuse) {
+    for (const f of state.fuseCells) {
+      fuseCountdownByCell.set(`${f.row},${f.col}`, f.countdown);
+    }
+  }
 
   // Quarantine target badges — one per region, anchored to the first cell
   // of each region. Rendered as grid items so the badge lands in the
@@ -126,6 +137,14 @@ export function Board({
         }
       }
 
+      // Fuse mode: pass the per-cell countdown into the Cell so the
+      // numeric badge can render. Skipped on cells that aren't live
+      // fuses (Map miss → undefined); also skipped while a placement
+      // preview is showing on the cell since the preview overrides
+      // the fuse colour and the badge would dangle.
+      const fuseCountdown =
+        isFuse && preview === null ? fuseCountdownByCell.get(key) : undefined;
+
       cells.push(
         <Cell
           key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
@@ -138,6 +157,7 @@ export function Board({
           fallRows={fallRows ?? undefined}
           fallCellSize={cellSize}
           decayAge={ageClass}
+          fuseCountdown={fuseCountdown}
         />
       );
     }
@@ -149,6 +169,7 @@ export function Board({
   if (isBreathe) boardClass += ' board--puzzle';
   if (isMonolith) boardClass += ' board--puzzle';
   if (isQuarantine) boardClass += ' board--puzzle';
+  if (isFuse) boardClass += ' board--puzzle';
   if (shake) boardClass += ' board--cascade-shake';
 
   return (
