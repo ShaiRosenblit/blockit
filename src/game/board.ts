@@ -519,6 +519,147 @@ export function hasValidMirrorMoves(
 }
 
 /**
+ * Quarantine mode helpers — the board is partitioned by indestructible
+ * WALL cells (sentinel color, never cleared) into 2 or 3 maximal
+ * 4-connected empty regions. Each region carries an exact-empty-cell
+ * target; the win check verifies every region's empty count matches its
+ * target. Walls are recognised by the sentinel color and treated as
+ * filled by `detectCompletedLines` (they participate in row/column
+ * completion accounting) but `clearLinesPreservingWalls` leaves them in
+ * place when a row/column clears, mirroring the Scar pattern.
+ *
+ * Sentinel color: a slate that doesn't appear in `COLORS`, in
+ * `CHROMA_COLORS`, in pre-fill (`'#5c6b7a'`), in `SCAR_COLOR`
+ * (`'#5a3030'`), or in `MONOLITH_SEED_COLOR` (`'#2d7a7a'`).
+ */
+export const WALL_COLOR = '#3a3a4a';
+
+export function isWall(cell: BoardCell): boolean {
+  return cell === WALL_COLOR;
+}
+
+/**
+ * Quarantine line-clear detector. Same shape as `detectCompletedLines`
+ * but filters out rows/columns whose every filled cell is a wall — those
+ * rows would "complete" trivially every turn (walls always count as
+ * filled) and would inflate score / phantom-trigger clears that erase
+ * nothing. A row with at least one non-wall cell can legitimately
+ * complete and should be cleared.
+ */
+export function detectClearableLinesQuarantine(board: BoardGrid): {
+  rows: number[];
+  cols: number[];
+} {
+  const { rows, cols } = detectCompletedLines(board);
+  const clearableRows = rows.filter((r) => {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== WALL_COLOR) return true;
+    }
+    return false;
+  });
+  const clearableCols = cols.filter((c) => {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      if (board[r][c] !== WALL_COLOR) return true;
+    }
+    return false;
+  });
+  return { rows: clearableRows, cols: clearableCols };
+}
+
+/**
+ * Quarantine line-clear helper. Same shape as `clearLines` but leaves
+ * any cell whose color is `WALL_COLOR` in place. Walls are
+ * indestructible — they participate in row/column fullness checks (they
+ * count as filled) but a clear that includes a wall row/col only erases
+ * the player-placed cells, not the wall.
+ */
+export function clearLinesPreservingWalls(
+  board: BoardGrid,
+  rows: number[],
+  cols: number[]
+): BoardGrid {
+  const newBoard = board.map((row) => [...row]);
+  for (const r of rows) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (newBoard[r][c] !== WALL_COLOR) newBoard[r][c] = null;
+    }
+  }
+  for (const c of cols) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      if (newBoard[r][c] !== WALL_COLOR) newBoard[r][c] = null;
+    }
+  }
+  return newBoard;
+}
+
+/**
+ * Quarantine region detector. Returns the 4-connected components of
+ * non-wall cells on the board, regardless of whether each cell is empty
+ * or filled (we want the regions defined by the WALL topology, not by
+ * the current fill pattern). Returns an array where each entry is the
+ * sorted list of `(row, col)` coordinates belonging to that region.
+ *
+ * Used twice: at generation time to label regions, and at every
+ * placement to count empty cells per region for the win check. The
+ * region partition is invariant under play (walls never move and never
+ * clear), so the generator stores the region index of each cell and the
+ * reducer just looks up empty counts directly.
+ */
+export function computeQuarantineRegions(board: BoardGrid): Coord[][] {
+  const visited: boolean[][] = Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => false)
+  );
+  const regions: Coord[][] = [];
+  for (let r0 = 0; r0 < BOARD_SIZE; r0++) {
+    for (let c0 = 0; c0 < BOARD_SIZE; c0++) {
+      if (visited[r0][c0]) continue;
+      if (isWall(board[r0][c0])) continue;
+      const region: Coord[] = [];
+      const stack: Coord[] = [{ row: r0, col: c0 }];
+      visited[r0][c0] = true;
+      while (stack.length > 0) {
+        const { row, col } = stack.pop()!;
+        region.push({ row, col });
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          const nr = row + dr;
+          const nc = col + dc;
+          if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
+          if (visited[nr][nc]) continue;
+          if (isWall(board[nr][nc])) continue;
+          visited[nr][nc] = true;
+          stack.push({ row: nr, col: nc });
+        }
+      }
+      regions.push(region);
+    }
+  }
+  return regions;
+}
+
+/**
+ * Quarantine win predicate. Given the live board, the precomputed
+ * region cell-lists, and per-region empty-count targets, return true iff
+ * every region's current empty-cell count exactly matches its target.
+ *
+ * Region order between `regions` and `targets` must align (same indexing).
+ */
+export function isQuarantineSolved(
+  board: BoardGrid,
+  regions: Coord[][],
+  targets: number[]
+): boolean {
+  if (regions.length !== targets.length) return false;
+  for (let i = 0; i < regions.length; i++) {
+    let empties = 0;
+    for (const { row, col } of regions[i]) {
+      if (board[row][col] === null) empties++;
+    }
+    if (empties !== targets[i]) return false;
+  }
+  return true;
+}
+
+/**
  * Monolith mode helpers — the player extends a single 4-connected
  * "monolith" component made of SEED pre-fill plus their placed pieces.
  * Block pre-fill (regular `'#5c6b7a'` color) sits separately on the
