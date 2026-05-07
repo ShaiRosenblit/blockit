@@ -1,4 +1,5 @@
 import { SCAR_COLOR } from '../game/scar';
+import { WALL_COLOR } from '../game/board';
 
 type CellProps = {
   color: string | null;
@@ -68,6 +69,12 @@ export function Cell({
     // backgroundColor is still set so any environment that ignores the
     // class (e.g. screenshots without the stylesheet) still shows SOMETHING.
     if (color === SCAR_COLOR) className += ' cell--scar';
+    // Quarantine mode's wall sentinel: tag with `cell--wall` so the CSS can
+    // give it a heavy, slate-stone look that reads as "indestructible
+    // partition" rather than "placed piece". Walls are non-clearable and
+    // never the target of a piece, so they need a visually distinct
+    // affordance from ordinary fills.
+    if (color === WALL_COLOR) className += ' cell--wall';
     style = { backgroundColor: color };
   }
 

@@ -1,61 +1,185 @@
-# Stage 4 — Steelman + critique gate
+# Stage 4 — Steelman + cross-family critique + defense
 
-For each survivor: strongest case for, strongest case against, defense. Cope-detector: "the player will get used to it" / "this won't happen often" / "we can tune it" → KILL.
+For each of the 9 Stage-3 survivors:
+1. **Steelman** (1 paragraph): the strongest case FOR the mode.
+2. **Critique** (cross-family): the strongest case AGAINST.
+3. **Defense** (1 paragraph): rebuttal.
 
----
+If the defense reads as cope ("the player will figure it out," "we can tune it," "this is rare in practice") → KILL.
 
-## F1 — L1-4 Grain
-
-**For**: Axis-asymmetric clears reframe the most fundamental Blockit primitive. Per move, the player asks "row vs col" with materially different costs (row-clear normal; col-clear seeds a row of blockers in a *random other row*). Strong dual-purpose: column completion is BOTH wanted (line-clear deletes pre-fill) and feared (seeds blockers).
-
-**Against**: The "seed blockers in a random row" is **Scar-adjacent** — the seeding location is random, so the player can't fully direct the consequence. Even if the *axis* choice is the player's, the *blocker location* is random, which violates the "directable" criterion. Worse: the design might collapse into "always row-clear, never col-clear" once players learn col is strictly worse, killing the dual-purpose.
-
-**Defense**: Could be deterministic (seeded by RNG with seed determined by puzzle), but that's still uncontrollable from the player's POV. Generator could *force* col-clears as the only path to the target (so player MUST sometimes pay the col-clear cost) — but that's railroading. The design needs the col-clear to be desirable in *some* situations, and the random seed makes that situational utility unstable. **KILL** — mild Scar-disease + collapse-to-row-only failure mode. Cope-flavored defense.
-
-## F2 — L1-6 Lifeline
-
-**For**: Refill-on-empty-tray turns the standard "tray refills after batch of 3" mechanic into a dual-purpose primitive: the player WANTS to clear (deletes pre-fill, advances target) AND must time the clear with the empty-tray boundary to get refilled (else stuck). The timing-coupling is novel and creates per-move subgoals: "is this the right move number to trigger?"
-
-**Against**: This is just *Classic batches with a tightened win-condition*. In Classic, tray refills after 3 placements regardless of clears. Lifeline says "tray refills only when an empty-tray placement triggers a clear". Failure mode: if the third placement of the batch doesn't naturally complete a line, player is permanently stuck (no clears = no refill = no progress). Generator must guarantee the third placement always *can* complete a line — but that's a giant constraint and means the puzzle has a unique solution per batch, which is **Pipeline-disease** (subtraction without compensation: the third placement is forced, no decision).
-
-**Defense**: Generator could provide multiple tray orderings or rotations so the third placement has freedom in *which* line to complete. But if there's always exactly one line completable per batch-end, the puzzle is just a sequence of forced moves with reorder-permutations — the decision is "permute the 3 pieces in this batch", which is bounded and shrinks each batch to "find the one valid permutation". 10th-play question converges to "find the perm". **KILL** — Pipeline-disease; cope-flavored defense ("we can tune the freedom").
-
-## F4 — L2-2 Vault
-
-**For**: Vault cells (4-cell square at center, e.g.) require BOTH row AND col clears in a single placement to remove. This rewards an extremely specific maneuver (the simultaneous row+col clear) that rarely arises in Classic. Antagonist is directable (player chooses how to set up the double-clear). Dual-purpose clears: every clear in vault rounds is now meaningful (if it doesn't kill vault, it was wasted). Order coupling is strong (you must build BOTH a near-row and near-col with one missing cell at the intersection).
-
-**Against**: The "simultaneous row+col clear" is rare in normal play. To make it the *primary* mechanic, generator must heavily seed the board so that a vault-killing placement is achievable. Risk: the puzzle becomes "find the one piece+placement that double-clears" — a search problem with 1-2 valid answers. After the first time, the player learns "look for the L-shape pre-fill that needs ONE piece to complete row+col", which is then **Pipeline-flavored** (the puzzle reduces to a recognition pattern). Also, the player might never NEED to double-clear if vault cells aren't the win-condition — vault must be on the *target path* for the rule to bite, which constrains generator heavily.
-
-**Defense**: Multiple vault tiers (tier-1 = 1 vault cell needs single double-clear; tier-2 = 4 vault cells need 2-3 double-clears) gives the player decisions about *which* vault to attack first and how to set up sequences. The rare-maneuver concern is mitigated by puzzle design: every puzzle is *built around* a vault, so the maneuver isn't rare in this mode — it's the central activity. Order coupling is real because you set up double-clears across multiple placements. **KEEP**, but watch generator complexity in Stage 5.
-
-## F8 — L4-5 Perimeter
-
-**For**: Border-must-end-empty + clears-evict-border creates a global negative-space constraint that genuinely couples placement (where to place pre-empt border violations) with clears (clears are the ONLY eviction tool). Dual-purpose clears: line completion deletes pre-fill AND evicts border. Order coupling: filling the border to set up an evicting clear, then re-clearing.
-
-**Against**: Border = 28 cells, interior = 36 cells. If pre-fill is mostly interior, the player can usually solve by *not placing on border* and *clearing once or twice* to delete pre-fill — degenerate strategy. If pre-fill is on border, then the puzzle is "complete the row/col through the pre-fill cell to evict it", which is **Puzzle-mode-with-relabelled-cells** — the new constraint reduces to a target-cell-routing problem the base mode already has. The **structural aha** is "border = empty at end", which is one-shot insight.
-
-**Defense**: The dual-axis coupling (filling border to set up eviction) is genuinely new — it forces the player to *temporarily violate* the border constraint, which means in mid-game the border has cells they MUST evict. This creates a real ordering decision: which border cell to violate first, and which line to complete to evict it. **KEEP**, but see if the temporary-violation forcing is robust. Generator must guarantee at least N forced border-violations per puzzle.
-
-## F9 — L5-3 Detonators
-
-**For**: Inverts Classic's "full lines auto-clear" into "full lines pile up, finite detonators spend to clear chosen lines, overflow = lose". This is a clean inversion where line completion is BOTH wanted (target progress, detonate-to-clear) AND feared (overflow risks). Per move: "complete or hold?", "detonate which?", "value comparison". Order coupling is strong (which lines to complete in what order to maximize detonator value). Antagonist is the overflow timer.
-
-**Against**: The detonator-resource pattern is **Scar-adjacent** in the worst case: if the player hits 3 full lines and has 0 detonators, they lose with no recourse. The "no recourse" is the issue — Scar-disease is "random uncontrollable punishment", but here the punishment is from over-completing, which IS the player's choice. So actually it's controllable. BUT: in tight puzzles, the player might be forced into completing a line they didn't want (by piece constraints). Then detonator overflow becomes uncontrollable. Generator must guarantee the player has enough detonators+lines balance.
-
-**Defense**: This is solvable: generator forward-simulates a solution that uses exactly K detonators on K lines, and the puzzle guarantees a path exists. Player who deviates from optimal can still recover by careful detonator timing. The "must complete lines" constraint is real (target progress requires completed lines), but the player picks WHICH lines, when. **KEEP**. Strong candidate.
-
-## F11 — L8-3 Monolith
-
-**For**: Single-component invariant on placed cells creates a topology constraint that EVERY placement must satisfy (touch existing monolith) AND every clear can break (so clears become feared). Dual-purpose clears: wanted (delete pre-fill, advance target) AND feared (fragment monolith). Order coupling: the path the monolith takes through the board determines which target cells are reachable. Negative space: cells outside the monolith must remain empty (target permitting). Strong structural aha.
-
-**Against**: "Connected component" is a topological concept some players might not immediately read on the board. Risk of confusion. More serious: if pre-fill is *also* placed cells that count toward the monolith, then the monolith is seeded by pre-fill, and the player just extends. If pre-fill is *separate* from the player monolith (different sentinel color), the rule is clearer but pre-fill becomes inert — no longer something the player must DELETE, just something to route around. That collapses the antagonist.
-
-**Defense**: Mixed model: pre-fill cells count toward the monolith (so player-placed cells must touch pre-fill or each other), and the target T defines which final cells must be filled. Pre-fill is a starting "seed" for the monolith; target is where it must extend to; clears can fragment the in-progress monolith if they delete the wrong pre-fill cell or wrong player cell. The "fragment fear" is real — the player must plan clears that don't cut the monolith. UI: clearly visualize the monolith with a single connected fill color or border. **KEEP**. Strong candidate.
+The cross-family critic for L1-3, L1-5, L1-6, L3-2 (Opus champions) and L7-3, L8-3 (Haiku champions) was Claude Sonnet — see `stage4-critic.md`. For L2-1, L2-2, L4-2 (Sonnet champions) I (Opus) am the cross-family critic.
 
 ---
 
-## Stage 4 survivors
+## L1-3 Chord (Opus champion → Sonnet critic)
 
-KEEPS: F4 Vault, F8 Perimeter, F9 Detonators, F11 Monolith. (4 survivors.)
+**Steelman**: The chord rule turns line completion from pure reward into a *commitment*: completing a row without simultaneously chording a column creates a permanent dead stripe. This generates a fundamentally new placement question per turn — "is there ANY placement that doesn't half-complete a line I can't finish later?" The dual-purpose primitive is line-completion (Classic reward → Chord penalty-without-pair). Order matters because tray-1's row-completion forecloses tray-3's column threading. Negative space is concrete: chord-intersection cells must stay empty until the right piece arrives.
 
-KILLS: F1 Grain (Scar-disease + collapse risk), F2 Lifeline (Pipeline-disease, forced perms).
+**Critique (Sonnet)**: Stripe-locking is Scar disease in a coat — punishment is structural, retroactive, unrecoverable. The "10th play" decision collapses to a binary chord-yes-or-no spatial check; same question per move with noisier inputs. Optimal play is to AVOID partial lines entirely → mode's signature mechanic is self-defeating. Generator has no mechanism to guarantee chord opportunities exist.
+
+**Defense**: Two of the three points have real teeth. (1) Stripe-locking is deterministic, not random, so it's not strictly Scar disease — but the practical effect (a near-miss permanently penalizes you) is structurally severe. (2) The "no depth ladder" critique is the killer: I cannot demonstrate that placement question 10 is mentally different from placement question 1 in this mode. The Stage-3 transcript ("setup → orphan-risk → recovery") works for a single instance but does it produce 10 fresh instances of the same depth ladder? Probably not — most instances will plateau at "is there a chord here, yes/no." The defense ("generator must guarantee chord opportunities") promises something concrete, but doesn't address Sonnet's deeper concern that the optimal player AVOIDS the chord mechanic, making the mode's signature decoration. **That reads as cope.**
+
+**Verdict: KILL.**
+
+---
+
+## L1-5 Color Chord Clear (Opus champion → Sonnet critic)
+
+**Steelman**: Color is repurposed from cosmetic to clear-trigger predicate. A 4-cell same-color piece is a self-deleting tool unless it bridges pre-fill — a real mechanical insight that changes how the player VALUES tray composition. Dual-purpose: color is wanted (extend a friendly run) and feared (commit to a color near a near-mono row, blocking other colors). Pre-fill (mixed colors) is the antagonist.
+
+**Critique (Sonnet)**: Structurally identical to Classic — "fit piece into pattern" with color as the pattern variable. No dual-purpose tension; every placement evaluated on one dimension (does it extend a run?). Negative space inert. Optimal play degenerates into single-color banding — collapsing the color space into a single-color pipeline.
+
+**Defense**: The "structurally same-shape question as Classic" critique is the deepest. Color does buy a second axis (which color, where), but Sonnet is right that the question's MENTAL OPERATION is the same as Classic's: "fit piece into a pattern that extends what's already there." The single-color-banding exploit may be partly mitigated by pre-fill being multi-colored (forcing engagement with all colors), but a skilled player still plays one color at a time in sequence — that's just sequential single-color play. **The defense relies on "generator must seed correct colors" — that's the same shape of cope as L1-3.**
+
+**Verdict: KILL.**
+
+---
+
+## L1-6 Board Spin (Opus champion → Sonnet critic)
+
+**Steelman**: The rotate gesture is INVERTED — instead of rotating the tool (piece) it rotates the workspace (board). All filled cells (pre-fill + previous placements) rotate together. The dual-purpose primitive is the spin: wanted (align the piece's locked orientation to a gap) and feared (rearranges every existing fill, possibly completing an unwanted line or breaking a setup). Spin budget creates an explicit save-or-spend pressure. Pre-fill is the antagonist.
+
+**Critique (Sonnet)**: Spin budget converges to hoard-and-react. Orientation-locked pieces is Pipeline disease (piece-rotation removed). Spinning isn't equivalent agency — it's chaos. Dense boards force defensive spins. By play 30, players maintain artificially sparse boards to avoid spinning — playing Classic with a stamina tax.
+
+**Defense**: 
+- Hoard-and-react is real for any consumable, but spin has a UNIQUE positive use (rearranging existing fills to complete a line) that no other mechanic provides — so the resource isn't just an emergency button.
+- Pipeline disease: piece rotation is replaced with board rotation. Sonnet says these aren't equivalent agency. **They aren't equivalent — board rotation is STRICTLY MORE POWERFUL** because it interacts with the entire board state. The agency added is greater than the agency removed.
+- "Defensive spin" trap: real concern, but soluble by generator difficulty calibration (puzzles seeded so the budget allows ≥1 creative spin per play).
+
+The defense engages each critique with concrete mechanical points, not promises. The "board rotation is strictly more powerful" rebuttal is a genuine structural answer.
+
+**Verdict: KEEP.**
+
+---
+
+## L2-1 Plague (Sonnet champion → Opus critic)
+
+**Steelman**: Infected cells spread when they accumulate ≥2 filled neighbors. Each placement adjacent to an infected cell is dual-purpose: it builds toward the row/col clear that DEFEATS the infection, AND risks pushing the infection over its spread threshold. Spread targets are deterministic-seeded (learnable). The race between fill-toward-clear and fill-triggers-spread is a genuine new placement question.
+
+**Critique (Opus, cross-family for Sonnet)**: 
+- Spread simulation is cognitively heavy: a 3-step lookahead per placement (will my fill push infection past threshold? where does the deterministic spread land? does the new infected cell still allow a clear-path?). High mental cost vs. depth.
+- The deterministic seed for spread destination is invisible on first play — feels random until the rule is internalized.
+- Spread cap needed to avoid cascading lose conditions on dense boards.
+- Antagonist family overlaps the cautionary "external pressure" theme.
+
+**Defense**: 
+- Cognitive load: yes, but Blockit's Monolith already asks 2-step lookahead (placement → component check). Plague's 3-step is at the edge of acceptable, mitigated by visualizing the deterministic spread target in the UI (highlight which empty cell the next spread will hit).
+- Spread cap: a hard rule like "no more than K spreads per round, regardless of triggers" prevents runaway, and is easy to implement.
+- Differentiation from Monolith: Monolith preserves a single-component invariant; Plague defeats infected cells via clears — different goals, different verbs, different mechanics.
+
+The defense gives concrete mitigations (spread visualization, spread cap, differentiation argument). Engages, doesn't dodge.
+
+**Verdict: KEEP.**
+
+---
+
+## L2-2 Siege (Sonnet champion → Opus critic)
+
+**Steelman**: A wall of sentinels advances upward each turn unless its row is cleared. The race-against-the-wall creates a deadline that disciplines piece allocation — every piece either feeds the wall-clear or buys the wall a row of advance. Pre-fill (the wall) is a continuously-evolving antagonist.
+
+**Critique (Opus)**: 
+- Familiar pattern from Tetris (rising garbage rows) — not Blockit-native; lacks the structural-aha quality Puzzle has.
+- The "wall regenerates 2 turns after clear" creates an oscillating timer that the player internalizes by play 10. After internalization, the mode becomes a rote race.
+- Solvability under regen is hard for the generator — must forward-sim including each new wall's clearability.
+
+**Defense**: 
+- Tetris-derivative: borrowing a known pattern isn't disqualifying. The Blockit framing (puzzle goal, finite tray, target pattern) makes it Blockit-native enough.
+- Rote race: yes, the rhythm becomes predictable. But each wall regeneration is geometrically different (gap positions vary), so the per-clear question — which gaps need plugging, which non-wall scoring is worth the delay — has fresh inputs. Question shape is similar but content differs.
+- Generator solvability: forward-sim with regen is mechanically more complex but feasible (the regen is a deterministic event, not a random one).
+
+Defense is honest about the rote-race concern but argues the geometry-variation keeps each cycle fresh. Marginal defense — not full cope, but not a slam dunk either.
+
+**Verdict: KEEP marginally.**
+
+---
+
+## L2-3 Fuse — already killed at Stage 3 (n/a)
+
+## L3-2 Twin Bond (Opus champion → Sonnet critic)
+
+**Steelman**: The bonded-pair adjacency requirement creates cross-piece coupling that doesn't exist in Classic. The dual-purpose primitive is piece adjacency: wanted (it's where you'd want to land for clear-setups) and feared (it's now reserved for the partner). The choice of A-first vs B-first reserves different adjacent pockets, producing genuinely different reachable boards.
+
+**Critique (Sonnet)**: Bond breaks are board-determined → Scar disease. The "must place partner next" rail is Pipeline disease. Loss becomes luck-driven on dense boards. Bond-break rate rises monotonically with density.
+
+**Defense**: 
+- Bond break is deterministic given (tray, board) state. The player can SEE in advance, by surveying the partner's possible touches, whether a bond will be breakable. Choosing the unbonded slot first delays the bond — that's a real decision. Choosing A-first vs B-first changes the legal partner-set. Player has multiple levers to control bond outcomes.
+- Pipeline rail: the "must place partner next" is a temporal forced sequence, BUT the player chose to arm the bond by placing the first bonded slot; they could have placed the unbonded slot first. The rail is conditional, not constant.
+- High-density luck: yes, dense boards make bonds harder. Generator must constrain difficulty.
+
+The defense gives multiple concrete decision-levers (slot order, A-vs-B, partner position). Engages.
+
+**Verdict: KEEP.**
+
+---
+
+## L4-2 Quarantine (Sonnet champion → Opus critic)
+
+**Steelman**: Wall-partitioned regions with exact-empty-cell targets. The dual-purpose primitive is the boundary-spanning piece: a piece across two regions decreases BOTH counts, which is wanted (efficient multi-region progress) and feared (over-spending one budget while saving another). Order matters: filling region A early may make a region-bridging piece unplaceable later. Negative space matters concretely (each region's empty count is the win condition).
+
+**Critique (Opus)**: 
+- Number-puzzle layered on geometry: integer budgets per region + spatial placement = two constraint systems simultaneously. High cognitive load.
+- Pre-computed targets become predictable; mental work doesn't grow with practice.
+- Walls indestructible: structurally important at corners but not novel for the bulk of placements.
+
+**Defense**: 
+- High cognitive load is a DIFFERENT load than Classic's pure spatial — it's quantitative budgeting, novel for Blockit. The novel cognition is the mode's value proposition.
+- Per-puzzle freshness: targets and region shapes vary per generated instance, so memorization doesn't carry across plays. Pattern recognition does, but that's true of every puzzle mode.
+- Walls' role: they create the partitions. Without walls, no regions. Their job is structural, not decorative.
+
+Defense engages each critique with concrete mechanical answers.
+
+**Verdict: KEEP.**
+
+---
+
+## L7-3 Partitioned Board (Haiku champion → Sonnet critic)
+
+**Steelman**: Region-local clears (4-cell row inside a 4×4 region) is a fresh clear-mechanic. Pieces spanning region boundaries are dual-purpose: wanted by one region (close to clearing) and feared by another (already nearly clear, would over-fill). Order matters across regions because clears don't propagate.
+
+**Critique (Sonnet)**: Mirror disease — region clear is a function of where you place. Mode fragments into 4 simultaneous Classics. Region-sequencing exploit (pack one region dense for fast clears) makes it strictly easier than Classic.
+
+**Defense**:
+- Mirror disease: in Classic, "row N clears when full" is also a function of placement; that's just how clears work. The MIRROR disease test is whether an EXTRA constraint is auto-determined; here the EXTRA constraint is "regions are independent." Independence is structurally a topological property, not a function of any single placement.
+- Region-sequencing exploit: real concern. In Classic, similar exploit is "pack one corner dense" but the 8-cell row clear caps single-corner densification. In Partitioned, the 4-cell region-row clear has no equivalent cap. **Sonnet's "strictly easier than Classic" critique is hard to refute** — the 4-cell clear is materially easier and produces more clears at lower difficulty.
+- Without an offsetting difficulty mechanism (e.g., fewer pieces, denser pre-fill), the mode is strictly easier.
+
+The defense fails to deliver a structural argument that the mode is at least as hard as Classic. **The "strictly easier" critique stands.**
+
+**Verdict: KILL.**
+
+---
+
+## L8-3 Hoard (Haiku champion → Sonnet critic)
+
+**Steelman**: Tray refills only on clears. Clears flip from pure reward to lifeblood. The dual-purpose primitive is line clears: wanted (extend play, generate piece) and feared (random shape may conflict with target). Pacing decision is real per turn: clear early to refill, but watch out for piece quality.
+
+**Critique (Sonnet)**: Random piece on clear = Scar disease at strategic level. Pre-fill puzzle goal is mechanically incompatible with clear-based generation (clears want line configurations; pre-fill wants targeted erasure). Solvability not addressed; dead-end states indistinguishable from hard states.
+
+**Defense**: 
+- Random piece: the candidate description specifies "random shape from a fixed seeded set" — the seed makes the sequence deterministic given the puzzle ID. Player learns the sequence over plays, can plan around it. **Not strictly Scar disease; controllable through learning.**
+- Mechanical incompatibility: clears can both delete pre-fill cells AND generate pieces. The generator forward-simulates including the seeded piece-replenishment chain — so by construction, the piece sequence + clear sequence reach the target.
+- Solvability: harder for the generator (state space includes the piece-replenishment queue) but mechanically tractable.
+
+Defense engages each critique with concrete mechanical answers. Seeded RNG is a legitimate Scar-disease escape hatch, not cope.
+
+**Verdict: KEEP.**
+
+---
+
+## Stage 4 summary
+
+**Survivors: 6 of 9** (kill rate 33%). 
+
+| ID | Name | Verdict |
+|----|------|---------|
+| L1-3 | Chord | KILL — no depth ladder |
+| L1-5 | Color Chord Clear | KILL — structurally same-shape question as Classic |
+| L1-6 | Board Spin | KEEP |
+| L2-1 | Plague | KEEP |
+| L2-2 | Siege | KEEP marginally |
+| L3-2 | Twin Bond | KEEP |
+| L4-2 | Quarantine | KEEP |
+| L7-3 | Partitioned Board | KILL — strictly easier than Classic |
+| L8-3 | Hoard | KEEP |
+
+The Stage 4 kill criterion (defense reads as cope) caught three modes whose Stage 1–3 reasoning had glossed over depth-ladder or difficulty issues. Survivors carry forward to Stage 5 (generator feasibility).

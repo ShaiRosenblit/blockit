@@ -25,6 +25,7 @@ import {
   GRAVITY_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   MONOLITH_DIFFICULTIES,
+  QUARANTINE_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
@@ -45,6 +46,7 @@ import { BreatheIntro } from './components/BreatheIntro';
 import { PipelineIntro } from './components/PipelineIntro';
 import { ScarIntro } from './components/ScarIntro';
 import { MonolithIntro } from './components/MonolithIntro';
+import { QuarantineIntro } from './components/QuarantineIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
@@ -1082,8 +1084,10 @@ export default function App() {
     | 'breathe'
     | 'pipeline'
     | 'scar'
-    | 'monolith';
+    | 'monolith'
+    | 'quarantine';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'quarantine', label: 'Quarantine' },
     { id: 'monolith', label: 'Monolith' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
@@ -1408,6 +1412,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'quarantine' &&
+                  QUARANTINE_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.quarantineDifficulty}
+                      className={`difficulty-btn${d === state.quarantineDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.quarantineDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_QUARANTINE_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1575,6 +1597,19 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'quarantine' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new quarantine puzzle"
+              title="Generate a new quarantine puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_QUARANTINE_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1623,11 +1658,17 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'quarantine' && (
+          <>
+            <QuarantineIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1669,7 +1710,9 @@ export default function App() {
                         ? 'Scar · clears damage the field — empty cells crack and never heal'
                         : state.mode === 'monolith'
                           ? 'Monolith · every piece must extend the seed and stay connected'
-                          : state.mode === 'chroma'
+                          : state.mode === 'quarantine'
+                            ? 'Quarantine · hit each region\'s exact empty-cell target'
+                            : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
                         ? 'Gravity · clears make blocks fall — chain reactions score big'

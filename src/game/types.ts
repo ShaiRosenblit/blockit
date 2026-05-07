@@ -29,7 +29,8 @@ export type GameMode =
   | 'breathe'
   | 'pipeline'
   | 'scar'
-  | 'monolith';
+  | 'monolith'
+  | 'quarantine';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -71,6 +72,15 @@ export type ScarDifficulty = 'easy' | 'normal' | 'hard';
  * breaking change and persistence keys stay independent per-mode.
  */
 export type MonolithDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Quarantine mode difficulty. Three rungs control region count, wall
+ * complexity, tray length, and target tightness. Kept as its own literal
+ * union (not aliased to other three-rung modes) so future Quarantine-only
+ * tuning stays a typed breaking change and persistence keys stay
+ * independent per-mode.
+ */
+export type QuarantineDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -134,7 +144,8 @@ export type ModeSelection =
   | { mode: 'breathe'; difficulty: BreatheDifficulty }
   | { mode: 'pipeline'; difficulty: PipelineDifficulty }
   | { mode: 'scar'; difficulty: ScarDifficulty }
-  | { mode: 'monolith'; difficulty: MonolithDifficulty };
+  | { mode: 'monolith'; difficulty: MonolithDifficulty }
+  | { mode: 'quarantine'; difficulty: QuarantineDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -183,6 +194,12 @@ export const SCAR_DIFFICULTIES: readonly ScarDifficulty[] = [
 ] as const;
 
 export const MONOLITH_DIFFICULTIES: readonly MonolithDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const QUARANTINE_DIFFICULTIES: readonly QuarantineDifficulty[] = [
   'easy',
   'normal',
   'hard',

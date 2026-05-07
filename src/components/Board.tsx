@@ -56,7 +56,43 @@ export function Board({
   const isMirror = state.mode === 'mirror';
   const isMonolith = state.mode === 'monolith';
   const isBreathe = state.mode === 'breathe';
+  const isQuarantine = state.mode === 'quarantine';
   const renderBoard = overrideBoard ?? state.board;
+
+  // Quarantine target badges — one per region, anchored to the first cell
+  // of each region. Each badge shows the region's empty target and a
+  // colour state (under/met/over) derived from the live empty count.
+  const quarantineBadges: React.ReactNode[] = [];
+  if (isQuarantine && state.quarantineRegions && state.quarantineTargets) {
+    const regions = state.quarantineRegions;
+    const targets = state.quarantineTargets;
+    for (let i = 0; i < regions.length; i++) {
+      const region = regions[i];
+      if (region.length === 0) continue;
+      // Use the first cell sorted by (row, col) as the anchor — flood-fill
+      // order is consistent so this is stable across renders.
+      const anchor = region[0];
+      let empties = 0;
+      for (const { row, col } of region) {
+        if (renderBoard[row][col] === null) empties++;
+      }
+      let badgeClass = 'quarantine-target-badge';
+      if (empties === targets[i]) badgeClass += ' quarantine-target-badge--met';
+      else if (empties < targets[i]) badgeClass += ' quarantine-target-badge--over';
+      const top = `calc(${anchor.row} * (100% / ${BOARD_SIZE}) + (100% / ${BOARD_SIZE}) * 0.175)`;
+      const left = `calc(${anchor.col} * (100% / ${BOARD_SIZE}) + (100% / ${BOARD_SIZE}) * 0.175)`;
+      quarantineBadges.push(
+        <div
+          key={`q-badge-${i}`}
+          className={badgeClass}
+          style={{ top, left, ['--cell-size' as string]: `calc(100% / ${BOARD_SIZE})` }}
+          aria-label={`Region ${i + 1}: ${empties} empty of ${targets[i]} target`}
+        >
+          {empties}/{targets[i]}
+        </div>
+      );
+    }
+  }
 
   const cells: React.ReactNode[] = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -98,12 +134,14 @@ export function Board({
   if (isMirror) boardClass += ' board--puzzle board--mirror';
   if (isBreathe) boardClass += ' board--puzzle';
   if (isMonolith) boardClass += ' board--puzzle';
+  if (isQuarantine) boardClass += ' board--puzzle';
   if (shake) boardClass += ' board--cascade-shake';
 
   return (
     <div className={boardClass} ref={boardRef}>
       {cells}
       {isMirror && <div className="board__mirror-axis" aria-hidden />}
+      {quarantineBadges}
     </div>
   );
 }

@@ -1,14 +1,16 @@
-# Section 1 — Why this run exists (verbatim ground truth)
+# Section 1 — verbatim brief for sub-agents
+
+## Why this run exists
 
 Four modes were recently shipped — Mirror, Breathe, Pipeline, Scar — and on review they are all bad. The reasons are diagnosed below and are non-negotiable inputs to your work. Your job is to find one to three new modes that do not have any of these problems.
 
-## The "10th play" test
+### The "10th play" test
 
 > *If a player is on their 10th attempt of this mode, what new question does each placement decision ask them — that the base game wouldn't already ask?*
 
 If the answer is "none" or "the same question repeated," the mode is bad. This test trumps everything else.
 
-## The 7 ingredients of a good Blockit mode
+### The 7 ingredients of a good Blockit mode
 
 A good mode satisfies all of these:
 
@@ -20,16 +22,16 @@ A good mode satisfies all of these:
 6. **Solvability guarantee** — the generator proves every instance is winnable (typically via forward-simulation).
 7. **Structural aha** — the moment of insight comes from understanding the system, not from a flavor gimmick.
 
-Puzzle mode is the canonical positive example. It re-purposes line clears (in Classic, a *reward*) into the player's *strategic verb for deleting pre-fill*. The same primitive does double duty. Pre-fill is the antagonist. Order matters because clears change the board. Negative space matters because target cells outside the pattern must end empty. The generator proves solvability via forward simulation. **Read `src/game/puzzleGenerator.ts` end-to-end before you generate any candidates** — it is your design exemplar.
+Puzzle mode is the canonical positive example. It re-purposes line clears (in Classic, a *reward*) into the player's *strategic verb for deleting pre-fill*. The same primitive does double duty. Pre-fill is the antagonist. Order matters because clears change the board. Negative space matters because target cells outside the pattern must end empty. The generator proves solvability via forward simulation.
 
-## The 4 anti-patterns (named — every candidate must be screened against all four)
+### The 4 anti-patterns (named — every candidate must be screened against all four)
 
 - **Mirror disease**: extra constraint that's a *function* of a choice the player already makes, not a new choice. Test: trace the placement decision; if the new rule is automatic given the existing decision, fail.
 - **Breathe disease**: extra rule that is auto-satisfied by the conjunction of the other rules. Test: list all win sub-conditions; if the new rule is implied by the others, fail.
 - **Pipeline disease**: agency removed without comparable agency added. Test: list decisions removed vs. added relative to the base mode; if subtraction wins, fail.
 - **Scar disease**: random uncontrollable punishment. Test: can the player learn a rule that lets them direct or exploit the new mechanic? If no, fail.
 
-## Mechanics-speak vs. marketing-speak (forbidden vs. required)
+### Mechanics-speak vs. marketing-speak (forbidden vs. required)
 
 Every candidate description must be in **mechanics-speak**:
 

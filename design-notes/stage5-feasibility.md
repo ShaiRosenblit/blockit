@@ -1,63 +1,75 @@
 # Stage 5 — Generator feasibility check
 
-For each survivor: forward-simulation strategy, win oracle, quality filters, rough rejection ratio.
+For each survivor, sketch:
+- Forward-sim strategy
+- Win-state oracle (deterministic predicate)
+- Quality filters
+- Estimated reject rate per accepted puzzle
+
+If no sketch is possible, KILL.
 
 ---
 
-## F4 — Vault
+## L1-6 Board Spin
 
-**Forward-sim**: pick K vault cells (K ∈ {1, 2, 4} for easy/normal/hard; cells co-located such that double-clears are non-trivial). Place vault cells. Then forward-simulate a SOLUTION of K double-clears: for each vault cell, choose a piece+placement that simultaneously completes its row and col. Record the placements. Build pre-fill = (the line-complete pre-states required for those placements) MINUS (the cells that the solution-pieces will fill). Issue: pre-fill seeding is hairy because we need (row, col) to each be 1-cell-from-full where the missing cells are exactly the solution-piece's footprint at that row+col intersection. Tray = the solution pieces in solve-order, plus 1-2 distractors.
+- **Forward-sim**: Generate pre-fill outline (target empty cells). Pick N tray-pieces (orientation-locked at dealt orientation). Sim: at each tick, optionally apply 90° board rotation (decrements spin budget S), then pick a legal placement, apply line clears, advance.
+- **Oracle**: marked pre-fill cells empty AT END.
+- **Quality filters**: at least 1 spin used in solution; pre-fill not clearable via line clears alone (without rotation); spin budget exhausted by exactly 0–2 spins beyond minimum (creates real budgeting).
+- **Reject rate**: ~50%. Many sims either trivially solve without spinning or dead-end after over-spinning.
+- **Verdict**: feasible.
 
-**Win oracle**: vault cells all empty AND target T (if any) all filled.
+## L2-1 Plague
 
-**Quality filters**: ≥1 double-clear forced (so player can't avoid the central mechanic); pre-fill ≥ X cells (else trivial); not solvable with single-row clears alone.
+- **Forward-sim**: Empty board + K=2 initial infected cells. Pick N pieces. For each placement, after placing, deterministically simulate spread (every infected cell with ≥2 filled orthogonal neighbors spawns 1 new infected cell at a deterministic-seeded target). Apply clears, infected cells inside cleared rows/cols are removed.
+- **Oracle**: zero infected cells AND tray empty.
+- **Quality filters**: at least 1 spread event during solution (otherwise mode is decorative); spread total bounded by SPREAD_CAP (e.g., 3); generator forward-sims with spread baked in.
+- **Reject rate**: ~70%. Many sims either fail to trigger spread or exceed cap.
+- **Verdict**: feasible. Spread-cap is essential.
 
-**Rejection ratio estimate**: high — 5-20× per accepted because the simultaneous-clear setup is brittle. Probably acceptable for normal/easy; hard might need fallback.
+## L2-2 Siege
 
-**Risk**: pre-fill construction inverse-step (compute pre-fill that ALLOWS the vault double-clear placements) is nontrivial. The puzzleGenerator.ts pattern doesn't have direct precedent for this — it forward-simulates *placements* and lets pre-fill emerge. Vault breaks that because pre-fill must be *exactly* "1 cell from full on both row+col at vault location".
+- **Forward-sim**: Wall of K sentinels in row 7 (gaps included). Simulate placements. After each placement that didn't clear the wall row, advance every sentinel from row R to R-1. Forward-sim until wall reaches row 0 (lose) or all pieces placed.
+- **Oracle**: wall at row >0 (or fully cleared) after last placement.
+- **Quality filters**: ≥1 wall clear during sim; wall advances ≥1 row at some point (otherwise solved trivially first move).
+- **Reject rate**: ~40%. Wall regeneration is the trickier piece — need careful interleaving.
+- **Verdict**: feasible.
 
-## F8 — Perimeter
+## L3-2 Twin Bond
 
-**Forward-sim**: target T = some interior pattern. Pre-fill seeds in interior (deletable via row/col clears) plus a few BORDER pre-fill cells (which MUST be evicted by row/col clears that include them). Forward-simulate: pick a sequence of placements that (a) completes target T, (b) involves K row/col clears that delete pre-fill AND evict border. Build pre-fill from the simulation traces.
+- **Forward-sim**: Tray of 3 pieces; mark 2 as bonded. Sim placements: a bonded placement arms the bond, requiring the partner's footprint to share ≥1 edge-adjacent cell. Forward-sim with the player's chosen ordering (random in sim).
+- **Oracle**: score target reached / target pattern matched / no broken bonds beyond cap.
+- **Quality filters**: ≥1 bond placement per generated puzzle (otherwise pure Classic); partner has 2–4 legal touch positions (forces decision, not trivial).
+- **Reject rate**: ~50%. Many random orderings produce bond breaks.
+- **Verdict**: feasible.
 
-**Win oracle**: target T filled exactly AND all 28 border cells empty.
+## L4-2 Quarantine
 
-**Quality filters**: ≥1 forced border-eviction clear (hard mode = ≥2); border must end fully empty (else trivial).
+- **Forward-sim**: Generate wall partitions (2–3 regions of varying sizes via random connected-wall placement). Compute initial empty count per region. Pick N pieces. Sim placements (some spanning region boundaries). Final per-region empty count BECOMES the target.
+- **Oracle**: per-region empty count exactly equals target.
+- **Quality filters**: ≥1 piece spans a region boundary (otherwise regions are independent); targets are non-trivial (not exactly equal to initial counts); ≥2 regions.
+- **Reject rate**: ~30%. By construction the target is the simulation result, so the only rejections are from cells-don't-fit overflow, etc.
+- **Verdict**: most feasible of the 6.
 
-**Rejection ratio**: medium — 3-10× per accepted. Forward sim of placements with clears already works in puzzleGenerator.ts; just add a post-clear border-empty check.
+## L8-3 Hoard
 
-**Risk**: low. Clean extension of existing generator.
-
-## F9 — Detonators
-
-**Forward-sim**: target T. Choose detonator budget K. Forward-simulate: pick K placements that complete a line, and arrange so that AT MOST 2 full lines exist at any time (else lose). Track detonators used. Tray and pre-fill emerge from simulation.
-
-Actually the clean approach: target T is a pattern, and the puzzle requires K specific lines to be detonated to clear pre-fill that obstructs target. Forward-sim: pick K lines, pick which pre-fill blocks each, pick a tray that lets the player complete each line. Tracker: detonator count = K. Player must spend exactly K detonators (fewer = pre-fill blocks target; more = exceeds budget).
-
-**Win oracle**: target T filled exactly AND no full row/col currently exists AND detonators ≥ 0. Lose: 3+ full rows+cols exist with 0 detonators.
-
-**Quality filters**: K ≥ 2 (else trivial); pre-fill must require clears to evict (else player just routes around); ≥2 valid orderings exist (else Pipeline-disease).
-
-**Rejection ratio**: medium — 5-15×. Generator pattern matches puzzleGenerator with added detonator budget tracking.
-
-**Risk**: low–medium. Need to design pre-fill that *forces* line completions (not just allows them).
-
-## F11 — Monolith
-
-**Forward-sim**: target T = pattern. Pre-fill = a small "seed" 4-connected component (the starting monolith). Forward-simulate placements that extend the monolith to cover T, with at least one placement that triggers a line clear (delete some pre-fill or stale player cells) without fragmenting. Sim records placements; pre-fill = seed; tray = forward-sim pieces.
-
-Actually re-reading my own description of Monolith: pre-fill counts as part of the monolith, target T = where final cells must be. Generator: pick T, pick a seed (small connected pre-fill at one end of T), forward-sim placements that extend the monolith from seed toward T, possibly with clears. Build tray + extended pre-fill from sim.
-
-**Win oracle**: target T filled exactly AND placed-cells-union is one 4-connected component.
-
-**Quality filters**: ≥1 clear in solution (else clears are inert); component-fragmentation is *possible* with a wrong placement (so player has real fear); seed and target are far enough apart that path matters.
-
-**Rejection ratio**: medium-low — 3-10×. The connectivity check is O(64) per placement, cheap. Forward sim is straightforward.
-
-**Risk**: low. Cleanest generator of the four.
+- **Forward-sim**: Pre-fill (target empty pattern). Tray starts with 3 random pieces. Pre-seed a deterministic piece-replenishment queue Q. Sim: each placement pops 0 or 1 pieces from Q (1 if the placement triggered a clear). Continue until tray empty or all pre-fill cleared.
+- **Oracle**: all pre-fill empty AND tray reaches empty without dead-ends.
+- **Quality filters**: ≥2 clears triggered during solution (otherwise queue not engaged); Q's replenishment includes ≥1 piece needed for endgame (otherwise Q is decorative).
+- **Reject rate**: ~80%. The state space (board × tray × Q-cursor) explodes; many sims dead-end.
+- **Verdict**: feasible but the highest-cost generator of the 6.
 
 ---
 
-## Stage 5 verdict
+## Stage 5 summary
 
-All 4 survivors are feasible. Monolith and Perimeter are the cleanest generators. Vault is hardest. Detonators is medium.
+All 6 candidates pass feasibility. **0 of 6 killed.**
+
+Reject-rate ranking (low = good):
+1. Quarantine (~30%)
+2. Siege (~40%)
+3. Board Spin (~50%)
+4. Twin Bond (~50%)
+5. Plague (~70%)
+6. Hoard (~80%)
+
+All carry forward to Stage 6 (ranked selection).
