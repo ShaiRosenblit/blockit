@@ -141,7 +141,26 @@ All 5 modes load without console errors, accept difficulty switching,
 render their distinctive UI element, and survive at least one placement
 attempt. No structural flaws revealed. No mode dropped at this stage.
 
-## Stage 8 — comparative evaluation (in progress)
+## Stage 8 — comparative evaluation (complete)
+
+1 evaluator, all 5 modes voted MERGE. Best thread = **Fuse**. See
+`stage8-evaluation.md` for the per-mode structured analysis (placement
+question / source of tension / failure mode / aha / generator strongest
+& weakest property / degeneracy risk / anti-pattern re-screen / impl
+quality) and the structural ranking.
+
+**Ranking by structural strength (1=strongest):**
+
+1. **Fuse** — best thread; cleanest forward-path coupling, generator solvability by construction with bounded slack
+2. **Decay** — temporal calendar question, well-mitigated first-3-moves problem via aged pre-fill
+3. **Tether** — origin-coupling forces real anchor decisions; minor relief-valve semantics quirk noted
+4. **Heading** — orientation-as-clear-half is novel; Easy's `minHalfClears=0` is the only soft spot
+5. **Erasures** — weakest of the 5 because rule lives on the *backward* path (only fires on misplays); shipped escape-valves fallback documented in code
+
+All 5 → MERGE. Above the spec floor of 3 by 2.
+
+## Stage 9 — final polish + merge (in progress)
+
 
 
 
