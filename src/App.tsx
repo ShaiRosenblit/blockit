@@ -21,16 +21,22 @@ import {
   BOARD_SIZE,
   BREATHE_DIFFICULTIES,
   CLASSIC_DIFFICULTIES,
+  DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
+  ERASURES_DIFFICULTIES,
+  FUSE_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   MONOLITH_DIFFICULTIES,
   QUARANTINE_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
+  TETHER_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
+import { tetherWindowCells } from './game/tether';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -47,12 +53,31 @@ import { PipelineIntro } from './components/PipelineIntro';
 import { ScarIntro } from './components/ScarIntro';
 import { MonolithIntro } from './components/MonolithIntro';
 import { QuarantineIntro } from './components/QuarantineIntro';
+import { HeadingIntro } from './components/HeadingIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
-import type { PuzzleDifficulty } from './game/types';
+import type { PieceShape, PuzzleDifficulty, TraySlot } from './game/types';
+import { headingForPiece, headingGlyph } from './game/headingPuzzleGenerator';
+import { isPlayerColor as isErasuresPlayerColor } from './game/erasures';
 
 const DRAG_THRESHOLD_PX = 10;
+
+/**
+ * Build the inline status string for the Heading tray hint. Lists each
+ * remaining tray slot's heading glyph (compass arrow or • for FULL) so
+ * the player can read all upcoming half-clear directions at a glance,
+ * rather than having to mentally project rotation count for each piece.
+ * Empty (already-placed) slots are skipped. Mirrors the role of
+ * Pipeline's active-slot indicator: a tiny diegetic readout that lives
+ * with the pieces.
+ */
+function headingHintForTray(tray: readonly TraySlot[]): string {
+  const glyphs = tray
+    .filter((slot): slot is PieceShape => slot !== null)
+    .map((piece) => headingGlyph(headingForPiece(piece)));
+  return glyphs.length === 0 ? 'tray empty' : `headings ${glyphs.join(' ')}`;
+}
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
@@ -1085,8 +1110,18 @@ export default function App() {
     | 'pipeline'
     | 'scar'
     | 'monolith'
-    | 'quarantine';
+    | 'quarantine'
+    | 'heading'
+    | 'decay'
+    | 'fuse'
+    | 'erasures'
+    | 'tether';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'tether', label: 'Tether' },
+    { id: 'erasures', label: 'Erasures' },
+    { id: 'fuse', label: 'Fuse' },
+    { id: 'decay', label: 'Decay' },
+    { id: 'heading', label: 'Heading' },
     { id: 'quarantine', label: 'Quarantine' },
     { id: 'monolith', label: 'Monolith' },
     { id: 'mirror', label: 'Mirror' },
@@ -1128,6 +1163,53 @@ export default function App() {
     };
   }
   cascadeBoard = getCascadeFrame();
+
+  // Erasures-mode select highlight. While the player is in select mode
+  // we precompute the set of *erasable* cells (player-placed,
+  // 4-connected to anything else player-placed) so the board renders
+  // an eligibility tint per cell. The set is built directly off the
+  // current `state.board` rather than the cascade override because
+  // erase toggling is gated upstream — Erasures has no cascades —
+  // and an `undefined` set short-circuits any extra work in non-
+  // Erasures modes.
+  const eraseEligibleCells: Set<string> | undefined =
+    state.mode === 'erasures' && state.erasureSelectMode
+      ? (() => {
+          const set = new Set<string>();
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+              if (isErasuresPlayerColor(state.board[r][c])) {
+                set.add(`${r},${c}`);
+              }
+            }
+          }
+          return set;
+        })()
+      : undefined;
+
+  // Tether mode: precompute the active "tether window" — the set of
+  // board cells within Chebyshev-distance ≤ 2 of any cell in the most
+  // recent paired-slot placement. Rendered as a faint outline on each
+  // member cell so the player can see exactly where the next partner
+  // placement is allowed to anchor. Only shown when there's a pending
+  // paired placement: a paired slot must still hold a piece AND its
+  // partner must have been the last paired-placer (otherwise the
+  // window is academic — slot-2 placements aren't gated and a same-
+  // slot replay isn't gated either).
+  const tetherWindowCellsSet: Set<string> | undefined =
+    state.mode === 'tether' &&
+    state.lastPairedPlacementCells !== null &&
+    state.lastPairedSlot !== null
+      ? (() => {
+          // Identify the partner slot index (the OTHER paired slot).
+          // The window only matters if its piece is still in the tray
+          // — if the partner slot has already placed and refilled, the
+          // window has been replaced by THAT placement's window.
+          const partnerSlot = state.lastPairedSlot === 0 ? 1 : 0;
+          if (!state.tray[partnerSlot]) return undefined;
+          return tetherWindowCells(state.lastPairedPlacementCells);
+        })()
+      : undefined;
   const effectivePreviewCells = cascadeBoard ? undefined : preview?.cells;
   const effectivePreviewColor = cascadeBoard ? undefined : preview?.color;
   const effectiveClearPreview =
@@ -1172,6 +1254,30 @@ export default function App() {
     if (state.mode === 'monolith') {
       const d = state.monolithDifficulty;
       return `Monolith · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'quarantine') {
+      const d = state.quarantineDifficulty;
+      return `Quarantine · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'heading') {
+      const d = state.headingDifficulty;
+      return `Heading · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'decay') {
+      const d = state.decayDifficulty;
+      return `Decay · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'fuse') {
+      const d = state.fuseDifficulty;
+      return `Fuse · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'erasures') {
+      const d = state.erasuresDifficulty;
+      return `Erasures · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'tether') {
+      const d = state.tetherDifficulty;
+      return `Tether · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1430,6 +1536,96 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'heading' &&
+                  HEADING_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.headingDifficulty}
+                      className={`difficulty-btn${d === state.headingDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.headingDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_HEADING_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'decay' &&
+                  DECAY_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.decayDifficulty}
+                      className={`difficulty-btn${d === state.decayDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.decayDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_DECAY_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'fuse' &&
+                  FUSE_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.fuseDifficulty}
+                      className={`difficulty-btn${d === state.fuseDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.fuseDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_FUSE_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'erasures' &&
+                  ERASURES_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.erasuresDifficulty}
+                      className={`difficulty-btn${d === state.erasuresDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.erasuresDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_ERASURES_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'tether' &&
+                  TETHER_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.tetherDifficulty}
+                      className={`difficulty-btn${d === state.tetherDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.tetherDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_TETHER_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1610,6 +1806,45 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'heading' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new heading puzzle"
+              title="Generate a new heading puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_HEADING_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
+          {state.mode === 'fuse' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new fuse puzzle"
+              title="Generate a new fuse puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_FUSE_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
+          {state.mode === 'erasures' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new erasures puzzle"
+              title="Generate a new erasures puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_ERASURES_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1664,11 +1899,17 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'heading' && (
+          <>
+            <HeadingIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading' || state.mode === 'fuse' || state.mode === 'erasures') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1676,6 +1917,43 @@ export default function App() {
               // enabled or disabled so the tray doesn't shift when the
               // first placement happens.
               <div className="piece-tray-topbar">
+                {state.mode === 'erasures' && (
+                  // Erase token toggle \u2014 Erasures-specific. The button
+                  // lives alongside Undo because both are
+                  // "round-level recovery" affordances. Disabled when
+                  // the token reserve hits 0; the active --selecting
+                  // class flips while the player is choosing a cell
+                  // so the visual signals "tap a tile to spend".
+                  <button
+                    type="button"
+                    className={`piece-tray-erase${state.erasureSelectMode ? ' piece-tray-erase--selecting' : ''}`}
+                    aria-label={
+                      state.erasureSelectMode
+                        ? 'Cancel erase'
+                        : `Erase a piece component (${state.erasureTokens ?? 0} tokens left)`
+                    }
+                    title={
+                      state.erasureSelectMode
+                        ? 'Cancel erase'
+                        : 'Erase a piece component'
+                    }
+                    aria-pressed={state.erasureSelectMode}
+                    disabled={
+                      !state.erasureSelectMode &&
+                      (state.erasureTokens === null || state.erasureTokens <= 0)
+                    }
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'TOGGLE_ERASE_SELECT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u2716'}</span>
+                    <span className="piece-tray-erase__label">
+                      Erase ({state.erasureTokens ?? 0})
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="piece-tray-undo"
@@ -1712,6 +1990,18 @@ export default function App() {
                           ? 'Monolith · every piece must extend the seed and stay connected'
                           : state.mode === 'quarantine'
                             ? 'Quarantine · hit each region\'s exact empty-cell target'
+                            : state.mode === 'heading'
+                              ? `Heading · ${headingHintForTray(state.tray)} · clears erase only that half`
+                            : state.mode === 'decay'
+                              ? 'Decay · cells must age before their line can clear'
+                            : state.mode === 'fuse'
+                              ? 'Fuse · clear each fuse\'s line before its countdown hits 0'
+                            : state.mode === 'erasures'
+                              ? `Erasures · spend a token to delete a piece component (${state.erasureTokens ?? 0} left)`
+                            : state.mode === 'tether'
+                              ? state.lastPairedPlacementCells !== null && state.lastPairedSlot !== null
+                                ? `Tether · slot ${(state.lastPairedSlot === 0 ? 1 : 0) + 1} tethered to last placement`
+                                : 'Tether · paired slots couple by Chebyshev-2 origin'
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
@@ -1734,6 +2024,18 @@ export default function App() {
           cellSize={boardCellSize}
           cascadeRenderKey={cascadeBoard?.renderKey}
           shake={boardShaking}
+          eraseSelectActive={state.mode === 'erasures' && state.erasureSelectMode}
+          eraseEligibleCells={eraseEligibleCells}
+          tetherWindowCells={tetherWindowCellsSet}
+          onCellClick={
+            state.mode === 'erasures' && state.erasureSelectMode
+              ? (row, col) => {
+                  haptics.pickup();
+                  sounds.pickup();
+                  dispatch({ type: 'ERASE_COMPONENT', row, col });
+                }
+              : undefined
+          }
         />
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece

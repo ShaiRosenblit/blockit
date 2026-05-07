@@ -1389,6 +1389,153 @@ body {
 }
 
 /*
+ * Decay mode visuals
+ *
+ * Filled cells in Decay mode pick up a `cell--age-<n>` class (n = 1..3)
+ * the older they get, fading toward muted as they ripen toward the
+ * difficulty's clear threshold. The progression is deliberately subtle
+ * (no hue change, just opacity + a faint inner border at age 3) so the
+ * underlying piece color still reads at a glance — Decay's strategy
+ * loop depends on the player parsing color clusters as well as age.
+ */
+.cell--age-1 { opacity: 0.85; }
+.cell--age-2 { opacity: 0.7; }
+.cell--age-3 {
+  opacity: 0.55;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+/*
+ * Fuse mode visuals
+ *
+ * Fuse cells use a dedicated `cell--fuse` class on top of the normal
+ * `cell--filled` so the player parses them as "live countdowns" rather
+ * than placed pieces. The base is a deep clay-red (the FUSE_COLOR
+ * sentinel) with a subtle radial highlight to suggest a glowing core,
+ * plus a heavy inset shadow so the cell reads as raised even with
+ * Quarantine-style walls also on the board. The countdown number is
+ * rendered as a child `.cell__fuse-count` element — a centered numeric
+ * badge sized in container-query units so it tracks the live cell
+ * pitch the same way the Quarantine target badges do.
+ */
+.cell--fuse {
+  border: 1px solid rgba(255, 200, 170, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.32),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.32),
+    inset 0 2px 4px rgba(255, 180, 140, 0.18);
+  background-image:
+    radial-gradient(circle at 50% 35%, rgba(255, 200, 160, 0.25), transparent 60%),
+    radial-gradient(circle at 70% 80%, rgba(0, 0, 0, 0.28), transparent 65%);
+}
+
+.cell__fuse-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 8 cells across, so 1 cell ≈ 12cqi; 7cqi keeps the digit centred and
+     well within the cell at every viewport size without piping a
+     JS-derived --cell-size. */
+  font-size: 7cqi;
+  font-weight: 700;
+  color: rgba(255, 240, 230, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/*
+ * Erasures mode visuals
+ *
+ * The "Erase (N)" toggle button lives in `.piece-tray-topbar` next to
+ * Undo. Visually styled like the Undo affordance — same height, same
+ * round-rect — but with a clay-orange tint to read as a *spending*
+ * action (vs Undo's neutral rewind). The `--selecting` modifier flips
+ * the colour to a brighter accent while the player is choosing a cell
+ * so they can see at a glance which mode they're in.
+ *
+ * `.board--erase-select` dims every cell on the board EXCEPT those
+ * tagged `.cell--erase-eligible`, drawing the player's eye to the
+ * cluster they can spend a token on. The dimming is implemented at
+ * the cell level (`cell--erase-ineligible`) rather than the board
+ * level so target badges and overlays stay legible during select
+ * mode.
+ */
+.piece-tray-erase {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 220, 200, 0.95);
+  background: rgba(160, 64, 48, 0.32);
+  border: 1px solid rgba(255, 180, 140, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.piece-tray-erase:hover:not(:disabled) {
+  background: rgba(160, 64, 48, 0.48);
+}
+
+.piece-tray-erase:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.piece-tray-erase--selecting {
+  background: rgba(255, 140, 90, 0.55);
+  border-color: rgba(255, 200, 160, 0.85);
+  color: rgba(255, 250, 245, 1);
+  box-shadow: 0 0 0 1px rgba(255, 200, 160, 0.4),
+    0 0 12px rgba(255, 140, 90, 0.4);
+}
+
+.piece-tray-erase__label {
+  font-variant-numeric: tabular-nums;
+}
+
+.cell--erase-eligible {
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 200, 160, 0.85),
+    0 0 10px rgba(255, 140, 90, 0.45);
+}
+
+.cell--erase-ineligible {
+  opacity: 0.45;
+}
+
+.board--erase-select {
+  cursor: crosshair;
+}
+
+/*
+ * Tether mode visuals
+ *
+ * Cells inside the active "tether window" (Chebyshev-distance ≤ 2 of
+ * any cell in the most recent paired placement) pick up the
+ * `cell--tether-window` class so the player can see exactly where the
+ * next partner placement is allowed to anchor. The treatment is a
+ * single faint dashed inset outline — deliberately subtle so it
+ * stacks cleanly with target hints, just-placed flashes, and the
+ * preview overlay without competing for attention. Switching to
+ * `outline` (not `box-shadow`) keeps the visual independent of the
+ * cell's own border-radius / fill so other modes' treatments still
+ * read.
+ */
+.cell--tether-window {
+  outline: 1px dashed rgba(255, 234, 167, 0.5);
+  outline-offset: -2px;
+}
+
+/*
  * Quarantine target badge — a small rounded chip rendered as a grid
  * child of `.board`, occupying the same grid cell as its region's
  * anchor cell. Sized in container-query inline units (`cqi`) so the
@@ -1671,6 +1818,27 @@ body {
       0 0 0 2px rgba(255, 159, 64, 0.45),
       0 0 24px rgba(255, 159, 64, 0.50);
   }
+}
+
+/*
+ * Heading-mode per-slot compass-arrow badge (↑→↓← or • for FULL/symmetric
+ * pieces). Pinned to the top-left corner of the slot so it never covers
+ * the mini-piece thumbnail and reads as a label rather than a sticker.
+ * `pointer-events: none` so the badge never blocks the slot's own
+ * pointerdown — the player can still tap-rotate / start a drag from
+ * anywhere in the slot, including under the badge.
+ */
+.piece-slot__heading-badge {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.95rem;
+  line-height: 1;
+  font-weight: 600;
+  color: rgba(255, 234, 167, 0.92);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  user-select: none;
 }
 
 .mini-grid {

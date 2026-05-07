@@ -5,9 +5,13 @@ import type {
   ChromaDifficulty,
   ClassicDifficulty,
   Coord,
+  DecayDifficulty,
   DropDifficulty,
+  ErasuresDifficulty,
+  FuseDifficulty,
   GameMode,
   GravityDifficulty,
+  HeadingDifficulty,
   MirrorDifficulty,
   MonolithDifficulty,
   PieceShape,
@@ -17,19 +21,25 @@ import type {
   QuarantineDifficulty,
   ScarDifficulty,
   TargetPattern,
+  TetherDifficulty,
   TraySlot,
 } from './types';
 import {
   BOARD_SIZE,
   BREATHE_DIFFICULTIES,
   CLASSIC_DIFFICULTIES,
+  DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
+  ERASURES_DIFFICULTIES,
+  FUSE_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   MONOLITH_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
   QUARANTINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
+  TETHER_DIFFICULTIES,
   isPuzzleLevel,
 } from './types';
 import {
@@ -41,6 +51,7 @@ import {
   placePieceMirrored,
   detectCompletedLines,
   clearLines,
+  clearLinesHeadingHalf,
   clearLinesPreservingWalls,
   detectClearableLinesQuarantine,
   hasValidMoves,
@@ -55,6 +66,13 @@ import {
   boardSatisfiesBreathe,
   resolveCascades,
 } from './board';
+import {
+  hasValidTetherMoves,
+  placementSatisfiesTether,
+  tetherWindowCells,
+  type PairedSlot,
+} from './tether';
+import { generateTetherTray } from './tetherTray';
 import { generateChromaTray, generateClassicTray } from './pieces';
 import {
   generatePuzzle,
@@ -65,6 +83,30 @@ import { generateMirrorPuzzle } from './mirrorPuzzleGenerator';
 import { generateBreathePuzzle } from './breathePuzzleGenerator';
 import { generateMonolithPuzzle } from './monolithGenerator';
 import { generateQuarantinePuzzle } from './quarantineGenerator';
+import { generateHeadingPuzzle, headingForPiece } from './headingPuzzleGenerator';
+import { generateFusePuzzle } from './fusePuzzleGenerator';
+import {
+  decrementFuses,
+  dropClearedFuses,
+  expireFuses,
+  noFusesRemaining,
+  type FuseCell,
+} from './fuse';
+import { generateErasuresPuzzle } from './erasuresPuzzleGenerator';
+import { eraseComponent, erasureTokenCount, hasErasableComponent } from './erasures';
+import {
+  advanceAges,
+  applyDecayClears,
+  decayPrefillCount,
+  decayThreshold,
+  detectClearableLinesDecay,
+  emptyDecayAges,
+  freshDecayRngSeed,
+  seedAgedPrefill,
+  setNewCellAges,
+  decayRng,
+  type DecayAges,
+} from './decay';
 import {
   applyScars,
   clearLinesPreservingScars,
@@ -123,6 +165,86 @@ export type GameState = {
   monolithDifficulty: MonolithDifficulty;
   /** Remembered Quarantine-mode difficulty. */
   quarantineDifficulty: QuarantineDifficulty;
+  /** Remembered Heading-mode difficulty. */
+  headingDifficulty: HeadingDifficulty;
+  /** Remembered Decay-mode difficulty. */
+  decayDifficulty: DecayDifficulty;
+  /** Remembered Fuse-mode difficulty. */
+  fuseDifficulty: FuseDifficulty;
+  /** Remembered Erasures-mode difficulty. */
+  erasuresDifficulty: ErasuresDifficulty;
+  /** Remembered Tether-mode difficulty. */
+  tetherDifficulty: TetherDifficulty;
+  /**
+   * Tether-mode last-paired-placement cells. After the player places a
+   * piece from one of the paired slots (slot 0 or 1), this holds the
+   * absolute board coords of every cell the placement landed on. The
+   * NEXT paired-slot placement coming from the OTHER paired slot must
+   * include at least one cell within Chebyshev-distance ≤ 2 of any of
+   * these cells, otherwise the placement is rejected. `null` at round
+   * start AND immediately after a refill where no paired placement has
+   * happened yet — interpreted as "no constraint active". Slot 2
+   * placements never update this field. Always `null` outside Tether
+   * mode and nothing reads it.
+   */
+  lastPairedPlacementCells: Coord[] | null;
+  /**
+   * Tether-mode index of the slot that produced the most recent paired
+   * placement (0 or 1). Drives the "is the partner slot constrained?"
+   * decision: only when the next paired-slot placement comes from the
+   * OTHER paired slot does the tether window apply. `null` when
+   * `lastPairedPlacementCells === null` (no paired placement yet);
+   * always `null` outside Tether mode.
+   */
+  lastPairedSlot: PairedSlot | null;
+  /**
+   * Erasures-mode token reserve — the integer count of erase tokens the
+   * player has remaining for the active round. Decremented by exactly 1
+   * each time `ERASE_COMPONENT` succeeds (i.e. erases at least one
+   * cell). Outside Erasures mode this is always `null`; inside Erasures
+   * it tracks 0..K where K = `erasureTokenCount(difficulty)` at round
+   * start. The player may finish the round with leftover tokens — extras
+   * don't fail the win check, they just go uncounted.
+   */
+  erasureTokens: number | null;
+  /**
+   * Erasures-mode UI mode flag. `true` while the player is choosing
+   * which 4-connected component to erase: the next click on a
+   * player-placed cell dispatches `ERASE_COMPONENT`. `false` outside
+   * Erasures mode and during normal placement gameplay. Toggled by
+   * `TOGGLE_ERASE_SELECT` (the "Erase (N)" button); cleared by every
+   * action that consumes a token, by every successful placement (so a
+   * placement followed by an erase requires re-engaging the toggle), and
+   * by every mode/difficulty switch.
+   */
+  erasureSelectMode: boolean;
+  /**
+   * Fuse-mode active fuse list. Each entry is `{row, col, countdown}`
+   * — the cell painted with the `FUSE_COLOR` sentinel and the integer
+   * countdown remaining before expiry. Empty array outside Fuse mode
+   * (and when every fuse has been cleared / expired). Held as an
+   * array (not a Map) so the reducer's structural-clone-via-spread
+   * persistence path keeps working without bespoke serialisation.
+   */
+  fuseCells: FuseCell[];
+  /**
+   * Snapshot of the Fuse puzzle's starting fuse list for RESTART.
+   * Like `quarantineInitialRegions`, but for the Fuse `fuseCells`
+   * array so RESTART returns to the exact starting fuse layout
+   * (countdowns reset, walls retracted via the board snapshot).
+   * Empty array outside Fuse mode.
+   */
+  fuseInitialCells: FuseCell[];
+  /**
+   * Decay-mode per-cell age grid. `boardAges[r][c]` is the integer count
+   * of placements that have happened since the cell at (r, c) was placed
+   * (set to 0 when placed, incremented by 1 after every subsequent
+   * placement). `null` mirrors `board[r][c] === null` (empty cell). A
+   * row/column only clears once every filled cell along it has age ≥
+   * `decayThreshold(decayDifficulty)`. Always shaped as an 8×8 grid;
+   * outside Decay mode every entry is `null` and nothing reads it.
+   */
+  boardAges: DecayAges;
   /**
    * Quarantine mode region cell-list (one entry per region; each entry is
    * the list of `(row, col)` coords belonging to that region). Null
@@ -222,6 +344,22 @@ export type PuzzleUndoSnapshot = {
   tray: TraySlot[];
   score: number;
   combo: number;
+  /**
+   * Fuse-mode fuse list snapshot. Stored alongside the board so undoing
+   * a Fuse placement also reverts every fuse's countdown AND any walls
+   * that the placement may have spawned via expiry — the board snapshot
+   * already captures the wall retraction (walls created post-placement
+   * weren't in the pre-placement board), and this field captures the
+   * fuse countdown rollback. Empty array outside Fuse mode; the field
+   * is always present so the snapshot shape stays uniform.
+   */
+  fuseCells: FuseCell[];
+  /**
+   * Erasures-mode token-reserve snapshot. Stored so undoing an erase
+   * (or a placement) restores the token count to its pre-action value.
+   * `null` outside Erasures mode (matches `state.erasureTokens` shape).
+   */
+  erasureTokens: number | null;
 };
 
 /**
@@ -251,6 +389,26 @@ export type GameAction =
   | { type: 'SET_SCAR_DIFFICULTY'; difficulty: ScarDifficulty }
   | { type: 'SET_MONOLITH_DIFFICULTY'; difficulty: MonolithDifficulty }
   | { type: 'SET_QUARANTINE_DIFFICULTY'; difficulty: QuarantineDifficulty }
+  | { type: 'SET_HEADING_DIFFICULTY'; difficulty: HeadingDifficulty }
+  | { type: 'SET_DECAY_DIFFICULTY'; difficulty: DecayDifficulty }
+  | { type: 'SET_FUSE_DIFFICULTY'; difficulty: FuseDifficulty }
+  | { type: 'SET_ERASURES_DIFFICULTY'; difficulty: ErasuresDifficulty }
+  | { type: 'SET_TETHER_DIFFICULTY'; difficulty: TetherDifficulty }
+  /**
+   * Erasures-mode: spend one erase token to delete the 4-connected
+   * component of player-placed cells containing `(row, col)`. No-op when
+   * `state.mode !== 'erasures'`, when `state.erasureSelectMode` is
+   * false, when the token reserve is `<= 0`, or when the targeted cell
+   * is not a player-placed cell (sentinels and pre-fill are immune).
+   */
+  | { type: 'ERASE_COMPONENT'; row: number; col: number }
+  /**
+   * Erasures-mode: flip `state.erasureSelectMode`. Toggled by the
+   * "Erase (N)" UI button. No-op outside Erasures or when the token
+   * reserve is 0 (you can't enter select mode if there's nothing to
+   * spend).
+   */
+  | { type: 'TOGGLE_ERASE_SELECT' }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
@@ -258,6 +416,12 @@ export type GameAction =
   /** Discard the active monolith puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MONOLITH_PUZZLE' }
   | { type: 'NEW_QUARANTINE_PUZZLE' }
+  /** Discard the active heading puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_HEADING_PUZZLE' }
+  /** Discard the active fuse puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_FUSE_PUZZLE' }
+  /** Discard the active erasures puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_ERASURES_PUZZLE' }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -296,6 +460,14 @@ const PIPELINE_DIFFICULTY_KEY = 'blockit-pipeline-difficulty';
 const SCAR_DIFFICULTY_KEY = 'blockit-scar-difficulty';
 const MONOLITH_DIFFICULTY_KEY = 'blockit-monolith-difficulty';
 const QUARANTINE_DIFFICULTY_KEY = 'blockit-quarantine-difficulty';
+const HEADING_DIFFICULTY_KEY = 'blockit-heading-difficulty';
+const HEADING_PUZZLE_KEY_PREFIX = 'blockit-puzzle-heading-';
+const DECAY_DIFFICULTY_KEY = 'blockit-decay-difficulty';
+const FUSE_DIFFICULTY_KEY = 'blockit-fuse-difficulty';
+const FUSE_PUZZLE_KEY_PREFIX = 'blockit-puzzle-fuse-';
+const ERASURES_DIFFICULTY_KEY = 'blockit-erasures-difficulty';
+const ERASURES_PUZZLE_KEY_PREFIX = 'blockit-puzzle-erasures-';
+const TETHER_DIFFICULTY_KEY = 'blockit-tether-difficulty';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -322,6 +494,11 @@ function bestScoreKey(
     | ScarDifficulty
     | MonolithDifficulty
     | QuarantineDifficulty
+    | HeadingDifficulty
+    | DecayDifficulty
+    | FuseDifficulty
+    | ErasuresDifficulty
+    | TetherDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -344,6 +521,11 @@ function loadBestScore(
     | ScarDifficulty
     | MonolithDifficulty
     | QuarantineDifficulty
+    | HeadingDifficulty
+    | DecayDifficulty
+    | FuseDifficulty
+    | ErasuresDifficulty
+    | TetherDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -365,7 +547,12 @@ function saveBestScore(
     | PipelineDifficulty
     | ScarDifficulty
     | MonolithDifficulty
-    | QuarantineDifficulty,
+    | QuarantineDifficulty
+    | HeadingDifficulty
+    | DecayDifficulty
+    | FuseDifficulty
+    | ErasuresDifficulty
+    | TetherDifficulty,
   score: number
 ) {
   try {
@@ -576,7 +763,12 @@ function loadMode(): GameMode {
       stored === 'pipeline' ||
       stored === 'scar' ||
       stored === 'monolith' ||
-      stored === 'quarantine'
+      stored === 'quarantine' ||
+      stored === 'heading' ||
+      stored === 'decay' ||
+      stored === 'fuse' ||
+      stored === 'erasures' ||
+      stored === 'tether'
     ) {
       return stored;
     }
@@ -790,6 +982,305 @@ function saveQuarantineDifficulty(difficulty: QuarantineDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadHeadingDifficulty(): HeadingDifficulty {
+  try {
+    const stored = localStorage.getItem(HEADING_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+function saveHeadingDifficulty(difficulty: HeadingDifficulty) {
+  try {
+    localStorage.setItem(HEADING_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Read the player's last-selected Decay difficulty from localStorage,
+ * defaulting to `'easy'` if the key is missing or invalid. Mirrors every
+ * other `load*Difficulty` helper — silent failure on storage errors so
+ * the game still boots in private-mode browsers.
+ */
+function loadDecayDifficulty(): DecayDifficulty {
+  try {
+    const stored = localStorage.getItem(DECAY_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+/**
+ * Persist the chosen Decay difficulty so subsequent app loads resume on
+ * the same rung. Silent failure on storage errors (private-mode etc.).
+ */
+function saveDecayDifficulty(difficulty: DecayDifficulty) {
+  try {
+    localStorage.setItem(DECAY_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Shape of a stored Heading puzzle. Same skeleton as Breathe / Mirror —
+ * starting board (always empty for Heading), tray (carries per-piece
+ * `heading` rotation indices), and target. Persisted so a refresh
+ * restores the same challenge and Restart returns to this exact start.
+ */
+type StoredHeadingPuzzle = {
+  difficulty: HeadingDifficulty;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+};
+
+function headingPuzzleStorageKey(difficulty: HeadingDifficulty): string {
+  return `${HEADING_PUZZLE_KEY_PREFIX}${difficulty}`;
+}
+
+function isValidStoredHeadingPuzzle(
+  p: unknown,
+  expected: HeadingDifficulty
+): p is StoredHeadingPuzzle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredHeadingPuzzle>;
+  if (r.difficulty !== expected) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  return true;
+}
+
+function loadHeadingPuzzle(expected: HeadingDifficulty): StoredHeadingPuzzle | null {
+  try {
+    const raw = localStorage.getItem(headingPuzzleStorageKey(expected));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredHeadingPuzzle(parsed, expected)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveHeadingPuzzle(p: StoredHeadingPuzzle) {
+  try {
+    localStorage.setItem(headingPuzzleStorageKey(p.difficulty), JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
+/**
+ * Read the player's last-selected Fuse difficulty from localStorage,
+ * defaulting to `'easy'` if the key is missing or invalid. Mirrors every
+ * other `load*Difficulty` helper — silent failure on storage errors so
+ * the game still boots in private-mode browsers.
+ */
+function loadFuseDifficulty(): FuseDifficulty {
+  try {
+    const stored = localStorage.getItem(FUSE_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+/**
+ * Persist the chosen Fuse difficulty so subsequent app loads resume on
+ * the same rung. Silent failure on storage errors (private-mode etc.).
+ */
+function saveFuseDifficulty(difficulty: FuseDifficulty) {
+  try {
+    localStorage.setItem(FUSE_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Shape of a stored Fuse puzzle. Mirrors the Heading skeleton — starting
+ * board (carries `FUSE_COLOR` sentinels), tray (random rotation +
+ * palette), target pattern, and the parallel fuse-cell list with each
+ * fuse's countdown. Persisted so a refresh restores the same challenge
+ * and Restart returns to this exact start.
+ */
+type StoredFusePuzzle = {
+  difficulty: FuseDifficulty;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+  fuseCells: FuseCell[];
+};
+
+function fusePuzzleStorageKey(difficulty: FuseDifficulty): string {
+  return `${FUSE_PUZZLE_KEY_PREFIX}${difficulty}`;
+}
+
+function isValidStoredFusePuzzle(
+  p: unknown,
+  expected: FuseDifficulty
+): p is StoredFusePuzzle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredFusePuzzle>;
+  if (r.difficulty !== expected) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.fuseCells)) return false;
+  for (const f of r.fuseCells) {
+    if (!f || typeof f !== 'object') return false;
+    const fc = f as Partial<FuseCell>;
+    if (
+      typeof fc.row !== 'number' ||
+      typeof fc.col !== 'number' ||
+      typeof fc.countdown !== 'number'
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function loadFusePuzzle(expected: FuseDifficulty): StoredFusePuzzle | null {
+  try {
+    const raw = localStorage.getItem(fusePuzzleStorageKey(expected));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredFusePuzzle(parsed, expected)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveFusePuzzle(p: StoredFusePuzzle) {
+  try {
+    localStorage.setItem(fusePuzzleStorageKey(p.difficulty), JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
+/**
+ * Read the player's last-selected Erasures difficulty from localStorage,
+ * defaulting to `'easy'` if the key is missing or invalid. Mirrors every
+ * other `load*Difficulty` helper — silent failure on storage errors so
+ * the game still boots in private-mode browsers.
+ */
+function loadErasuresDifficulty(): ErasuresDifficulty {
+  try {
+    const stored = localStorage.getItem(ERASURES_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+/**
+ * Persist the chosen Erasures difficulty so subsequent app loads resume
+ * on the same rung. Silent failure on storage errors (private-mode etc.).
+ */
+function saveErasuresDifficulty(difficulty: ErasuresDifficulty) {
+  try {
+    localStorage.setItem(ERASURES_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Read the player's last-selected Tether difficulty from localStorage,
+ * defaulting to `'easy'` if the key is missing or invalid. Mirrors every
+ * other `load*Difficulty` helper — silent failure on storage errors so
+ * the game still boots in private-mode browsers.
+ */
+function loadTetherDifficulty(): TetherDifficulty {
+  try {
+    const stored = localStorage.getItem(TETHER_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+/**
+ * Persist the chosen Tether difficulty so subsequent app loads resume
+ * on the same rung. Silent failure on storage errors (private-mode etc.).
+ */
+function saveTetherDifficulty(difficulty: TetherDifficulty) {
+  try {
+    localStorage.setItem(TETHER_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Shape of a stored Erasures puzzle. Mirrors the Heading skeleton —
+ * starting board (carries pre-fill sentinel cells), tray (random
+ * rotation + palette), and target pattern. Unlike Fuse there's no
+ * per-cell countdown to persist; the token reserve is regenerated from
+ * `erasureTokenCount(difficulty)` on every load so the player always
+ * starts a fresh round with a full token grant. Persisted so a refresh
+ * restores the same challenge and Restart returns to this exact start.
+ */
+type StoredErasuresPuzzle = {
+  difficulty: ErasuresDifficulty;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+};
+
+function erasuresPuzzleStorageKey(difficulty: ErasuresDifficulty): string {
+  return `${ERASURES_PUZZLE_KEY_PREFIX}${difficulty}`;
+}
+
+function isValidStoredErasuresPuzzle(
+  p: unknown,
+  expected: ErasuresDifficulty
+): p is StoredErasuresPuzzle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredErasuresPuzzle>;
+  if (r.difficulty !== expected) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  return true;
+}
+
+function loadErasuresPuzzle(expected: ErasuresDifficulty): StoredErasuresPuzzle | null {
+  try {
+    const raw = localStorage.getItem(erasuresPuzzleStorageKey(expected));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredErasuresPuzzle(parsed, expected)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveErasuresPuzzle(p: StoredErasuresPuzzle) {
+  try {
+    localStorage.setItem(erasuresPuzzleStorageKey(p.difficulty), JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
 /**
  * Fresh seed for a Scar run's RNG. XOR with a random 32-bit chunk on top
  * of `Date.now()` so two Scar runs started in the same millisecond still
@@ -854,6 +1345,9 @@ function cloneTarget(t: TargetPattern): TargetPattern {
 function cloneTray(t: PieceShape[]): PieceShape[] {
   return t.map((p) => ({ ...p, cells: p.cells.map((c) => ({ ...c })) }));
 }
+function cloneFuseCells(fuses: readonly FuseCell[]): FuseCell[] {
+  return fuses.map((f) => ({ row: f.row, col: f.col, countdown: f.countdown }));
+}
 
 /**
  * Build a fresh state for the given puzzle difficulty, reusing the passed-in
@@ -875,6 +1369,11 @@ function freshPuzzleState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -910,6 +1409,9 @@ function freshPuzzleState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -922,6 +1424,15 @@ function freshPuzzleState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -944,6 +1455,11 @@ function freshTutorialState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -969,6 +1485,9 @@ function freshTutorialState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -981,6 +1500,15 @@ function freshTutorialState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1003,6 +1531,11 @@ function freshPuzzleStateFromShared(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1028,6 +1561,9 @@ function freshPuzzleStateFromShared(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1040,6 +1576,15 @@ function freshPuzzleStateFromShared(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1056,6 +1601,11 @@ function freshClassicState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1082,6 +1632,9 @@ function freshClassicState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1094,6 +1647,15 @@ function freshClassicState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1115,6 +1677,11 @@ function freshChromaState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1141,6 +1708,9 @@ function freshChromaState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1153,6 +1723,15 @@ function freshChromaState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1175,6 +1754,11 @@ function freshGravityState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1201,6 +1785,9 @@ function freshGravityState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1213,6 +1800,15 @@ function freshGravityState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1235,6 +1831,11 @@ function freshDropState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1261,6 +1862,9 @@ function freshDropState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1273,6 +1877,15 @@ function freshDropState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1301,6 +1914,11 @@ function freshMirrorState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1327,6 +1945,9 @@ function freshMirrorState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1339,6 +1960,15 @@ function freshMirrorState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1367,6 +1997,11 @@ function freshBreatheState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1393,6 +2028,9 @@ function freshBreatheState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1405,6 +2043,15 @@ function freshBreatheState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1432,6 +2079,11 @@ function freshPipelineState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1458,6 +2110,9 @@ function freshPipelineState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1470,6 +2125,15 @@ function freshPipelineState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1494,6 +2158,11 @@ function freshScarState(
   pipelineDifficulty: PipelineDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1520,6 +2189,9 @@ function freshScarState(
     scarRngSeed: freshScarRngSeed(),
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1532,6 +2204,15 @@ function freshScarState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1560,6 +2241,11 @@ function freshMonolithState(
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1586,6 +2272,9 @@ function freshMonolithState(
     scarRngSeed: 0,
     monolithDifficulty: difficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1598,6 +2287,15 @@ function freshMonolithState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1623,6 +2321,11 @@ function freshQuarantineState(
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1649,6 +2352,9 @@ function freshQuarantineState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty: difficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
     quarantineRegions: regions.map((r) => r.map((c) => ({ ...c }))),
     quarantineTargets: [...targets],
     quarantineInitialRegions: regions.map((r) => r.map((c) => ({ ...c }))),
@@ -1661,6 +2367,486 @@ function freshQuarantineState(
     puzzleLevelUp: null,
     puzzleEverSolved,
     lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Heading state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Heading is a puzzle-style mode
+ * with a target pattern and a finite tray. The placement pipeline keys
+ * off `mode === 'heading'` to apply the heading-aware half-clear rule
+ * (clears only erase the half of the row/column the placement's heading
+ * points toward; FULL-heading pieces revert to Classic full-line clears).
+ *
+ * Unlike Mirror/Breathe, Heading puzzles ARE persisted to localStorage —
+ * the per-piece rotation/heading state means a refresh-and-resume needs
+ * the original tray (and target) to keep the same instance, and the
+ * `forceNew` knob lets NEW_HEADING_PUZZLE / SET_HEADING_DIFFICULTY blow
+ * the cache when the player explicitly asks for a fresh challenge.
+ */
+function freshHeadingState(
+  difficulty: HeadingDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
+  options: { forceNew?: boolean } = {}
+): GameState {
+  let stored = options.forceNew ? null : loadHeadingPuzzle(difficulty);
+  if (!stored) {
+    const { board, tray, target } = generateHeadingPuzzle({ difficulty });
+    stored = { difficulty, board, tray, target };
+    saveHeadingPuzzle(stored);
+  }
+
+  return {
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'heading',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty: difficulty,
+    decayDifficulty,
+    fuseDifficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(stored.target),
+    puzzleInitialBoard: cloneBoard(stored.board),
+    puzzleInitialTray: cloneTray(stored.tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Decay state. Score-attack like Classic / Scar — empty
+ * board topped up with a small pre-filled "already ripe" seed so the
+ * player has immediate clearing agency, Classic piece weights, refilling
+ * tray. The twist is that line clears gate on per-cell **age**: a row /
+ * column only clears once every filled cell along it has aged ≥
+ * `decayThreshold(decayDifficulty)`. The PLACE_PIECE branch keys off
+ * `mode === 'decay'` to drive `boardAges` through the canonical
+ * place → tick → detect → clear pipeline.
+ *
+ * Each entry into the mode rerolls the pre-fill RNG seed via
+ * `freshDecayRngSeed()` so two consecutive runs start from visibly
+ * different boards even at the same difficulty. The seed itself isn't
+ * persisted — only the chosen difficulty is remembered across sessions.
+ */
+function freshDecayState(
+  difficulty: DecayDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const rng = decayRng(freshDecayRngSeed());
+  const T = decayThreshold(difficulty);
+  const prefillCount = decayPrefillCount(difficulty);
+  const { board, ages } = seedAgedPrefill(prefillCount, T, rng);
+
+  return {
+    board,
+    tray: generateClassicTray(difficulty, board),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'decay',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty: difficulty,
+    fuseDifficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: ages,
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Fuse state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Fuse is a puzzle-style mode
+ * with a target pattern and a finite tray. The starting board carries
+ * `K = fuseCount(difficulty)` fuse-coloured cells, each with a positive
+ * countdown stored in `state.fuseCells`. The PLACE_PIECE branch keys
+ * off `mode === 'fuse'` to apply the canonical
+ * place → clear → drop-cleared-fuses → decrement → expire → win-check
+ * pipeline.
+ *
+ * Like Heading puzzles, Fuse puzzles ARE persisted to localStorage —
+ * the per-fuse countdown state means a refresh-and-resume needs the
+ * original tray, target, and fuse list to keep the same instance, and
+ * the `forceNew` knob lets NEW_FUSE_PUZZLE / SET_FUSE_DIFFICULTY blow
+ * the cache when the player explicitly asks for a fresh challenge.
+ */
+function freshFuseState(
+  difficulty: FuseDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  tetherDifficulty: TetherDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
+  options: { forceNew?: boolean } = {}
+): GameState {
+  let stored = options.forceNew ? null : loadFusePuzzle(difficulty);
+  if (!stored) {
+    const { board, tray, target, fuseCells } = generateFusePuzzle({ difficulty });
+    stored = { difficulty, board, tray, target, fuseCells };
+    saveFusePuzzle(stored);
+  }
+
+  return {
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'fuse',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty: difficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(stored.target),
+    puzzleInitialBoard: cloneBoard(stored.board),
+    puzzleInitialTray: cloneTray(stored.tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: cloneFuseCells(stored.fuseCells),
+    fuseInitialCells: cloneFuseCells(stored.fuseCells),
+    erasuresDifficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Erasures state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Erasures is a puzzle-style mode
+ * with a target pattern and a finite tray. The starting board carries
+ * pre-fill blockers; the player owns `K = erasureTokenCount(difficulty)`
+ * erase tokens, each of which deletes one 4-connected component of
+ * player-placed cells when spent (sentinels and pre-fill are immune).
+ *
+ * Like Heading / Fuse puzzles, Erasures puzzles ARE persisted to
+ * localStorage — the per-instance pre-fill layout means a refresh-and-
+ * resume needs the original board / tray / target to keep the same
+ * challenge, and the `forceNew` knob lets NEW_ERASURES_PUZZLE /
+ * SET_ERASURES_DIFFICULTY blow the cache when the player explicitly
+ * asks for a fresh challenge. The token reserve is regenerated from
+ * the difficulty on every load so a refresh resets the budget alongside
+ * the board, matching the player's mental model of "I started a fresh
+ * Erasures round at this difficulty".
+ */
+function freshErasuresState(
+  difficulty: ErasuresDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  tetherDifficulty: TetherDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
+  options: { forceNew?: boolean } = {}
+): GameState {
+  let stored = options.forceNew ? null : loadErasuresPuzzle(difficulty);
+  if (!stored) {
+    const { board, tray, target } = generateErasuresPuzzle({ difficulty });
+    stored = { difficulty, board, tray, target };
+    saveErasuresPuzzle(stored);
+  }
+
+  return {
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'erasures',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(stored.target),
+    puzzleInitialBoard: cloneBoard(stored.board),
+    puzzleInitialTray: cloneTray(stored.tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty: difficulty,
+    tetherDifficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: erasureTokenCount(difficulty),
+    erasureSelectMode: false,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Tether state. Endless score-attack like Classic / Decay
+ * — empty board, three-slot refilling tray, Classic piece weights — but
+ * with the **paired-slot Chebyshev-2 origin coupling** rule applied at
+ * placement time. Slots 0 and 1 form the tethered pair; slot 2 is the
+ * free piece. After the player places a piece from a paired slot, the
+ * partner-slot's next placement must include at least one cell within
+ * Chebyshev-distance ≤ 2 of any cell of the prior placement; otherwise
+ * the placement is rejected. Slot 2 placements never set the window
+ * and are never constrained by it.
+ *
+ * The state's `lastPairedPlacementCells` and `lastPairedSlot` start
+ * `null` (no constraint active on the first placement of a fresh
+ * round); the PLACE_PIECE branch keying off `mode === 'tether'` drives
+ * them through the per-placement pipeline.
+ *
+ * Difficulty doesn't change the Chebyshev radius (always 2). It varies
+ * the *shape* of the constraint via the tray sampler — see
+ * `tetherDifficultySpec` and `generateTetherTray`.
+ */
+function freshTetherState(
+  difficulty: TetherDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
+  decayDifficulty: DecayDifficulty,
+  fuseDifficulty: FuseDifficulty,
+  erasuresDifficulty: ErasuresDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved
+): GameState {
+  const board = createEmptyBoard();
+  return {
+    board,
+    // Round start has no active tether window, so the Hard sampler
+    // skips the resample and we get a vanilla three-piece sample —
+    // matching the player's mental model of "a fresh round can't
+    // already require a partner-piece placement to land in a
+    // window I haven't established yet".
+    tray: generateTetherTray(difficulty, board, null),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'tether',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: null,
+    puzzleInitialBoard: null,
+    puzzleInitialTray: null,
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    boardAges: emptyDecayAges(),
+    fuseCells: [],
+    fuseInitialCells: [],
+    erasuresDifficulty,
+    tetherDifficulty: difficulty,
+    lastPairedPlacementCells: null,
+    lastPairedSlot: null,
+    erasureTokens: null,
+    erasureSelectMode: false,
     puzzleUndoStack: [],
   };
 }
@@ -1678,6 +2864,11 @@ export function createInitialState(): GameState {
   const scarDifficulty = loadScarDifficulty();
   const monolithDifficulty = loadMonolithDifficulty();
   const quarantineDifficulty = loadQuarantineDifficulty();
+  const headingDifficulty = loadHeadingDifficulty();
+  const decayDifficulty = loadDecayDifficulty();
+  const fuseDifficulty = loadFuseDifficulty();
+  const erasuresDifficulty = loadErasuresDifficulty();
+  const tetherDifficulty = loadTetherDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -1706,6 +2897,11 @@ export function createInitialState(): GameState {
         scarDifficulty,
         monolithDifficulty,
         quarantineDifficulty,
+        headingDifficulty,
+        decayDifficulty,
+        fuseDifficulty,
+        erasuresDifficulty,
+        tetherDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -1731,6 +2927,11 @@ export function createInitialState(): GameState {
         scarDifficulty,
         monolithDifficulty,
         quarantineDifficulty,
+        headingDifficulty,
+        decayDifficulty,
+        fuseDifficulty,
+        erasuresDifficulty,
+        tetherDifficulty,
         puzzleEverSolved
       );
     }
@@ -1746,6 +2947,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1765,6 +2971,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1784,6 +2995,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1803,6 +3019,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1822,6 +3043,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1841,6 +3067,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('breathe', breatheDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1860,6 +3091,11 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('pipeline', pipelineDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1879,6 +3115,11 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('scar', scarDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1898,6 +3139,11 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       scarDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('monolith', monolithDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1917,7 +3163,132 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       scarDifficulty,
       monolithDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
       loadBestScore('quarantine', quarantineDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'heading') {
+    return freshHeadingState(
+      headingDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
+      loadBestScore('heading', headingDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'decay') {
+    return freshDecayState(
+      decayDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      headingDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
+      loadBestScore('decay', decayDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'fuse') {
+    return freshFuseState(
+      fuseDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      erasuresDifficulty,
+      tetherDifficulty,
+      loadBestScore('fuse', fuseDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'erasures') {
+    return freshErasuresState(
+      erasuresDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      tetherDifficulty,
+      loadBestScore('erasures', erasuresDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'tether') {
+    return freshTetherState(
+      tetherDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      headingDifficulty,
+      decayDifficulty,
+      fuseDifficulty,
+      erasuresDifficulty,
+      loadBestScore('tether', tetherDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1935,6 +3306,11 @@ export function createInitialState(): GameState {
     scarDifficulty,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
+    decayDifficulty,
+    fuseDifficulty,
+    erasuresDifficulty,
+    tetherDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1957,7 +3333,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const piece = state.tray[trayIndex];
       if (!piece) return state;
       const newTray = [...state.tray];
-      newTray[trayIndex] = rotatePiece90Clockwise(piece);
+      const rotated = rotatePiece90Clockwise(piece);
+      // Heading mode: advance the piece's rotation index modulo 4 alongside
+      // the visual rotation. The clear pipeline reads this `heading` field
+      // (via `headingForPiece`) at placement time to decide which half of
+      // the row/column to actually erase. Other modes ignore the field and
+      // never read it.
+      if (state.mode === 'heading') {
+        const prev = piece.heading ?? 0;
+        rotated.heading = ((prev + 1) % 4) as 0 | 1 | 2 | 3;
+      }
+      newTray[trayIndex] = rotated;
       const enforceColorAdjacency = state.mode === 'chroma';
       const isGameOver =
         state.mode === 'mirror'
@@ -1966,13 +3352,33 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ? !hasValidMonolithMoves(state.board, newTray)
             : state.mode === 'pipeline'
               ? !hasValidPipelineMoves(state.board, newTray, state.pipelinePhase)
-              : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
+              : state.mode === 'tether'
+                // Tether mode: rotation may shrink/grow the piece's
+                // footprint (e.g. an L-tromino rotated to a different
+                // orientation has different cells), which can in turn
+                // change whether ANY tether-window placement exists for
+                // a paired-slot piece. Re-run the tether-aware predicate
+                // (passing the rotation function so the helper can walk
+                // every orientation) so the post-rotate game-over check
+                // honours the constraint that paired pieces must land
+                // inside the active window.
+                ? !hasValidTetherMoves(
+                    state.board,
+                    newTray,
+                    state.lastPairedPlacementCells,
+                    state.lastPairedSlot,
+                    rotatePiece90Clockwise
+                  )
+                : !hasValidMoves(state.board, newTray, { enforceColorAdjacency });
       const puzzleResult =
         (state.mode === 'puzzle' ||
           state.mode === 'mirror' ||
           state.mode === 'breathe' ||
           state.mode === 'monolith' ||
-          state.mode === 'quarantine') &&
+          state.mode === 'quarantine' ||
+          state.mode === 'heading' ||
+          state.mode === 'fuse' ||
+          state.mode === 'erasures') &&
         isGameOver
           ? 'failed'
           : state.puzzleResult;
@@ -2099,7 +3505,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const monolithUndoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
         ];
 
         let mboard = placePiece(state.board, piece, action.origin);
@@ -2174,7 +3580,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const qUndoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
         ];
 
         let qboard = placePiece(state.board, piece, action.origin);
@@ -2242,6 +3648,526 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
+      // Erasures mode: structurally a puzzle (target pattern, finite
+      // tray, undo-able placements). The twist is the K-token erase
+      // budget — the placement step itself is a vanilla
+      // canPlacePiece + placePiece + standard line clear sequence,
+      // NEVER touches the token reserve. Tokens are spent only via
+      // `ERASE_COMPONENT`. Per-placement pipeline (canonical):
+      //   1. Validate placement (`canPlacePiece`).
+      //   2. Place the piece on the board.
+      //   3. Detect line clears (standard rules — pre-fill counts as
+      //      filled exactly the same way Quarantine treats walls).
+      //   4. Apply clears via `clearLines` (pre-fill is destructible
+      //      via line clear — only sentinels protected by
+      //      `clearLinesPreservingWalls` survive, and Erasures never
+      //      stamps walls).
+      //   5. Win check on tray-empty: target match. Remaining token
+      //      count is irrelevant — extras don't fail the win check.
+      // Standard puzzle game-over check; supports undo (snapshot
+      // captures `erasureTokens` so undoing an erase restores the
+      // budget).
+      // The placement also clears `erasureSelectMode` so a stale
+      // toggle from before the placement doesn't carry over (the
+      // player has to re-engage the toggle to erase next turn).
+      if (state.mode === 'erasures') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const eUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          {
+            board: state.board,
+            tray: state.tray,
+            score: state.score,
+            combo: state.combo,
+            fuseCells: state.fuseCells,
+            erasureTokens: state.erasureTokens,
+          },
+        ];
+
+        let eboard = placePiece(state.board, piece, action.origin);
+        let escore = state.score + calculatePlacementScore(piece);
+        let ecombo = state.combo;
+        const { rows: erows, cols: ecols } = detectCompletedLines(eboard);
+        const elinesCleared = erows.length + ecols.length;
+        if (elinesCleared > 0) {
+          eboard = clearLines(eboard, erows, ecols);
+          escore += calculateClearScore(elinesCleared, ecombo);
+          ecombo += 1;
+        } else {
+          ecombo = 0;
+        }
+
+        const eNewTray = [...state.tray];
+        eNewTray[action.trayIndex] = null;
+        const eAllPlaced = eNewTray.every((s) => s === null);
+        const eTarget = state.puzzleTarget;
+        const eDifficulty = state.erasuresDifficulty;
+
+        if (eAllPlaced) {
+          const solved = eTarget !== null && boardMatchesTarget(eboard, eTarget);
+          if (solved) escore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(escore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('erasures', eDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: eboard,
+            tray: eNewTray,
+            score: escore,
+            bestScore,
+            combo: solved ? ecombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            erasureSelectMode: false,
+            puzzleUndoStack: eUndoStack,
+          };
+        }
+
+        const eIsGameOver = !hasValidMoves(eboard, eNewTray);
+        const bestScore = Math.max(escore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('erasures', eDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: eboard,
+          tray: eNewTray,
+          score: escore,
+          bestScore,
+          combo: ecombo,
+          isGameOver: eIsGameOver,
+          puzzleResult: eIsGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          erasureSelectMode: false,
+          puzzleUndoStack: eUndoStack,
+        };
+      }
+
+      // Heading mode: structurally a puzzle (target pattern, finite tray,
+      // undo-able placements). The twist is that line clears use
+      // `clearLinesHeadingHalf`, which only erases the half of the row /
+      // column the placed piece's heading points toward; pieces with the
+      // FULL heading sentinel revert to Classic full-line clears. Win
+      // check on tray-empty: `boardMatchesTarget`.
+      if (state.mode === 'heading') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const hUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
+        ];
+
+        let hboard = placePiece(state.board, piece, action.origin);
+        let hscore = state.score + calculatePlacementScore(piece);
+        let hcombo = state.combo;
+        const { rows: hrows, cols: hcols } = detectCompletedLines(hboard);
+        const hlinesCleared = hrows.length + hcols.length;
+        if (hlinesCleared > 0) {
+          const heading = headingForPiece(piece);
+          hboard = clearLinesHeadingHalf(hboard, hrows, hcols, heading);
+          hscore += calculateClearScore(hlinesCleared, hcombo);
+          hcombo += 1;
+        } else {
+          hcombo = 0;
+        }
+
+        const hNewTray = [...state.tray];
+        hNewTray[action.trayIndex] = null;
+        const hAllPlaced = hNewTray.every((s) => s === null);
+        const hTarget = state.puzzleTarget;
+        const hDifficulty = state.headingDifficulty;
+
+        if (hAllPlaced) {
+          const solved = hTarget !== null && boardMatchesTarget(hboard, hTarget);
+          if (solved) hscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(hscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('heading', hDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: hboard,
+            tray: hNewTray,
+            score: hscore,
+            bestScore,
+            combo: solved ? hcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            puzzleUndoStack: hUndoStack,
+          };
+        }
+
+        const isGameOver = !hasValidMoves(hboard, hNewTray);
+        const bestScore = Math.max(hscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('heading', hDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: hboard,
+          tray: hNewTray,
+          score: hscore,
+          bestScore,
+          combo: hcombo,
+          isGameOver,
+          puzzleResult: isGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: hUndoStack,
+        };
+      }
+
+      // Decay mode: classic-style score-attack — empty board (with a small
+      // pre-fill seed handled at freshDecayState time), Classic piece
+      // weights, refilling tray. The twist is per-cell **age**: a row /
+      // column only clears once every filled cell along it has age ≥ T,
+      // where T is `decayThreshold(state.decayDifficulty)`. Per-placement
+      // pipeline (canonical order — see `decay.ts` doc):
+      //   1. place piece on board
+      //   2. set the new cells' ages to 0
+      //   3. tick every OTHER non-null cell's age by +1
+      //   4. detect clearable lines via `detectClearableLinesDecay`
+      //   5. apply clears to BOTH board and ages
+      //   6. score / combo / refill on empty tray
+      // Game-over is the standard Classic-style check; no target, no undo.
+      if (state.mode === 'decay') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        // Step 1 — place the piece on the board.
+        let dboard = placePiece(state.board, piece, action.origin);
+        // Steps 2 + 3 collapsed: the spec asks for "set new cells to age 0,
+        // then increment every OTHER non-null cell by +1". We achieve that
+        // in two equivalent passes:
+        //   (a) `advanceAges` ticks every existing non-null cell from
+        //       k → k+1 (the just-placed cells aren't in the ages array
+        //       yet — `state.boardAges` reflects pre-placement state — so
+        //       they're untouched by this step).
+        //   (b) `setNewCellAges` stamps the just-placed cells with age 0.
+        // Net result equals the spec's per-cell rule without needing an
+        // explicit "exclude the new cells" mask.
+        let dages = advanceAges(state.boardAges);
+        dages = setNewCellAges(dages, piece, action.origin);
+
+        let dscore = state.score + calculatePlacementScore(piece);
+        let dcombo = state.combo;
+        const T = decayThreshold(state.decayDifficulty);
+
+        // Step 4 — detect clearable lines under the age gate.
+        const { rows: drows, cols: dcols } = detectClearableLinesDecay(dboard, dages, T);
+        const dlinesCleared = drows.length + dcols.length;
+        if (dlinesCleared > 0) {
+          // Step 5 — apply clears to board AND ages in lockstep.
+          const cleared = applyDecayClears(dboard, dages, drows, dcols);
+          dboard = cleared.board;
+          dages = cleared.ages;
+          dscore += calculateClearScore(dlinesCleared, dcombo);
+          dcombo += 1;
+        } else {
+          dcombo = 0;
+        }
+
+        // Step 6 — tray refill on empty tray (Classic piece pool — Decay's
+        // challenge is the age gate, not the piece mix).
+        const dNewTray = [...state.tray];
+        dNewTray[action.trayIndex] = null;
+        const dAllPlaced = dNewTray.every((s) => s === null);
+        const dFinalTray = dAllPlaced
+          ? generateClassicTray(state.decayDifficulty, dboard)
+          : dNewTray;
+
+        const dBestScore = Math.max(dscore, state.bestScore);
+        // Standard Classic-style game-over check.
+        const dIsGameOver = !hasValidMoves(dboard, dFinalTray);
+
+        if (dBestScore > state.bestScore) {
+          saveBestScore('decay', state.decayDifficulty, dBestScore);
+        }
+
+        return {
+          ...state,
+          board: dboard,
+          boardAges: dages,
+          tray: dFinalTray,
+          score: dscore,
+          bestScore: dBestScore,
+          combo: dcombo,
+          isGameOver: dIsGameOver,
+          puzzleResult: null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: [],
+        };
+      }
+
+      // Tether mode: classic-style score-attack — empty board, three-slot
+      // refilling tray, Classic line-clear pipeline. The twist is the
+      // **paired-slot Chebyshev-2 origin coupling**: slots 0 and 1 are the
+      // tethered pair; slot 2 is the free piece. A placement from a paired
+      // slot whose partner most-recently placed must include at least one
+      // cell within Chebyshev-distance ≤ 2 of any cell of the prior
+      // placement (`placementSatisfiesTether` against
+      // `tetherWindowCells(state.lastPairedPlacementCells)`); otherwise
+      // the placement is rejected. Per-placement pipeline:
+      //   1. Validate `canPlacePiece` + tether constraint (paired slot,
+      //      partner-slot was last paired-placer, window non-empty).
+      //   2. Place piece, detect/clear lines via standard `clearLines`,
+      //      score, combo.
+      //   3. If from a paired slot, update `lastPairedPlacementCells` /
+      //      `lastPairedSlot`; slot-2 placements leave both unchanged.
+      //   4. Refill tray when empty (Hard difficulty drives a resample
+      //      of the next paired-slot piece via `generateTetherTray` so
+      //      the upcoming partner placement has ≥ 2 legal options
+      //      within the active tether window).
+      //   5. Game-over check via `hasValidTetherMoves` so a paired piece
+      //      that fits geometrically but NOT inside the current tether
+      //      window correctly registers as no-valid-move.
+      if (state.mode === 'tether') {
+        // Step 1a — standard geometry check.
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const isPairedSlot = action.trayIndex === 0 || action.trayIndex === 1;
+        const partnerWasLastPlacer =
+          state.lastPairedPlacementCells !== null &&
+          state.lastPairedSlot !== null &&
+          state.lastPairedSlot !== action.trayIndex;
+
+        // Step 1b — tether constraint. Only paired-slot placements
+        // whose partner was the last paired-placer are gated by the
+        // window. Slot 2 (free) is never gated; same-slot-as-last-
+        // paired (e.g. paired slot replays itself before partner
+        // does) is also unconstrained — the spec ties the rule to
+        // the OTHER paired slot specifically.
+        if (isPairedSlot && partnerWasLastPlacer) {
+          const window = tetherWindowCells(state.lastPairedPlacementCells!);
+          if (!placementSatisfiesTether(piece, action.origin, window)) {
+            return state;
+          }
+        }
+
+        // Step 2 — place the piece and run the standard Classic
+        // clear pipeline. Tether doesn't change line-clear semantics;
+        // it's purely an origin-coupling constraint at validation
+        // time.
+        let tboard = placePiece(state.board, piece, action.origin);
+        let tscore = state.score + calculatePlacementScore(piece);
+        let tcombo = state.combo;
+        const { rows: trows, cols: tcols } = detectCompletedLines(tboard);
+        const tlinesCleared = trows.length + tcols.length;
+        if (tlinesCleared > 0) {
+          tboard = clearLines(tboard, trows, tcols);
+          tscore += calculateClearScore(tlinesCleared, tcombo);
+          tcombo += 1;
+        } else {
+          tcombo = 0;
+        }
+
+        // Step 3 — update tether bookkeeping. Paired-slot placements
+        // record their absolute board cells (so the next partner
+        // placement can be validated against a Chebyshev-2 window
+        // around them) AND which slot produced the placement (so the
+        // "is partner the next placer?" check has the right answer).
+        // Slot-2 placements leave both fields untouched — the free
+        // piece is invisible to the tether system.
+        let nextLastCells: Coord[] | null = state.lastPairedPlacementCells;
+        let nextLastSlot: PairedSlot | null = state.lastPairedSlot;
+        if (isPairedSlot) {
+          // Build absolute coords from the piece's local cells +
+          // the placement origin. We snapshot them up-front so a
+          // future tray refill can't accidentally mutate the
+          // record-of-the-last-placement.
+          const placedCells: Coord[] = piece.cells.map((cell) => ({
+            row: action.origin.row + cell.row,
+            col: action.origin.col + cell.col,
+          }));
+          nextLastCells = placedCells;
+          nextLastSlot = action.trayIndex as PairedSlot;
+        }
+
+        // Step 4 — tray refill when all slots empty. Pass the
+        // post-placement board AND the just-recorded
+        // `nextLastCells` to the sampler so Hard's
+        // `minTetherOptions ≥ 2` resample sees the right window.
+        // Easy / Normal short-circuit the resample; Hard with no
+        // active window (i.e. nextLastCells is null somehow —
+        // shouldn't happen mid-round, but defensive) also short-
+        // circuits.
+        const tNewTray = [...state.tray];
+        tNewTray[action.trayIndex] = null;
+        const tAllPlaced = tNewTray.every((s) => s === null);
+        const tFinalTray = tAllPlaced
+          ? generateTetherTray(state.tetherDifficulty, tboard, nextLastCells)
+          : tNewTray;
+
+        // Step 5 — tether-aware game-over check. Mirrors `hasValidMoves`
+        // semantics but rejects paired-slot placements that geometry-
+        // permit but fall OUTSIDE the active tether window. Without
+        // this branch a player could end up with a tray full of
+        // paired-only pieces with no legal partner placement and the
+        // engine wouldn't detect the dead-end.
+        const tBestScore = Math.max(tscore, state.bestScore);
+        const tIsGameOver = !hasValidTetherMoves(
+          tboard,
+          tFinalTray,
+          nextLastCells,
+          nextLastSlot,
+          rotatePiece90Clockwise
+        );
+
+        if (tBestScore > state.bestScore) {
+          saveBestScore('tether', state.tetherDifficulty, tBestScore);
+        }
+
+        return {
+          ...state,
+          board: tboard,
+          tray: tFinalTray,
+          score: tscore,
+          bestScore: tBestScore,
+          combo: tcombo,
+          isGameOver: tIsGameOver,
+          lastPairedPlacementCells: nextLastCells,
+          lastPairedSlot: nextLastSlot,
+          puzzleResult: null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: [],
+        };
+      }
+
+      // Fuse mode: structurally a puzzle (target pattern, finite tray,
+      // undo-able placements). The starting board carries K fuse cells
+      // painted with the FUSE_COLOR sentinel and tracked separately in
+      // `state.fuseCells` with each fuse's countdown. Per-placement
+      // pipeline (canonical order — see `fuse.ts` doc):
+      //   1. Validate placement (`canPlacePiece`).
+      //   2. Place the piece on the board.
+      //   3. Detect line clears (standard rules — fuses + walls count
+      //      as filled).
+      //   4. Apply clears via `clearLinesPreservingWalls` (walls
+      //      survive; fuses get destroyed by the clear).
+      //   5. Filter the fuse list down to fuses still present on the
+      //      post-clear board, then decrement every survivor by 1.
+      //   6. Expire any fuses whose countdown ≤ 0: the fuse cell and
+      //      each of its 4-neighbour empty cells become permanent
+      //      indestructible WALL_COLOR cells.
+      //   7. Win check on tray-empty: target match AND no fuses left.
+      // Standard puzzle game-over check; supports undo.
+      if (state.mode === 'fuse') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const fUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
+        ];
+
+        // Step 2 — place the piece.
+        let fboard = placePiece(state.board, piece, action.origin);
+        let fscore = state.score + calculatePlacementScore(piece);
+        let fcombo = state.combo;
+
+        // Step 3 — detect line clears. Fuse cells are non-null
+        // (FUSE_COLOR), so they count as filled by `detectCompletedLines`
+        // exactly the same way wall cells do. A row containing fuses
+        // can therefore complete and clear; the fuse goes with it.
+        const { rows: frows, cols: fcols } = detectCompletedLines(fboard);
+        const flinesCleared = frows.length + fcols.length;
+        if (flinesCleared > 0) {
+          // Step 4 — apply clears, preserving walls. (No walls exist
+          // yet on the very first placement of a fresh Fuse round —
+          // they only get created by fuse expiry — but the helper is
+          // forward-compatible with mid-round walls created by earlier
+          // expiries.)
+          fboard = clearLinesPreservingWalls(fboard, frows, fcols);
+          fscore += calculateClearScore(flinesCleared, fcombo);
+          fcombo += 1;
+        } else {
+          fcombo = 0;
+        }
+
+        // Step 5a — drop fuses whose cell got swept by a clear. Their
+        // countdowns must NOT be decremented in the next step (those
+        // fuses no longer exist).
+        let ffuses = dropClearedFuses(state.fuseCells, fboard);
+        // Step 5b — decrement every surviving fuse by exactly 1.
+        ffuses = decrementFuses(ffuses);
+
+        // Step 6 — expire any fuse whose countdown is now ≤ 0. Each
+        // expiring fuse turns its own cell + every 4-neighbour
+        // originally-empty cell into a permanent WALL_COLOR. The
+        // expiry helper takes a snapshot of the empties on the input
+        // board so iteration order can't bias the result.
+        const expiry = expireFuses(fboard, ffuses);
+        fboard = expiry.board;
+        ffuses = expiry.fuses;
+
+        const fNewTray = [...state.tray];
+        fNewTray[action.trayIndex] = null;
+        const fAllPlaced = fNewTray.every((s) => s === null);
+        const fTarget = state.puzzleTarget;
+        const fDifficulty = state.fuseDifficulty;
+
+        if (fAllPlaced) {
+          // Step 7 — win check. Tray empty + board matches target +
+          // every fuse cleared. Fuses still alive at tray-empty are an
+          // automatic loss (they'll never be cleared now), and so is
+          // any wall left over from an earlier expiry that bumps the
+          // board off the target pattern.
+          const solved =
+            fTarget !== null &&
+            boardMatchesTarget(fboard, fTarget) &&
+            noFusesRemaining(ffuses);
+          if (solved) fscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(fscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('fuse', fDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: fboard,
+            tray: fNewTray,
+            score: fscore,
+            bestScore,
+            combo: solved ? fcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            fuseCells: ffuses,
+            puzzleUndoStack: fUndoStack,
+          };
+        }
+
+        // Mid-round game-over: no remaining tray piece has any
+        // (rotation, origin) that fits. Fuses still ticking are fine
+        // mid-round — they only fail the win check at tray-empty.
+        const fIsGameOver = !hasValidMoves(fboard, fNewTray);
+        const bestScore = Math.max(fscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('fuse', fDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: fboard,
+          tray: fNewTray,
+          score: fscore,
+          bestScore,
+          combo: fcombo,
+          isGameOver: fIsGameOver,
+          puzzleResult: fIsGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          fuseCells: ffuses,
+          puzzleUndoStack: fUndoStack,
+        };
+      }
+
       // Mirror mode: every placement also writes its horizontal reflection.
       // Validation, board mutation, line clearing, and win/lose detection
       // all use the *_Mirrored variants. We branch out early so the rest of
@@ -2251,7 +4177,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
         const undoStack: PuzzleUndoSnapshot[] = [
           ...state.puzzleUndoStack,
-          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
         ];
 
         let mboard = placePieceMirrored(state.board, piece, action.origin);
@@ -2328,7 +4254,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mode === 'puzzle' || state.mode === 'breathe'
           ? [
               ...state.puzzleUndoStack,
-              { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+              { board: state.board, tray: state.tray, score: state.score, combo: state.combo, fuseCells: state.fuseCells, erasureTokens: state.erasureTokens },
             ]
           : [];
 
@@ -2719,7 +4645,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.pipelineDifficulty,
             state.scarDifficulty,
             state.monolithDifficulty,
-        state.quarantineDifficulty,
+            state.quarantineDifficulty,
+            state.headingDifficulty,
+            state.decayDifficulty,
+            state.fuseDifficulty,
+            state.erasuresDifficulty,
+            state.tetherDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -2734,7 +4665,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2752,7 +4688,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2770,7 +4711,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2788,7 +4734,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2806,7 +4757,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2824,7 +4780,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2842,7 +4803,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('pipeline', state.pipelineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2860,7 +4826,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('scar', state.scarDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2879,6 +4850,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('monolith', state.monolithDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2897,7 +4873,127 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('quarantine', state.quarantineDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'heading') {
+        return freshHeadingState(
+          state.headingDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
+          loadBestScore('heading', state.headingDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'decay') {
+        return freshDecayState(
+          state.decayDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
+          loadBestScore('decay', state.decayDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'fuse') {
+        return freshFuseState(
+          state.fuseDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
+          loadBestScore('fuse', state.fuseDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'erasures') {
+        return freshErasuresState(
+          state.erasuresDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.tetherDifficulty,
+          loadBestScore('erasures', state.erasuresDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'tether') {
+        return freshTetherState(
+          state.tetherDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          loadBestScore('tether', state.tetherDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -2914,6 +5010,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2936,6 +5037,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2959,7 +5065,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -2980,6 +5091,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3003,6 +5119,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3025,6 +5146,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3047,6 +5173,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3069,6 +5200,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('breathe', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3091,6 +5227,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('pipeline', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3113,6 +5254,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('scar', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3135,6 +5281,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('monolith', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3157,7 +5308,150 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.monolithDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('quarantine', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_HEADING_DIFFICULTY': {
+      if (!HEADING_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveHeadingDifficulty(action.difficulty);
+      saveMode('heading');
+      return freshHeadingState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
+        loadBestScore('heading', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'SET_DECAY_DIFFICULTY': {
+      if (!DECAY_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveDecayDifficulty(action.difficulty);
+      saveMode('decay');
+      return freshDecayState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
+        loadBestScore('decay', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_FUSE_DIFFICULTY': {
+      if (!FUSE_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveFuseDifficulty(action.difficulty);
+      saveMode('fuse');
+      return freshFuseState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
+        loadBestScore('fuse', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'SET_ERASURES_DIFFICULTY': {
+      if (!ERASURES_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveErasuresDifficulty(action.difficulty);
+      saveMode('erasures');
+      return freshErasuresState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.tetherDifficulty,
+        loadBestScore('erasures', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'SET_TETHER_DIFFICULTY': {
+      if (!TETHER_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveTetherDifficulty(action.difficulty);
+      saveMode('tether');
+      return freshTetherState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        loadBestScore('tether', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
       );
@@ -3180,6 +5474,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3201,6 +5500,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3221,6 +5525,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3241,6 +5550,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3261,9 +5575,92 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.monolithDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
+      );
+    }
+
+    case 'NEW_HEADING_PUZZLE': {
+      if (state.mode !== 'heading') return state;
+      return freshHeadingState(
+        state.headingDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'NEW_FUSE_PUZZLE': {
+      if (state.mode !== 'fuse') return state;
+      return freshFuseState(
+        state.fuseDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
+      );
+    }
+
+    case 'NEW_ERASURES_PUZZLE': {
+      if (state.mode !== 'erasures') return state;
+      return freshErasuresState(
+        state.erasuresDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.tetherDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
       );
     }
 
@@ -3288,6 +5685,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3313,7 +5715,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
+          state.decayDifficulty,
+          state.fuseDifficulty,
+          state.erasuresDifficulty,
+          state.tetherDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -3333,6 +5740,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -3354,6 +5766,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
+        state.decayDifficulty,
+        state.fuseDifficulty,
+        state.erasuresDifficulty,
+        state.tetherDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -3363,7 +5780,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mode !== 'puzzle' &&
         state.mode !== 'mirror' &&
         state.mode !== 'breathe' &&
-        state.mode !== 'monolith'
+        state.mode !== 'monolith' &&
+        state.mode !== 'quarantine' &&
+        state.mode !== 'heading' &&
+        state.mode !== 'fuse' &&
+        state.mode !== 'erasures'
       )
         return state;
       const stack = state.puzzleUndoStack;
@@ -3372,6 +5793,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // intact so the player can keep undoing back to the puzzle's
       // start. Wipe the terminal flags so a just-failed / just-solved
       // puzzle becomes playable again from the restored position.
+      // Fuse mode also restores the per-fuse countdown list captured
+      // in the snapshot — undoing a Fuse placement reverts countdowns
+      // and any walls the placement spawned (the board snapshot
+      // already captures wall retraction since walls created
+      // post-placement weren't in the pre-placement board).
+      // Erasures mode also restores `erasureTokens` from the snapshot —
+      // undoing an erase refunds the token AND brings back the erased
+      // cells (the board snapshot captures the pre-erase fill).
+      // `erasureSelectMode` is wiped to false so the player isn't
+      // mid-erase after a rewind.
       const snap = stack[stack.length - 1];
       const remaining = stack.slice(0, -1);
       return {
@@ -3384,8 +5815,118 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         puzzleResult: null,
         puzzleLevelUp: null,
         lastCascade: null,
+        fuseCells: cloneFuseCells(snap.fuseCells),
+        erasureTokens: snap.erasureTokens,
+        erasureSelectMode: false,
         puzzleUndoStack: remaining,
       };
+    }
+
+    case 'ERASE_COMPONENT': {
+      // Erasures-mode core action: spend one erase token to delete the
+      // 4-connected component of player-placed cells containing the
+      // clicked cell. No-op outside Erasures mode, when the player
+      // hasn't toggled select mode, when the token reserve is at 0, or
+      // when the targeted cell is not a player-placed cell. Otherwise:
+      //   1. Push an undo snapshot (so the erase is reversible).
+      //   2. Erase the component via `eraseComponent`.
+      //   3. Decrement the token reserve.
+      //   4. Exit select mode (each erase consumes a token AND ends the
+      //      transient mode — re-engaging is a deliberate second tap).
+      //   5. Re-evaluate win/lose: if the tray is already empty AND the
+      //      board now matches the target, the round is solved (the
+      //      erase was the final move). Otherwise the round continues.
+      if (state.mode !== 'erasures') return state;
+      if (!state.erasureSelectMode) return state;
+      if (state.erasureTokens === null || state.erasureTokens <= 0) return state;
+      const { row, col } = action;
+      const { board: nextBoard, erasedCells } = eraseComponent(state.board, row, col);
+      if (erasedCells.length === 0) return state;
+
+      const eraseUndoStack: PuzzleUndoSnapshot[] = [
+        ...state.puzzleUndoStack,
+        {
+          board: state.board,
+          tray: state.tray,
+          score: state.score,
+          combo: state.combo,
+          fuseCells: state.fuseCells,
+          erasureTokens: state.erasureTokens,
+        },
+      ];
+
+      const nextTokens = state.erasureTokens - 1;
+      const trayEmpty = state.tray.every((s) => s === null);
+      const target = state.puzzleTarget;
+      const eDifficulty = state.erasuresDifficulty;
+
+      if (trayEmpty) {
+        // Edge case — the tray was already empty when the player
+        // engaged select-mode (e.g. a final erase to recover from a
+        // failed-but-recoverable end-state). If the board now matches
+        // the target the round flips to solved; otherwise it stays
+        // failed (the placement that drained the tray already set
+        // puzzleResult). We re-run the win check here to honour the
+        // erase as a real move.
+        const solved = target !== null && boardMatchesTarget(nextBoard, target);
+        const score = solved ? state.score + PUZZLE_SOLVE_BONUS : state.score;
+        const bestScore = Math.max(score, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('erasures', eDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: nextBoard,
+          score,
+          bestScore,
+          isGameOver: true,
+          puzzleResult: solved ? 'solved' : 'failed',
+          puzzleLevelUp: null,
+          lastCascade: null,
+          erasureTokens: nextTokens,
+          erasureSelectMode: false,
+          puzzleUndoStack: eraseUndoStack,
+        };
+      }
+
+      // Mid-round erase. Re-check standard placement game-over against
+      // the post-erase board (an erase can only OPEN cells, never close
+      // them, so this is generally just a "no-op for game-over" but we
+      // run the check anyway so a player who erased their last
+      // placement option still gets the failure flagged correctly via
+      // the standard `hasValidMoves` predicate).
+      const isGameOver = !hasValidMoves(nextBoard, state.tray);
+      return {
+        ...state,
+        board: nextBoard,
+        isGameOver,
+        puzzleResult: isGameOver ? 'failed' : null,
+        puzzleLevelUp: null,
+        lastCascade: null,
+        erasureTokens: nextTokens,
+        erasureSelectMode: false,
+        puzzleUndoStack: eraseUndoStack,
+      };
+    }
+
+    case 'TOGGLE_ERASE_SELECT': {
+      // Flip the transient select-mode flag. Guards:
+      //   - Only meaningful in Erasures mode.
+      //   - Only enterable when the player still has a token to spend
+      //     AND there's at least one player-placed cell to erase. If
+      //     either guard fails we explicitly clear the flag (so a stale
+      //     `true` from a previous turn doesn't linger).
+      if (state.mode !== 'erasures') return state;
+      if (state.erasureSelectMode) {
+        return { ...state, erasureSelectMode: false };
+      }
+      if (state.erasureTokens === null || state.erasureTokens <= 0) {
+        return state;
+      }
+      if (!hasErasableComponent(state.board)) {
+        return state;
+      }
+      return { ...state, erasureSelectMode: true };
     }
 
     case 'RESTART': {
@@ -3398,7 +5939,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mode === 'mirror' ||
           state.mode === 'breathe' ||
           state.mode === 'monolith' ||
-          state.mode === 'quarantine') &&
+          state.mode === 'quarantine' ||
+          state.mode === 'heading' ||
+          state.mode === 'decay' ||
+          state.mode === 'fuse' ||
+          state.mode === 'erasures') &&
         state.puzzleInitialBoard &&
         state.puzzleInitialTray
       ) {
@@ -3419,6 +5964,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           quarantineTargets: state.quarantineInitialTargets
             ? [...state.quarantineInitialTargets]
             : state.quarantineTargets,
+          // Fuse mode: revert the active fuse list to the puzzle's
+          // starting state so countdowns reset alongside the board
+          // (which has its FUSE_COLOR sentinels back in place via
+          // `puzzleInitialBoard`). For other modes `fuseInitialCells`
+          // is `[]`, so this is a harmless no-op.
+          fuseCells: cloneFuseCells(state.fuseInitialCells),
+          // Erasures mode: refresh the token reserve to the difficulty's
+          // starting value alongside the board reset, and exit any
+          // half-engaged select mode. For other modes
+          // `state.erasuresDifficulty` is still set (we always remember
+          // the rung) but `erasureTokens` stays `null` because the
+          // active mode isn't Erasures.
+          erasureTokens:
+            state.mode === 'erasures' ? erasureTokenCount(state.erasuresDifficulty) : state.erasureTokens,
+          erasureSelectMode: false,
         };
       }
       return { ...createInitialState(), bestScore: state.bestScore };

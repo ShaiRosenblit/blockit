@@ -6,6 +6,16 @@ export type PieceShape = {
   width: number;
   height: number;
   color: string;
+  /**
+   * Heading-mode metadata. Tracks the rotation count modulo 4 from the
+   * piece's canonical orientation in `PIECE_CATALOG`: 0 = canonical,
+   * 1 = rotated 90° CW, 2 = 180°, 3 = 270° CW. Set on tray pieces by the
+   * Heading generator (and incremented by `ROTATE_TRAY_PIECE`); ignored
+   * by every other mode. Optional so non-Heading code never has to mention
+   * it. See `headingForPiece` in `headingPuzzleGenerator.ts` for how this
+   * maps onto the 4 cardinal-or-FULL Heading directions.
+   */
+  heading?: 0 | 1 | 2 | 3;
 };
 
 export type TraySlot = PieceShape | null;
@@ -30,7 +40,12 @@ export type GameMode =
   | 'pipeline'
   | 'scar'
   | 'monolith'
-  | 'quarantine';
+  | 'quarantine'
+  | 'heading'
+  | 'decay'
+  | 'fuse'
+  | 'erasures'
+  | 'tether';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -81,6 +96,85 @@ export type MonolithDifficulty = 'easy' | 'normal' | 'hard';
  * independent per-mode.
  */
 export type QuarantineDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Heading mode difficulty. Three rungs control tray length, piece-cell
+ * bands, target-cell bands, and the minimum number of half-clears that
+ * must appear in the generator's reference solution. Kept as its own
+ * literal union (not aliased to other three-rung modes) so future
+ * Heading-only tuning stays a typed breaking change and persistence keys
+ * stay independent per-mode.
+ */
+export type HeadingDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Heading-mode direction enum. UP / RIGHT / DOWN / LEFT correspond to
+ * rotation indices 0 / 1 / 2 / 3 from the piece's canonical orientation,
+ * mirroring the standard "north = up = 0, clockwise" compass. `FULL` is
+ * the sentinel used for pieces with no meaningful orientation (the
+ * monomino, the 2×2 and 3×3 squares, and the X-pentomino plus): for those
+ * pieces both row and column clears revert to Classic (full-line) semantics.
+ */
+export type Heading = 'up' | 'right' | 'down' | 'left' | 'full';
+
+/**
+ * Decay mode difficulty. Three rungs control the per-cell **age threshold**
+ * `T` that gates line clears (a row/column only clears once every filled
+ * cell in that line has age ≥ `T`) and the **pre-fill seed count** of cells
+ * planted at age = `T` so the player has immediate clearing agency on the
+ * first few placements. Lower threshold = stricter (fewer turns to wait
+ * before a placement-aged cell ripens). Kept as its own literal union (not
+ * aliased to other three-rung modes) so future Decay-only tuning stays a
+ * typed breaking change and persistence keys stay independent per-mode.
+ */
+export type DecayDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Fuse mode difficulty. Three rungs control the count `K` of fuse cells
+ * pre-seeded onto the starting board. Each fuse carries an integer
+ * countdown; every placement decrements every fuse, and any fuse that
+ * reaches 0 explodes at the start of the next turn — its 4-neighbour
+ * empty cells (and the fuse cell itself) become permanent
+ * indestructible WALL cells. Win on tray-empty + target-match + zero
+ * fuses remaining (every fuse must have been swept away by a
+ * row/column clear, since walls torpedo the win check).
+ *
+ * Kept as its own literal union (not aliased to other three-rung modes)
+ * so future Fuse-only tuning stays a typed breaking change and
+ * persistence keys stay independent per-mode.
+ */
+export type FuseDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Erasures mode difficulty. Three rungs control the number of erase
+ * tokens `K` granted per puzzle (Easy 3, Normal 5, Hard 7) and the
+ * tightness of the heavily pre-filled starting board the generator
+ * produces. Each token deletes one 4-connected component of *player-placed*
+ * cells when spent — pre-fill blockers, walls, fuse sentinels and
+ * monolith seeds are immune. Win on tray-empty + target-match; remaining
+ * tokens at win time are fine.
+ *
+ * Kept as its own literal union (not aliased to other three-rung modes)
+ * so future Erasures-only tuning stays a typed breaking change and
+ * persistence keys stay independent per-mode.
+ */
+export type ErasuresDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Tether mode difficulty. Three rungs control the **piece pool** the tray
+ * draws from and the **resampling strictness** for the paired slots. Easy
+ * draws from a shape-restricted pool that fits the Chebyshev-2 window
+ * comfortably; Normal uses the standard Classic mix; Hard adds a
+ * `minTetherOptions ≥ 2` resample constraint on the next paired slot so
+ * the player is more often forced into tight tether-window placements
+ * (with a free-piece fallback when no paired sample qualifies). The
+ * Chebyshev radius itself is fixed at 2 across every rung — difficulty
+ * varies the *shape* of the constraint, not its geometry. Kept as its
+ * own literal union (not aliased to other three-rung modes) so future
+ * Tether-only tuning stays a typed breaking change and persistence keys
+ * stay independent per-mode.
+ */
+export type TetherDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -145,7 +239,12 @@ export type ModeSelection =
   | { mode: 'pipeline'; difficulty: PipelineDifficulty }
   | { mode: 'scar'; difficulty: ScarDifficulty }
   | { mode: 'monolith'; difficulty: MonolithDifficulty }
-  | { mode: 'quarantine'; difficulty: QuarantineDifficulty };
+  | { mode: 'quarantine'; difficulty: QuarantineDifficulty }
+  | { mode: 'heading'; difficulty: HeadingDifficulty }
+  | { mode: 'decay'; difficulty: DecayDifficulty }
+  | { mode: 'fuse'; difficulty: FuseDifficulty }
+  | { mode: 'erasures'; difficulty: ErasuresDifficulty }
+  | { mode: 'tether'; difficulty: TetherDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -200,6 +299,36 @@ export const MONOLITH_DIFFICULTIES: readonly MonolithDifficulty[] = [
 ] as const;
 
 export const QUARANTINE_DIFFICULTIES: readonly QuarantineDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const HEADING_DIFFICULTIES: readonly HeadingDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const DECAY_DIFFICULTIES: readonly DecayDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const FUSE_DIFFICULTIES: readonly FuseDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const ERASURES_DIFFICULTIES: readonly ErasuresDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const TETHER_DIFFICULTIES: readonly TetherDifficulty[] = [
   'easy',
   'normal',
   'hard',

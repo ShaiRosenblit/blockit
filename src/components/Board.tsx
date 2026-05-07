@@ -10,6 +10,40 @@ type BoardProps = {
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
   /**
+   * Click handler invoked with the `(row, col)` of the cell the player
+   * tapped. Used by Erasures mode to dispatch `ERASE_COMPONENT` when
+   * the player is in select mode. Undefined / unwired in every other
+   * mode and during normal placement gameplay; the handler is gated
+   * upstream on `state.erasureSelectMode` so attaching it
+   * unconditionally is safe but unnecessary outside Erasures.
+   */
+  onCellClick?: (row: number, col: number) => void;
+  /**
+   * Set of `${row},${col}` keys that are *eligible* for an erase tap
+   * — i.e. cells on which `ERASE_COMPONENT` would do something. Used
+   * to render an `cell--erase-eligible` highlight in select mode.
+   * Undefined outside Erasures-select mode.
+   */
+  eraseEligibleCells?: Set<string>;
+  /**
+   * True while the player is in Erasures select mode. Triggers
+   * board-wide dimming (via a wrapper class) so non-eligible cells
+   * read as inert and the player's eye is drawn to the eligible
+   * cluster.
+   */
+  eraseSelectActive?: boolean;
+  /**
+   * Tether-mode active "tether window" — the precomputed set of
+   * `${row},${col}` keys within Chebyshev-distance ≤ 2 of any cell
+   * in the most recent paired-slot placement. Cells whose key is in
+   * this set get a `cell--tether-window` outline so the player can
+   * see exactly where the next partner placement may anchor.
+   * Undefined outside Tether mode and when no pending paired
+   * placement is loaded (round start, or after the partner slot has
+   * already placed and refilled past the window).
+   */
+  tetherWindowCells?: Set<string>;
+  /**
    * Gravity-mode cascade playback override. When set, renders this board
    * instead of `state.board` — the reducer commits the final post-cascade
    * state in one dispatch, but the UI replays the intermediate steps to
@@ -49,6 +83,10 @@ export function Board({
   cellSize,
   cascadeRenderKey,
   shake,
+  onCellClick,
+  eraseEligibleCells,
+  eraseSelectActive,
+  tetherWindowCells,
 }: BoardProps) {
   const { state } = useGame();
   const target = state.puzzleTarget;
@@ -57,7 +95,19 @@ export function Board({
   const isMonolith = state.mode === 'monolith';
   const isBreathe = state.mode === 'breathe';
   const isQuarantine = state.mode === 'quarantine';
+  const isDecay = state.mode === 'decay';
+  const isFuse = state.mode === 'fuse';
   const renderBoard = overrideBoard ?? state.board;
+
+  // Fuse mode: build an O(1) lookup from `r,c` → countdown for each
+  // live fuse so per-cell rendering doesn't have to scan the fuse list.
+  // Empty Map outside Fuse so the lookup is a no-op everywhere else.
+  const fuseCountdownByCell = new Map<string, number>();
+  if (isFuse) {
+    for (const f of state.fuseCells) {
+      fuseCountdownByCell.set(`${f.row},${f.col}`, f.countdown);
+    }
+  }
 
   // Quarantine target badges — one per region, anchored to the first cell
   // of each region. Rendered as grid items so the badge lands in the
@@ -112,6 +162,46 @@ export function Board({
         else targetState = 'neutral';
       }
 
+      // Decay mode: read the cell's age and tag the rendered cell with a
+      // `cell--age-<n>` class (clamped to 3) so the CSS can fade older
+      // tiles toward muted/dark — the player needs a quick visual on
+      // which lines are ripe enough to clear. Skipped for empty cells
+      // and outside Decay so non-Decay modes never carry the class.
+      let ageClass: number | undefined;
+      if (isDecay) {
+        const age = state.boardAges[r]?.[c];
+        if (renderBoard[r][c] !== null && age !== null && age !== undefined && age > 0) {
+          ageClass = Math.min(age, 3);
+        }
+      }
+
+      // Fuse mode: pass the per-cell countdown into the Cell so the
+      // numeric badge can render. Skipped on cells that aren't live
+      // fuses (Map miss → undefined); also skipped while a placement
+      // preview is showing on the cell since the preview overrides
+      // the fuse colour and the badge would dangle.
+      const fuseCountdown =
+        isFuse && preview === null ? fuseCountdownByCell.get(key) : undefined;
+
+      // Erasures mode: tag eligible cells (cluster of player-placed
+      // cells the player CAN erase) and ineligible cells (everything
+      // else, dimmed) while the select toggle is active. Outside
+      // select mode both flags are undefined and the cell renders
+      // exactly as in any other puzzle mode.
+      let eraseClass: 'eligible' | 'ineligible' | undefined;
+      if (eraseSelectActive) {
+        eraseClass = eraseEligibleCells?.has(key) ? 'eligible' : 'ineligible';
+      }
+
+      // Tether mode: tag cells inside the active tether window so
+      // the per-cell CSS can render a faint dashed outline. The
+      // outline is purely informational — the placement validator
+      // also enforces the rule, but the visual confirmation makes
+      // the geometry parseable at a glance instead of forcing the
+      // player to mentally project a Chebyshev-2 envelope around
+      // the prior placement.
+      const inTetherWindow = tetherWindowCells?.has(key) ?? false;
+
       cells.push(
         <Cell
           key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
@@ -123,6 +213,10 @@ export function Board({
           targetState={targetState}
           fallRows={fallRows ?? undefined}
           fallCellSize={cellSize}
+          decayAge={ageClass}
+          fuseCountdown={fuseCountdown}
+          eraseClass={eraseClass}
+          inTetherWindow={inTetherWindow}
         />
       );
     }
@@ -134,10 +228,31 @@ export function Board({
   if (isBreathe) boardClass += ' board--puzzle';
   if (isMonolith) boardClass += ' board--puzzle';
   if (isQuarantine) boardClass += ' board--puzzle';
+  if (isFuse) boardClass += ' board--puzzle';
+  if (state.mode === 'erasures') boardClass += ' board--puzzle';
+  if (eraseSelectActive) boardClass += ' board--erase-select';
   if (shake) boardClass += ' board--cascade-shake';
 
+  // Erasures-select click handler. Reads the `data-coord` of the
+  // tapped child (set on every Cell), parses it back into (row, col),
+  // and forwards to the upstream `onCellClick` handler. Only attached
+  // when both `onCellClick` and `eraseSelectActive` are set so non-
+  // Erasures modes never see synthetic click handlers on the board.
+  const handleClick = onCellClick && eraseSelectActive
+    ? (e: React.MouseEvent<HTMLDivElement>) => {
+        const target = e.target as HTMLElement | null;
+        const coord = target?.closest<HTMLElement>('[data-coord]')?.dataset.coord;
+        if (!coord) return;
+        const [rs, cs] = coord.split(',');
+        const row = Number(rs);
+        const col = Number(cs);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+        onCellClick(row, col);
+      }
+    : undefined;
+
   return (
-    <div className={boardClass} ref={boardRef}>
+    <div className={boardClass} ref={boardRef} onClick={handleClick}>
       {cells}
       {isMirror && <div className="board__mirror-axis" aria-hidden />}
       {quarantineBadges}

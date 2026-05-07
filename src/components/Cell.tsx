@@ -1,5 +1,6 @@
 import { SCAR_COLOR } from '../game/scar';
 import { WALL_COLOR } from '../game/board';
+import { FUSE_COLOR } from '../game/fuse';
 
 type CellProps = {
   color: string | null;
@@ -29,6 +30,41 @@ type CellProps = {
   fallRows?: number;
   /** Board cell size in px — multiplied by `fallRows` to derive the start offset. */
   fallCellSize?: number;
+  /**
+   * Decay-mode age tier for this filled cell, clamped to 1..3 (Board does
+   * the clamping). Adds a `cell--age-<n>` class so the CSS can apply a
+   * progressively darker / less-opaque tint as the cell ripens. Undefined
+   * outside Decay or for freshly-placed cells (age 0).
+   */
+  decayAge?: number;
+  /**
+   * Fuse-mode countdown for this cell. Set on cells whose colour is
+   * `FUSE_COLOR` — the integer countdown remaining before the fuse
+   * expires. Rendered as a small numeric badge overlaying the cell so
+   * the player can read each fuse's deadline at a glance. Undefined
+   * outside Fuse mode and on non-fuse cells.
+   */
+  fuseCountdown?: number;
+  /**
+   * Erasures-mode select-mode visual. `'eligible'` cells are
+   * player-placed cells the player can tap to spend an erase token;
+   * `'ineligible'` cells are dimmed (pre-fill, sentinels, empties).
+   * Undefined outside Erasures select mode — both states map to no
+   * extra CSS class so the cell renders normally during placement
+   * gameplay.
+   */
+  eraseClass?: 'eligible' | 'ineligible';
+  /**
+   * Tether-mode flag — `true` for cells inside the active tether
+   * window (Chebyshev-distance ≤ 2 of any cell in the most recent
+   * paired placement). Adds the `cell--tether-window` class so the
+   * CSS can outline the cell with a faint dashed border. `false`
+   * outside Tether mode and on out-of-window cells; the class is
+   * additive and never overrides another visual treatment, so it
+   * stacks cleanly with target hints, previews, and just-placed
+   * states.
+   */
+  inTetherWindow?: boolean;
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -51,6 +87,10 @@ export function Cell({
   coord,
   fallRows,
   fallCellSize,
+  decayAge,
+  fuseCountdown,
+  eraseClass,
+  inTetherWindow,
 }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
@@ -75,10 +115,23 @@ export function Cell({
     // never the target of a piece, so they need a visually distinct
     // affordance from ordinary fills.
     if (color === WALL_COLOR) className += ' cell--wall';
+    // Fuse mode's countdown sentinel: tag with `cell--fuse` so the CSS
+    // can render the clay-red base + a small numeric badge with the
+    // countdown rendered on the cell itself. The badge content is
+    // emitted as a child element below; the class enables the styling.
+    if (color === FUSE_COLOR) className += ' cell--fuse';
     style = { backgroundColor: color };
   }
 
   if (willClear) className += ' cell--will-clear';
+
+  // Decay-mode age tint. The class controls a CSS-driven fade so the
+  // player can read at a glance which cells are ripening toward the
+  // clear threshold. Only applied to filled cells (Board guarantees
+  // `decayAge` is undefined otherwise).
+  if (color && decayAge !== undefined) {
+    className += ` cell--age-${decayAge}`;
+  }
 
   // Suppress target hint while a preview is showing on this cell — the preview
   // is a stronger signal and stacking both reads as visual noise.
@@ -87,6 +140,21 @@ export function Cell({
   }
   if (!preview && targetState === 'needs-fill') className += ' cell--target-needs-fill';
   if (!preview && targetState === 'needs-clear') className += ' cell--target-needs-clear';
+
+  // Erasures-mode select-mode tinting. The class set here doesn't
+  // affect drag/place gameplay — it only kicks in while the player is
+  // toggled into select mode (`eraseSelectActive` upstream). Eligible
+  // cells get a soft glow so the player can pick out the cluster they
+  // want to spend a token on; ineligible cells are dimmed.
+  if (eraseClass === 'eligible') className += ' cell--erase-eligible';
+  else if (eraseClass === 'ineligible') className += ' cell--erase-ineligible';
+
+  // Tether-mode window outline. Drawn behind any preview / placed /
+  // target visuals so it never obscures gameplay state — the CSS
+  // applies a thin dashed inset shadow that the other treatments
+  // simply paint over when active. Only added when the upstream
+  // helper has computed an active window for this turn.
+  if (inTetherWindow) className += ' cell--tether-window';
 
   // Gravity cascade fall-in animation. Only applies to filled cells that
   // actually moved during the step (fallRows > 0). The CSS custom property
@@ -98,6 +166,19 @@ export function Cell({
       ...style,
       ['--cell-fall-offset' as string]: `${offsetPx}px`,
     } as React.CSSProperties;
+  }
+
+  // Fuse mode: when this cell is a live fuse AND we have a countdown to
+  // show, render the integer as a child span that the CSS positions as
+  // a small badge over the cell. We branch the JSX so non-fuse cells
+  // stay as a self-closing div (every other mode hits this path) and
+  // never carry a stray empty child node.
+  if (color === FUSE_COLOR && fuseCountdown !== undefined) {
+    return (
+      <div className={className} style={style} data-coord={coord} data-fuse-count={fuseCountdown}>
+        <span className="cell__fuse-count" aria-hidden>{fuseCountdown}</span>
+      </div>
+    );
   }
 
   return <div className={className} style={style} data-coord={coord} />;

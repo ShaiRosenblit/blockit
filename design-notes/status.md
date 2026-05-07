@@ -1,16 +1,26 @@
 # Run status
 
-- **Run start**: 2026-05-07 11:13:56 IDT
-- **Branch**: mode-explore-20260507-1114
-- **Cumulative Stage-9 failures**: 0 / 3
-- **Stage-1 regenerations**: 0 / 2 (3 total runs allowed)
-- **Modes merged**: 0 / 3
-- **Candidates registered**: 0 / 80
+Started: 2026-05-07 14:10 IDT
+Branch: mode-explore-20260507-1410
 
-## Stage log
-- 2026-05-07 11:13 — Stage 0 begin: branch created, design-notes initialized. Prior-attempt artifacts ignored (live in main git history).
-יום ה׳ מאי 07 2026 11:22:52 IDT
-- 2026-05-07 Stage 1 complete: 64 candidates across 8 lens files
-- 2026-05-07 11:50 — Stage 8 complete: Quarantine implemented, build+lint clean, 30/30 distinct per tier.
-- 2026-05-07 11:55 — Stage 9 complete: 5/5 normal puzzles pass all judgments.
-- 2026-05-07 11:55 — Stage 10 begin: merging to main.
+## Stage tracker
+
+- [x] Stage 0 — Setup & required reading
+- [x] Stage 1 — Wide divergent generation (64 candidates pooled & anonymised)
+- [x] Stage 2 — First-pass structural filtering (64 → 34 → 11)
+- [x] Stage 3 — Reducer simulation thought experiments (11 → 5)
+- [x] Stage 4 — Generator feasibility (5 → 5, all FEASIBLE)
+- [x] Stage 5 — Implementation slate selection (5 locked)
+- [x] Stage 6 — Full implementation (all 5 modes shipped, build clean)
+- [x] Stage 7 — Internal playtesting + debugging (1 fix shipped, all 5 stable)
+- [x] Stage 8 — Comparative evaluation (5 → 5 MERGE; best thread = Fuse)
+- [ ] Stage 9 — Final polish and merge decision
+- [x] Stage 10 — Final report (final-report.md drafted; merge metadata pending)
+
+## Resource budget
+
+Generator subagents used: 8 / 16
+Evaluator subagents used: 11 / 16 (Stage 2: 5, Stage 3: 3, Stage 4: 1, Stage 7: 1, Stage 8: 1)
+Implementation subagents used: 7 (5 modes + 2 fix; outside the eval/judge budget)
+(One additional housekeeping subagent ran to pool/shuffle Stage 1 output —
+not counted against either budget since it did not generate or evaluate.)
