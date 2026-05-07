@@ -6,7 +6,7 @@ Branch: mode-explore-20260507-1410
 ## Stage tracker
 
 - [x] Stage 0 — Setup & required reading
-- [ ] Stage 1 — Wide divergent generation (≥ 60 candidates)
+- [x] Stage 1 — Wide divergent generation (64 candidates pooled & anonymised)
 - [ ] Stage 2 — First-pass structural filtering
 - [ ] Stage 3 — Reducer simulation thought experiments
 - [ ] Stage 4 — Generator feasibility
@@ -19,5 +19,7 @@ Branch: mode-explore-20260507-1410
 
 ## Resource budget
 
-Generator subagents used: 0 / 16
+Generator subagents used: 8 / 16
 Evaluator subagents used: 0 / 16
+(One additional housekeeping subagent ran to pool/shuffle Stage 1 output —
+not counted against either budget since it did not generate or evaluate.)

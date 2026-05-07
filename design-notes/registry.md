@@ -18,4 +18,22 @@ Evaluators see candidates by ID with no provenance information.
 
 ---
 
-(Populated by Stage 1.)
+## Stage 1 — generation complete
+
+64 candidates produced by 8 generator subagents (lens-segregated generation,
+~8 per lens). After generation, all 64 were pooled, shuffled by SHA-1 of
+candidate name (lineage-blind), and assigned anonymous IDs C01..C64.
+
+- **Pool**: `candidates/pool.md` (full mechanics-speak records, no provenance)
+- **Index**: `candidates/index.md` (ID → name → core rule, one row each)
+
+Name disambiguation: "Tide" → Tide-I..Tide-V (5 instances, the spec
+underestimated to 4); "Echo" → Echo-I..Echo-IV; "Vault" → Vault-I..II;
+"Polarity" → Polarity-I..II.
+
+Raw per-lens files have been deleted — evaluators must not see lineage.
+
+## Stage 2 — first-pass structural filter (in progress)
+
+Survivors: TBD
+
