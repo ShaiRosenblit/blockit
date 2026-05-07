@@ -1389,23 +1389,29 @@ body {
 }
 
 /*
- * Quarantine target badge — a small rounded chip absolutely positioned
- * inside one cell of each region, displaying the region's empty-cell
- * target. Drawn over the cell so the badge is legible without occupying
- * a real grid cell. The chip uses the puzzle target-family palette to
- * read as "goal indicator" and stays out of the way of placement
- * previews (pointer-events: none).
+ * Quarantine target badge — a small rounded chip rendered as a grid
+ * child of `.board`, occupying the same grid cell as its region's
+ * anchor cell. Sized in container-query inline units (`cqi`) so the
+ * chip tracks the live cell pitch (`.board` declares
+ * `container-type: inline-size`, so 1cqi = 1% of board width).
+ * `pointer-events: none` so the chip never blocks drag-place over the
+ * cell beneath it.
  */
 .quarantine-target-badge {
-  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: calc(var(--cell-size, 36px) * 0.65);
-  height: calc(var(--cell-size, 36px) * 0.65);
-  font-size: calc(var(--cell-size, 36px) * 0.42);
+  align-self: center;
+  justify-self: center;
+  /* 8 cells fit across the board, so 1 cell ≈ 12cqi minus gaps; 7cqi
+     keeps the chip small enough to read as an overlay rather than a
+     full-cell label. */
+  min-width: 7cqi;
+  height: 7cqi;
+  padding: 0 1.5cqi;
+  font-size: 4cqi;
   font-weight: 700;
-  border-radius: 8px;
+  border-radius: 1.5cqi;
   background: rgba(255, 234, 167, 0.22);
   color: #ffeaa7;
   border: 1px solid rgba(255, 234, 167, 0.45);
