@@ -9,3 +9,5 @@
 
 ## Stage log
 - 2026-05-07 11:13 — Stage 0 begin: branch created, design-notes initialized. Prior-attempt artifacts ignored (live in main git history).
+יום ה׳ מאי 07 2026 11:22:52 IDT
+- 2026-05-07 Stage 1 complete: 64 candidates across 8 lens files
