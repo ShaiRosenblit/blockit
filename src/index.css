@@ -1389,6 +1389,23 @@ body {
 }
 
 /*
+ * Decay mode visuals
+ *
+ * Filled cells in Decay mode pick up a `cell--age-<n>` class (n = 1..3)
+ * the older they get, fading toward muted as they ripen toward the
+ * difficulty's clear threshold. The progression is deliberately subtle
+ * (no hue change, just opacity + a faint inner border at age 3) so the
+ * underlying piece color still reads at a glance — Decay's strategy
+ * loop depends on the player parsing color clusters as well as age.
+ */
+.cell--age-1 { opacity: 0.85; }
+.cell--age-2 { opacity: 0.7; }
+.cell--age-3 {
+  opacity: 0.55;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+/*
  * Quarantine target badge — a small rounded chip rendered as a grid
  * child of `.board`, occupying the same grid cell as its region's
  * anchor cell. Sized in container-query inline units (`cqi`) so the

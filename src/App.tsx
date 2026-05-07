@@ -21,6 +21,7 @@ import {
   BOARD_SIZE,
   BREATHE_DIFFICULTIES,
   CLASSIC_DIFFICULTIES,
+  DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   HEADING_DIFFICULTIES,
@@ -1105,8 +1106,10 @@ export default function App() {
     | 'scar'
     | 'monolith'
     | 'quarantine'
-    | 'heading';
+    | 'heading'
+    | 'decay';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'decay', label: 'Decay' },
     { id: 'heading', label: 'Heading' },
     { id: 'quarantine', label: 'Quarantine' },
     { id: 'monolith', label: 'Monolith' },
@@ -1201,6 +1204,10 @@ export default function App() {
     if (state.mode === 'heading') {
       const d = state.headingDifficulty;
       return `Heading · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'decay') {
+      const d = state.decayDifficulty;
+      return `Decay · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1470,6 +1477,24 @@ export default function App() {
                         if (d !== state.headingDifficulty) {
                           clearShareHash();
                           dispatch({ type: 'SET_HEADING_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'decay' &&
+                  DECAY_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.decayDifficulty}
+                      className={`difficulty-btn${d === state.decayDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.decayDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_DECAY_DIFFICULTY', difficulty: d });
                         }
                         setMenuOpen(false);
                       }}
@@ -1780,6 +1805,8 @@ export default function App() {
                             ? 'Quarantine · hit each region\'s exact empty-cell target'
                             : state.mode === 'heading'
                               ? `Heading · ${headingHintForTray(state.tray)} · clears erase only that half`
+                            : state.mode === 'decay'
+                              ? 'Decay · cells must age before their line can clear'
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'

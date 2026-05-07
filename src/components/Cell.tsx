@@ -29,6 +29,13 @@ type CellProps = {
   fallRows?: number;
   /** Board cell size in px — multiplied by `fallRows` to derive the start offset. */
   fallCellSize?: number;
+  /**
+   * Decay-mode age tier for this filled cell, clamped to 1..3 (Board does
+   * the clamping). Adds a `cell--age-<n>` class so the CSS can apply a
+   * progressively darker / less-opaque tint as the cell ripens. Undefined
+   * outside Decay or for freshly-placed cells (age 0).
+   */
+  decayAge?: number;
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -51,6 +58,7 @@ export function Cell({
   coord,
   fallRows,
   fallCellSize,
+  decayAge,
 }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
@@ -79,6 +87,14 @@ export function Cell({
   }
 
   if (willClear) className += ' cell--will-clear';
+
+  // Decay-mode age tint. The class controls a CSS-driven fade so the
+  // player can read at a glance which cells are ripening toward the
+  // clear threshold. Only applied to filled cells (Board guarantees
+  // `decayAge` is undefined otherwise).
+  if (color && decayAge !== undefined) {
+    className += ` cell--age-${decayAge}`;
+  }
 
   // Suppress target hint while a preview is showing on this cell — the preview
   // is a stronger signal and stacking both reads as visual noise.

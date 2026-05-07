@@ -57,6 +57,7 @@ export function Board({
   const isMonolith = state.mode === 'monolith';
   const isBreathe = state.mode === 'breathe';
   const isQuarantine = state.mode === 'quarantine';
+  const isDecay = state.mode === 'decay';
   const renderBoard = overrideBoard ?? state.board;
 
   // Quarantine target badges — one per region, anchored to the first cell
@@ -112,6 +113,19 @@ export function Board({
         else targetState = 'neutral';
       }
 
+      // Decay mode: read the cell's age and tag the rendered cell with a
+      // `cell--age-<n>` class (clamped to 3) so the CSS can fade older
+      // tiles toward muted/dark — the player needs a quick visual on
+      // which lines are ripe enough to clear. Skipped for empty cells
+      // and outside Decay so non-Decay modes never carry the class.
+      let ageClass: number | undefined;
+      if (isDecay) {
+        const age = state.boardAges[r]?.[c];
+        if (renderBoard[r][c] !== null && age !== null && age !== undefined && age > 0) {
+          ageClass = Math.min(age, 3);
+        }
+      }
+
       cells.push(
         <Cell
           key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
@@ -123,6 +137,7 @@ export function Board({
           targetState={targetState}
           fallRows={fallRows ?? undefined}
           fallCellSize={cellSize}
+          decayAge={ageClass}
         />
       );
     }

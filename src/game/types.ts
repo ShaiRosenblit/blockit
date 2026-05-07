@@ -41,7 +41,8 @@ export type GameMode =
   | 'scar'
   | 'monolith'
   | 'quarantine'
-  | 'heading';
+  | 'heading'
+  | 'decay';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -114,6 +115,18 @@ export type HeadingDifficulty = 'easy' | 'normal' | 'hard';
 export type Heading = 'up' | 'right' | 'down' | 'left' | 'full';
 
 /**
+ * Decay mode difficulty. Three rungs control the per-cell **age threshold**
+ * `T` that gates line clears (a row/column only clears once every filled
+ * cell in that line has age ≥ `T`) and the **pre-fill seed count** of cells
+ * planted at age = `T` so the player has immediate clearing agency on the
+ * first few placements. Lower threshold = stricter (fewer turns to wait
+ * before a placement-aged cell ripens). Kept as its own literal union (not
+ * aliased to other three-rung modes) so future Decay-only tuning stays a
+ * typed breaking change and persistence keys stay independent per-mode.
+ */
+export type DecayDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
  * weights) because the twist is in what happens after a line clears, not in
  * what pieces you get. Kept as its own alias so best-score storage keys stay
@@ -177,7 +190,8 @@ export type ModeSelection =
   | { mode: 'scar'; difficulty: ScarDifficulty }
   | { mode: 'monolith'; difficulty: MonolithDifficulty }
   | { mode: 'quarantine'; difficulty: QuarantineDifficulty }
-  | { mode: 'heading'; difficulty: HeadingDifficulty };
+  | { mode: 'heading'; difficulty: HeadingDifficulty }
+  | { mode: 'decay'; difficulty: DecayDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -238,6 +252,12 @@ export const QUARANTINE_DIFFICULTIES: readonly QuarantineDifficulty[] = [
 ] as const;
 
 export const HEADING_DIFFICULTIES: readonly HeadingDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const DECAY_DIFFICULTIES: readonly DecayDifficulty[] = [
   'easy',
   'normal',
   'hard',
