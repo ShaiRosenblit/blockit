@@ -23,6 +23,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DECAY_DIFFICULTIES,
   DROP_DIFFICULTIES,
+  ERASURES_DIFFICULTIES,
   FUSE_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
   HEADING_DIFFICULTIES,
@@ -56,6 +57,7 @@ import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
 import type { PieceShape, PuzzleDifficulty, TraySlot } from './game/types';
 import { headingForPiece, headingGlyph } from './game/headingPuzzleGenerator';
+import { isPlayerColor as isErasuresPlayerColor } from './game/erasures';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -1109,8 +1111,10 @@ export default function App() {
     | 'quarantine'
     | 'heading'
     | 'decay'
-    | 'fuse';
+    | 'fuse'
+    | 'erasures';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'erasures', label: 'Erasures' },
     { id: 'fuse', label: 'Fuse' },
     { id: 'decay', label: 'Decay' },
     { id: 'heading', label: 'Heading' },
@@ -1155,6 +1159,29 @@ export default function App() {
     };
   }
   cascadeBoard = getCascadeFrame();
+
+  // Erasures-mode select highlight. While the player is in select mode
+  // we precompute the set of *erasable* cells (player-placed,
+  // 4-connected to anything else player-placed) so the board renders
+  // an eligibility tint per cell. The set is built directly off the
+  // current `state.board` rather than the cascade override because
+  // erase toggling is gated upstream — Erasures has no cascades —
+  // and an `undefined` set short-circuits any extra work in non-
+  // Erasures modes.
+  const eraseEligibleCells: Set<string> | undefined =
+    state.mode === 'erasures' && state.erasureSelectMode
+      ? (() => {
+          const set = new Set<string>();
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+              if (isErasuresPlayerColor(state.board[r][c])) {
+                set.add(`${r},${c}`);
+              }
+            }
+          }
+          return set;
+        })()
+      : undefined;
   const effectivePreviewCells = cascadeBoard ? undefined : preview?.cells;
   const effectivePreviewColor = cascadeBoard ? undefined : preview?.color;
   const effectiveClearPreview =
@@ -1215,6 +1242,10 @@ export default function App() {
     if (state.mode === 'fuse') {
       const d = state.fuseDifficulty;
       return `Fuse · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'erasures') {
+      const d = state.erasuresDifficulty;
+      return `Erasures · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1527,6 +1558,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'erasures' &&
+                  ERASURES_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.erasuresDifficulty}
+                      className={`difficulty-btn${d === state.erasuresDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.erasuresDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_ERASURES_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1733,6 +1782,19 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'erasures' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new erasures puzzle"
+              title="Generate a new erasures puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_ERASURES_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1797,7 +1859,7 @@ export default function App() {
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading' || state.mode === 'fuse') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading' || state.mode === 'fuse' || state.mode === 'erasures') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1805,6 +1867,43 @@ export default function App() {
               // enabled or disabled so the tray doesn't shift when the
               // first placement happens.
               <div className="piece-tray-topbar">
+                {state.mode === 'erasures' && (
+                  // Erase token toggle \u2014 Erasures-specific. The button
+                  // lives alongside Undo because both are
+                  // "round-level recovery" affordances. Disabled when
+                  // the token reserve hits 0; the active --selecting
+                  // class flips while the player is choosing a cell
+                  // so the visual signals "tap a tile to spend".
+                  <button
+                    type="button"
+                    className={`piece-tray-erase${state.erasureSelectMode ? ' piece-tray-erase--selecting' : ''}`}
+                    aria-label={
+                      state.erasureSelectMode
+                        ? 'Cancel erase'
+                        : `Erase a piece component (${state.erasureTokens ?? 0} tokens left)`
+                    }
+                    title={
+                      state.erasureSelectMode
+                        ? 'Cancel erase'
+                        : 'Erase a piece component'
+                    }
+                    aria-pressed={state.erasureSelectMode}
+                    disabled={
+                      !state.erasureSelectMode &&
+                      (state.erasureTokens === null || state.erasureTokens <= 0)
+                    }
+                    onClick={() => {
+                      haptics.pickup();
+                      sounds.pickup();
+                      dispatch({ type: 'TOGGLE_ERASE_SELECT' });
+                    }}
+                  >
+                    <span aria-hidden>{'\u2716'}</span>
+                    <span className="piece-tray-erase__label">
+                      Erase ({state.erasureTokens ?? 0})
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="piece-tray-undo"
@@ -1847,6 +1946,8 @@ export default function App() {
                               ? 'Decay · cells must age before their line can clear'
                             : state.mode === 'fuse'
                               ? 'Fuse · clear each fuse\'s line before its countdown hits 0'
+                            : state.mode === 'erasures'
+                              ? `Erasures · spend a token to delete a piece component (${state.erasureTokens ?? 0} left)`
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
@@ -1869,6 +1970,17 @@ export default function App() {
           cellSize={boardCellSize}
           cascadeRenderKey={cascadeBoard?.renderKey}
           shake={boardShaking}
+          eraseSelectActive={state.mode === 'erasures' && state.erasureSelectMode}
+          eraseEligibleCells={eraseEligibleCells}
+          onCellClick={
+            state.mode === 'erasures' && state.erasureSelectMode
+              ? (row, col) => {
+                  haptics.pickup();
+                  sounds.pickup();
+                  dispatch({ type: 'ERASE_COMPONENT', row, col });
+                }
+              : undefined
+          }
         />
         {drag && dragPiece && dragFloatPos && (
           <FloatingPiece

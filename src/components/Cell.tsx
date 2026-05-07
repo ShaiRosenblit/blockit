@@ -45,6 +45,15 @@ type CellProps = {
    * outside Fuse mode and on non-fuse cells.
    */
   fuseCountdown?: number;
+  /**
+   * Erasures-mode select-mode visual. `'eligible'` cells are
+   * player-placed cells the player can tap to spend an erase token;
+   * `'ineligible'` cells are dimmed (pre-fill, sentinels, empties).
+   * Undefined outside Erasures select mode — both states map to no
+   * extra CSS class so the cell renders normally during placement
+   * gameplay.
+   */
+  eraseClass?: 'eligible' | 'ineligible';
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -69,6 +78,7 @@ export function Cell({
   fallCellSize,
   decayAge,
   fuseCountdown,
+  eraseClass,
 }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
@@ -118,6 +128,14 @@ export function Cell({
   }
   if (!preview && targetState === 'needs-fill') className += ' cell--target-needs-fill';
   if (!preview && targetState === 'needs-clear') className += ' cell--target-needs-clear';
+
+  // Erasures-mode select-mode tinting. The class set here doesn't
+  // affect drag/place gameplay — it only kicks in while the player is
+  // toggled into select mode (`eraseSelectActive` upstream). Eligible
+  // cells get a soft glow so the player can pick out the cluster they
+  // want to spend a token on; ineligible cells are dimmed.
+  if (eraseClass === 'eligible') className += ' cell--erase-eligible';
+  else if (eraseClass === 'ineligible') className += ' cell--erase-ineligible';
 
   // Gravity cascade fall-in animation. Only applies to filled cells that
   // actually moved during the step (fallRows > 0). The CSS custom property

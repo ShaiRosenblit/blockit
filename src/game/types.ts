@@ -43,7 +43,8 @@ export type GameMode =
   | 'quarantine'
   | 'heading'
   | 'decay'
-  | 'fuse';
+  | 'fuse'
+  | 'erasures';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -144,6 +145,21 @@ export type DecayDifficulty = 'easy' | 'normal' | 'hard';
 export type FuseDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
+ * Erasures mode difficulty. Three rungs control the number of erase
+ * tokens `K` granted per puzzle (Easy 3, Normal 5, Hard 7) and the
+ * tightness of the heavily pre-filled starting board the generator
+ * produces. Each token deletes one 4-connected component of *player-placed*
+ * cells when spent — pre-fill blockers, walls, fuse sentinels and
+ * monolith seeds are immune. Win on tray-empty + target-match; remaining
+ * tokens at win time are fine.
+ *
+ * Kept as its own literal union (not aliased to other three-rung modes)
+ * so future Erasures-only tuning stays a typed breaking change and
+ * persistence keys stay independent per-mode.
+ */
+export type ErasuresDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
  * weights) because the twist is in what happens after a line clears, not in
  * what pieces you get. Kept as its own alias so best-score storage keys stay
@@ -209,7 +225,8 @@ export type ModeSelection =
   | { mode: 'quarantine'; difficulty: QuarantineDifficulty }
   | { mode: 'heading'; difficulty: HeadingDifficulty }
   | { mode: 'decay'; difficulty: DecayDifficulty }
-  | { mode: 'fuse'; difficulty: FuseDifficulty };
+  | { mode: 'fuse'; difficulty: FuseDifficulty }
+  | { mode: 'erasures'; difficulty: ErasuresDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -282,6 +299,12 @@ export const DECAY_DIFFICULTIES: readonly DecayDifficulty[] = [
 ] as const;
 
 export const FUSE_DIFFICULTIES: readonly FuseDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const ERASURES_DIFFICULTIES: readonly ErasuresDifficulty[] = [
   'easy',
   'normal',
   'hard',

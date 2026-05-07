@@ -10,6 +10,29 @@ type BoardProps = {
   placedCells?: Set<string>;
   clearPreviewCells?: Set<string>;
   /**
+   * Click handler invoked with the `(row, col)` of the cell the player
+   * tapped. Used by Erasures mode to dispatch `ERASE_COMPONENT` when
+   * the player is in select mode. Undefined / unwired in every other
+   * mode and during normal placement gameplay; the handler is gated
+   * upstream on `state.erasureSelectMode` so attaching it
+   * unconditionally is safe but unnecessary outside Erasures.
+   */
+  onCellClick?: (row: number, col: number) => void;
+  /**
+   * Set of `${row},${col}` keys that are *eligible* for an erase tap
+   * — i.e. cells on which `ERASE_COMPONENT` would do something. Used
+   * to render an `cell--erase-eligible` highlight in select mode.
+   * Undefined outside Erasures-select mode.
+   */
+  eraseEligibleCells?: Set<string>;
+  /**
+   * True while the player is in Erasures select mode. Triggers
+   * board-wide dimming (via a wrapper class) so non-eligible cells
+   * read as inert and the player's eye is drawn to the eligible
+   * cluster.
+   */
+  eraseSelectActive?: boolean;
+  /**
    * Gravity-mode cascade playback override. When set, renders this board
    * instead of `state.board` — the reducer commits the final post-cascade
    * state in one dispatch, but the UI replays the intermediate steps to
@@ -49,6 +72,9 @@ export function Board({
   cellSize,
   cascadeRenderKey,
   shake,
+  onCellClick,
+  eraseEligibleCells,
+  eraseSelectActive,
 }: BoardProps) {
   const { state } = useGame();
   const target = state.puzzleTarget;
@@ -145,6 +171,16 @@ export function Board({
       const fuseCountdown =
         isFuse && preview === null ? fuseCountdownByCell.get(key) : undefined;
 
+      // Erasures mode: tag eligible cells (cluster of player-placed
+      // cells the player CAN erase) and ineligible cells (everything
+      // else, dimmed) while the select toggle is active. Outside
+      // select mode both flags are undefined and the cell renders
+      // exactly as in any other puzzle mode.
+      let eraseClass: 'eligible' | 'ineligible' | undefined;
+      if (eraseSelectActive) {
+        eraseClass = eraseEligibleCells?.has(key) ? 'eligible' : 'ineligible';
+      }
+
       cells.push(
         <Cell
           key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
@@ -158,6 +194,7 @@ export function Board({
           fallCellSize={cellSize}
           decayAge={ageClass}
           fuseCountdown={fuseCountdown}
+          eraseClass={eraseClass}
         />
       );
     }
@@ -170,10 +207,30 @@ export function Board({
   if (isMonolith) boardClass += ' board--puzzle';
   if (isQuarantine) boardClass += ' board--puzzle';
   if (isFuse) boardClass += ' board--puzzle';
+  if (state.mode === 'erasures') boardClass += ' board--puzzle';
+  if (eraseSelectActive) boardClass += ' board--erase-select';
   if (shake) boardClass += ' board--cascade-shake';
 
+  // Erasures-select click handler. Reads the `data-coord` of the
+  // tapped child (set on every Cell), parses it back into (row, col),
+  // and forwards to the upstream `onCellClick` handler. Only attached
+  // when both `onCellClick` and `eraseSelectActive` are set so non-
+  // Erasures modes never see synthetic click handlers on the board.
+  const handleClick = onCellClick && eraseSelectActive
+    ? (e: React.MouseEvent<HTMLDivElement>) => {
+        const target = e.target as HTMLElement | null;
+        const coord = target?.closest<HTMLElement>('[data-coord]')?.dataset.coord;
+        if (!coord) return;
+        const [rs, cs] = coord.split(',');
+        const row = Number(rs);
+        const col = Number(cs);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+        onCellClick(row, col);
+      }
+    : undefined;
+
   return (
-    <div className={boardClass} ref={boardRef}>
+    <div className={boardClass} ref={boardRef} onClick={handleClick}>
       {cells}
       {isMirror && <div className="board__mirror-axis" aria-hidden />}
       {quarantineBadges}
