@@ -54,6 +54,17 @@ type CellProps = {
    * gameplay.
    */
   eraseClass?: 'eligible' | 'ineligible';
+  /**
+   * Tether-mode flag — `true` for cells inside the active tether
+   * window (Chebyshev-distance ≤ 2 of any cell in the most recent
+   * paired placement). Adds the `cell--tether-window` class so the
+   * CSS can outline the cell with a faint dashed border. `false`
+   * outside Tether mode and on out-of-window cells; the class is
+   * additive and never overrides another visual treatment, so it
+   * stacks cleanly with target hints, previews, and just-placed
+   * states.
+   */
+  inTetherWindow?: boolean;
 };
 
 /** Soft tint like invalid preview (rgba overlay), not whole-cell opacity — avoids harsh/snappy look */
@@ -79,6 +90,7 @@ export function Cell({
   decayAge,
   fuseCountdown,
   eraseClass,
+  inTetherWindow,
 }: CellProps) {
   let className = 'cell';
   let style: React.CSSProperties = {};
@@ -136,6 +148,13 @@ export function Cell({
   // want to spend a token on; ineligible cells are dimmed.
   if (eraseClass === 'eligible') className += ' cell--erase-eligible';
   else if (eraseClass === 'ineligible') className += ' cell--erase-ineligible';
+
+  // Tether-mode window outline. Drawn behind any preview / placed /
+  // target visuals so it never obscures gameplay state — the CSS
+  // applies a thin dashed inset shadow that the other treatments
+  // simply paint over when active. Only added when the upstream
+  // helper has computed an active window for this turn.
+  if (inTetherWindow) className += ' cell--tether-window';
 
   // Gravity cascade fall-in animation. Only applies to filled cells that
   // actually moved during the step (fallRows > 0). The CSS custom property

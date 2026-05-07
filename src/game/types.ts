@@ -44,7 +44,8 @@ export type GameMode =
   | 'heading'
   | 'decay'
   | 'fuse'
-  | 'erasures';
+  | 'erasures'
+  | 'tether';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -160,6 +161,22 @@ export type FuseDifficulty = 'easy' | 'normal' | 'hard';
 export type ErasuresDifficulty = 'easy' | 'normal' | 'hard';
 
 /**
+ * Tether mode difficulty. Three rungs control the **piece pool** the tray
+ * draws from and the **resampling strictness** for the paired slots. Easy
+ * draws from a shape-restricted pool that fits the Chebyshev-2 window
+ * comfortably; Normal uses the standard Classic mix; Hard adds a
+ * `minTetherOptions ≥ 2` resample constraint on the next paired slot so
+ * the player is more often forced into tight tether-window placements
+ * (with a free-piece fallback when no paired sample qualifies). The
+ * Chebyshev radius itself is fixed at 2 across every rung — difficulty
+ * varies the *shape* of the constraint, not its geometry. Kept as its
+ * own literal union (not aliased to other three-rung modes) so future
+ * Tether-only tuning stays a typed breaking change and persistence keys
+ * stay independent per-mode.
+ */
+export type TetherDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
  * weights) because the twist is in what happens after a line clears, not in
  * what pieces you get. Kept as its own alias so best-score storage keys stay
@@ -226,7 +243,8 @@ export type ModeSelection =
   | { mode: 'heading'; difficulty: HeadingDifficulty }
   | { mode: 'decay'; difficulty: DecayDifficulty }
   | { mode: 'fuse'; difficulty: FuseDifficulty }
-  | { mode: 'erasures'; difficulty: ErasuresDifficulty };
+  | { mode: 'erasures'; difficulty: ErasuresDifficulty }
+  | { mode: 'tether'; difficulty: TetherDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -305,6 +323,12 @@ export const FUSE_DIFFICULTIES: readonly FuseDifficulty[] = [
 ] as const;
 
 export const ERASURES_DIFFICULTIES: readonly ErasuresDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const TETHER_DIFFICULTIES: readonly TetherDifficulty[] = [
   'easy',
   'normal',
   'hard',

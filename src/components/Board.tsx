@@ -33,6 +33,17 @@ type BoardProps = {
    */
   eraseSelectActive?: boolean;
   /**
+   * Tether-mode active "tether window" — the precomputed set of
+   * `${row},${col}` keys within Chebyshev-distance ≤ 2 of any cell
+   * in the most recent paired-slot placement. Cells whose key is in
+   * this set get a `cell--tether-window` outline so the player can
+   * see exactly where the next partner placement may anchor.
+   * Undefined outside Tether mode and when no pending paired
+   * placement is loaded (round start, or after the partner slot has
+   * already placed and refilled past the window).
+   */
+  tetherWindowCells?: Set<string>;
+  /**
    * Gravity-mode cascade playback override. When set, renders this board
    * instead of `state.board` — the reducer commits the final post-cascade
    * state in one dispatch, but the UI replays the intermediate steps to
@@ -75,6 +86,7 @@ export function Board({
   onCellClick,
   eraseEligibleCells,
   eraseSelectActive,
+  tetherWindowCells,
 }: BoardProps) {
   const { state } = useGame();
   const target = state.puzzleTarget;
@@ -181,6 +193,15 @@ export function Board({
         eraseClass = eraseEligibleCells?.has(key) ? 'eligible' : 'ineligible';
       }
 
+      // Tether mode: tag cells inside the active tether window so
+      // the per-cell CSS can render a faint dashed outline. The
+      // outline is purely informational — the placement validator
+      // also enforces the rule, but the visual confirmation makes
+      // the geometry parseable at a glance instead of forcing the
+      // player to mentally project a Chebyshev-2 envelope around
+      // the prior placement.
+      const inTetherWindow = tetherWindowCells?.has(key) ?? false;
+
       cells.push(
         <Cell
           key={cascadeRenderKey ? `${cascadeRenderKey}:${key}` : key}
@@ -195,6 +216,7 @@ export function Board({
           decayAge={ageClass}
           fuseCountdown={fuseCountdown}
           eraseClass={eraseClass}
+          inTetherWindow={inTetherWindow}
         />
       );
     }

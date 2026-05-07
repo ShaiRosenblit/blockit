@@ -1517,6 +1517,25 @@ body {
 }
 
 /*
+ * Tether mode visuals
+ *
+ * Cells inside the active "tether window" (Chebyshev-distance ≤ 2 of
+ * any cell in the most recent paired placement) pick up the
+ * `cell--tether-window` class so the player can see exactly where the
+ * next partner placement is allowed to anchor. The treatment is a
+ * single faint dashed inset outline — deliberately subtle so it
+ * stacks cleanly with target hints, just-placed flashes, and the
+ * preview overlay without competing for attention. Switching to
+ * `outline` (not `box-shadow`) keeps the visual independent of the
+ * cell's own border-radius / fill so other modes' treatments still
+ * read.
+ */
+.cell--tether-window {
+  outline: 1px dashed rgba(255, 234, 167, 0.5);
+  outline-offset: -2px;
+}
+
+/*
  * Quarantine target badge — a small rounded chip rendered as a grid
  * child of `.board`, occupying the same grid cell as its region's
  * anchor cell. Sized in container-query inline units (`cqi`) so the

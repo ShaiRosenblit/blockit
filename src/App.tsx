@@ -33,8 +33,10 @@ import {
   PIPELINE_DIFFICULTIES,
   SCAR_DIFFICULTIES,
   PUZZLE_DIFFICULTIES,
+  TETHER_DIFFICULTIES,
   puzzleDifficultyLabel,
 } from './game/types';
+import { tetherWindowCells } from './game/tether';
 import { haptics } from './haptics';
 import { sounds } from './sounds';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y, dragPointerToEffective } from './dragConstants';
@@ -1112,8 +1114,10 @@ export default function App() {
     | 'heading'
     | 'decay'
     | 'fuse'
-    | 'erasures';
+    | 'erasures'
+    | 'tether';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'tether', label: 'Tether' },
     { id: 'erasures', label: 'Erasures' },
     { id: 'fuse', label: 'Fuse' },
     { id: 'decay', label: 'Decay' },
@@ -1182,6 +1186,30 @@ export default function App() {
           return set;
         })()
       : undefined;
+
+  // Tether mode: precompute the active "tether window" — the set of
+  // board cells within Chebyshev-distance ≤ 2 of any cell in the most
+  // recent paired-slot placement. Rendered as a faint outline on each
+  // member cell so the player can see exactly where the next partner
+  // placement is allowed to anchor. Only shown when there's a pending
+  // paired placement: a paired slot must still hold a piece AND its
+  // partner must have been the last paired-placer (otherwise the
+  // window is academic — slot-2 placements aren't gated and a same-
+  // slot replay isn't gated either).
+  const tetherWindowCellsSet: Set<string> | undefined =
+    state.mode === 'tether' &&
+    state.lastPairedPlacementCells !== null &&
+    state.lastPairedSlot !== null
+      ? (() => {
+          // Identify the partner slot index (the OTHER paired slot).
+          // The window only matters if its piece is still in the tray
+          // — if the partner slot has already placed and refilled, the
+          // window has been replaced by THAT placement's window.
+          const partnerSlot = state.lastPairedSlot === 0 ? 1 : 0;
+          if (!state.tray[partnerSlot]) return undefined;
+          return tetherWindowCells(state.lastPairedPlacementCells);
+        })()
+      : undefined;
   const effectivePreviewCells = cascadeBoard ? undefined : preview?.cells;
   const effectivePreviewColor = cascadeBoard ? undefined : preview?.color;
   const effectiveClearPreview =
@@ -1246,6 +1274,10 @@ export default function App() {
     if (state.mode === 'erasures') {
       const d = state.erasuresDifficulty;
       return `Erasures · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'tether') {
+      const d = state.tetherDifficulty;
+      return `Tether · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1569,6 +1601,24 @@ export default function App() {
                         if (d !== state.erasuresDifficulty) {
                           clearShareHash();
                           dispatch({ type: 'SET_ERASURES_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                {state.mode === 'tether' &&
+                  TETHER_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.tetherDifficulty}
+                      className={`difficulty-btn${d === state.tetherDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.tetherDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_TETHER_DIFFICULTY', difficulty: d });
                         }
                         setMenuOpen(false);
                       }}
@@ -1948,6 +1998,10 @@ export default function App() {
                               ? 'Fuse · clear each fuse\'s line before its countdown hits 0'
                             : state.mode === 'erasures'
                               ? `Erasures · spend a token to delete a piece component (${state.erasureTokens ?? 0} left)`
+                            : state.mode === 'tether'
+                              ? state.lastPairedPlacementCells !== null && state.lastPairedSlot !== null
+                                ? `Tether · slot ${(state.lastPairedSlot === 0 ? 1 : 0) + 1} tethered to last placement`
+                                : 'Tether · paired slots couple by Chebyshev-2 origin'
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'
@@ -1972,6 +2026,7 @@ export default function App() {
           shake={boardShaking}
           eraseSelectActive={state.mode === 'erasures' && state.erasureSelectMode}
           eraseEligibleCells={eraseEligibleCells}
+          tetherWindowCells={tetherWindowCellsSet}
           onCellClick={
             state.mode === 'erasures' && state.erasureSelectMode
               ? (row, col) => {
