@@ -11,7 +11,7 @@ Branch: mode-explore-20260507-1410
 - [x] Stage 3 — Reducer simulation thought experiments (11 → 5)
 - [x] Stage 4 — Generator feasibility (5 → 5, all FEASIBLE)
 - [x] Stage 5 — Implementation slate selection (5 locked)
-- [ ] Stage 6 — Full implementation
+- [x] Stage 6 — Full implementation (all 5 modes shipped, build clean)
 - [ ] Stage 7 — Internal playtesting + debugging
 - [ ] Stage 8 — Comparative evaluation
 - [ ] Stage 9 — Final polish and merge decision

@@ -105,7 +105,27 @@ per-candidate rationale and the diversity audit.
 
 Implementation order (simplest first): C39 → C14 → C47 → C11 → C62.
 
-## Stage 6 — full implementation (in progress)
+## Stage 6 — full implementation (complete)
+
+All 5 slate candidates implemented and committed; baseline build passes
+clean throughout. ~6200 LOC across 5 modes.
+
+| ID | Name | Commit | LOC | Notes |
+| --- | --- | --- | --- | --- |
+| C39 | Heading | `e949b0e` | 1155 | full backwards-compat threading of `headingDifficulty` through every freshXState |
+| C14 | Decay | `14cb8b4` | 768 | endless score-attack, parallel `boardAges` field, age-3 pre-fill seeding |
+| C47 | Fuse | `0523482` | 1563 | finite-tray puzzle, fuse cells with countdown badges + wall expansion |
+| C11 | Erasures | `397c4c8` | 1604 | finite-tray puzzle, K erase tokens, escape-valves fallback generator (mandatory-erase path deferred — see file's top doc) |
+| C62 | Tether | `97635ea` | 1107 | endless score-attack, paired-tray Chebyshev-2 constraint, tether-window outline overlay |
+
+Erasures fallback caveat: the generator ships the "tokens as escape valves"
+path (player CAN solve without spending tokens). The mandatory-erase path
+(every solution requires ≥ 1 token) is documented as future work in the
+generator file's top doc. This is allowed by the Stage 4 spec but it does
+weaken the mode's distinctness — flag for Stage 8 evaluation.
+
+## Stage 7 — internal playtest + debug (in progress)
+
 
 
 
