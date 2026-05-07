@@ -1,0 +1,34 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - 'button "Open menu — current selection: Heading · Easy" [ref=e6] [cursor=pointer]':
+      - generic [ref=e7]: ☰
+      - generic [ref=e8]: Heading · Easy
+    - heading "Blockit" [level=1] [ref=e9]:
+      - img "Blockit" [ref=e10]
+    - button "Unmute sounds" [ref=e437] [cursor=pointer]: 🔇
+  - generic [ref=e438]:
+    - generic [ref=e439]:
+      - generic [ref=e440]: Score
+      - generic [ref=e441]: "0"
+    - generic [ref=e442]:
+      - generic [ref=e443]: Best
+      - generic [ref=e444]: "0"
+  - generic [ref=e445]:
+    - button "Restart this round" [ref=e446] [cursor=pointer]:
+      - generic [ref=e447]: ↻
+      - generic [ref=e448]: Restart
+    - button "Generate a new heading puzzle" [ref=e449] [cursor=pointer]:
+      - generic [ref=e450]: ✨
+      - generic [ref=e451]: New puzzle
+  - note "Puzzle symbol legend" [ref=e452]:
+    - generic [ref=e456]: Fill
+    - generic [ref=e460]: Clear
+  - generic [ref=e461]:
+    - button "Undo last placement" [disabled] [ref=e463]:
+      - generic [ref=e464]: ↩
+    - generic [ref=e465]:
+      - generic [ref=e466]:
+        - generic "heading ←": ←
+      - generic [ref=e472]:
+        - generic "heading ↓": ↓
+    - paragraph [ref=e478]: Heading · headings ← ↓ · clears erase only that half

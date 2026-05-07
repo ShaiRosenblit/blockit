@@ -124,7 +124,25 @@ path (player CAN solve without spending tokens). The mandatory-erase path
 generator file's top doc. This is allowed by the Stage 4 spec but it does
 weaken the mode's distinctness — flag for Stage 8 evaluation.
 
-## Stage 7 — internal playtest + debug (in progress)
+## Stage 7 — internal playtest + debug (complete)
+
+Browser-based playtest via Playwright across all 5 modes. See
+`stage7-playtest.md` for per-mode findings.
+
+| Mode | Playtest verdict | Action |
+| --- | --- | --- |
+| Decay    | READY  | (none) |
+| Fuse     | READY  | (none) |
+| Erasures | READY  | (none) |
+| Heading  | FIX    | per-slot heading-glyph badge missing → fixed in `620df41` |
+| Tether   | VERIFY | tether-window outline confirmed by code-review path inspection (Playwright drag flakiness blocked visual verification but the code path is sound) |
+
+All 5 modes load without console errors, accept difficulty switching,
+render their distinctive UI element, and survive at least one placement
+attempt. No structural flaws revealed. No mode dropped at this stage.
+
+## Stage 8 — comparative evaluation (in progress)
+
 
 
 

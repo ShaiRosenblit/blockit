@@ -1,0 +1,47 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - 'button "Close menu — current selection: Decay · Easy" [expanded] [ref=e608] [cursor=pointer]':
+      - generic [ref=e7]: ☰
+      - generic [ref=e8]: Decay · Easy
+    - heading "Blockit" [level=1] [ref=e9]:
+      - img "Blockit" [ref=e10]
+    - button "Unmute sounds" [ref=e437] [cursor=pointer]: 🔇
+  - generic [ref=e547]:
+    - tablist "Game mode" [ref=e548]:
+      - tab "Classic" [ref=e549] [cursor=pointer]
+      - tab "Puzzle" [ref=e550] [cursor=pointer]
+    - tablist "Difficulty" [ref=e551]:
+      - tab "easy" [selected] [ref=e609] [cursor=pointer]
+      - tab "normal" [ref=e610] [cursor=pointer]
+      - tab "hard" [ref=e611] [cursor=pointer]
+    - generic [ref=e556]:
+      - button "Experimental modes" [expanded] [ref=e557] [cursor=pointer]:
+        - generic [ref=e558]: ▾
+        - text: Experimental modes
+      - tablist "Experimental modes" [ref=e560]:
+        - tab "Tether" [ref=e561] [cursor=pointer]
+        - tab "Erasures" [ref=e562] [cursor=pointer]
+        - tab "Fuse" [ref=e563] [cursor=pointer]
+        - tab "Decay" [active] [selected] [ref=e564] [cursor=pointer]
+        - tab "Heading" [ref=e565] [cursor=pointer]
+        - tab "Quarantine" [ref=e566] [cursor=pointer]
+        - tab "Monolith" [ref=e567] [cursor=pointer]
+        - tab "Mirror" [ref=e568] [cursor=pointer]
+        - tab "Breathe" [ref=e569] [cursor=pointer]
+        - tab "Pipeline" [ref=e570] [cursor=pointer]
+        - tab "Scar" [ref=e571] [cursor=pointer]
+        - tab "Chroma" [ref=e572] [cursor=pointer]
+        - tab "Gravity" [ref=e573] [cursor=pointer]
+        - tab "Drop" [ref=e574] [cursor=pointer]
+    - button "Custom puzzle…" [ref=e559] [cursor=pointer]
+  - generic [ref=e438]:
+    - generic [ref=e439]:
+      - generic [ref=e440]: Score
+      - generic [ref=e441]: "0"
+    - generic [ref=e442]:
+      - generic [ref=e443]: Best
+      - generic [ref=e444]: "0"
+  - button "Restart this round" [ref=e446] [cursor=pointer]:
+    - generic [ref=e447]: ↻
+    - generic [ref=e448]: Restart
+  - paragraph [ref=e480]: Decay · cells must age before their line can clear

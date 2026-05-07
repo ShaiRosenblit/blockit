@@ -12,7 +12,7 @@ Branch: mode-explore-20260507-1410
 - [x] Stage 4 — Generator feasibility (5 → 5, all FEASIBLE)
 - [x] Stage 5 — Implementation slate selection (5 locked)
 - [x] Stage 6 — Full implementation (all 5 modes shipped, build clean)
-- [ ] Stage 7 — Internal playtesting + debugging
+- [x] Stage 7 — Internal playtesting + debugging (1 fix shipped, all 5 stable)
 - [ ] Stage 8 — Comparative evaluation
 - [ ] Stage 9 — Final polish and merge decision
 - [ ] Stage 10 — Final report
@@ -20,6 +20,7 @@ Branch: mode-explore-20260507-1410
 ## Resource budget
 
 Generator subagents used: 8 / 16
-Evaluator subagents used: 9 / 16 (Stage 2: 5, Stage 3: 3, Stage 4: 1)
+Evaluator subagents used: 10 / 16 (Stage 2: 5, Stage 3: 3, Stage 4: 1, Stage 7: 1)
+Implementation subagents used: 6 (5 modes + 1 fix; outside the eval/judge budget)
 (One additional housekeeping subagent ran to pool/shuffle Stage 1 output —
 not counted against either budget since it did not generate or evaluate.)
