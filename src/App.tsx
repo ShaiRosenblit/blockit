@@ -145,6 +145,13 @@ export default function App() {
   // header can hand more room to the Blockit wordmark below.
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Experimental modes are tucked behind a small disclosure inside the
+  // chrome menu so the two primary picks (Classic, Puzzle) read as the
+  // game's main offering. Closed by default; the section opens itself
+  // automatically when the active mode is one of the experiments so the
+  // player can see and re-pick it.
+  const [experimentalOpen, setExperimentalOpen] = useState(false);
+
   // Custom-puzzle configurator is a modal overlay, opened from the chrome
   // menu. On Generate it dispatches LOAD_SHARED_PUZZLE so the produced
   // puzzle is ephemeral (no localStorage write) and doesn't clobber the
@@ -1063,12 +1070,11 @@ export default function App() {
       : null;
   const dragFloatCellSize = boardCellSize;
 
-  // Puzzle is the headline mode; everything else is a side experiment.
-  // Splitting them into a prominent primary pill and a quiet "Other modes"
-  // chip row keeps the menu legible as we keep adding new variants — a
-  // single 9-wide row was getting too packed to scan.
-  type SecondaryModeId =
-    | 'classic'
+  // Classic and Puzzle are the game's two headline modes, treated as
+  // equal peers in the primary row. Everything else is a side experiment
+  // tucked behind a small disclosure so the menu reads as "the game is
+  // these two modes; here are some extras if you want them".
+  type ExperimentalModeId =
     | 'chroma'
     | 'gravity'
     | 'drop'
@@ -1077,8 +1083,7 @@ export default function App() {
     | 'pipeline'
     | 'scar'
     | 'monolith';
-  const secondaryModes: { id: SecondaryModeId; label: string }[] = [
-    { id: 'classic', label: 'Classic' },
+  const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
     { id: 'monolith', label: 'Monolith' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'breathe', label: 'Breathe' },
@@ -1088,6 +1093,7 @@ export default function App() {
     { id: 'gravity', label: 'Gravity' },
     { id: 'drop', label: 'Drop' },
   ];
+  const experimentalActive = experimentalModes.some((m) => m.id === state.mode);
 
   // Gravity cascade playback → Board override props. Derived per render
   // from the current playback phase; null / undefined when idle, which
@@ -1220,12 +1226,26 @@ export default function App() {
         {menuOpen && (
           <div id="chrome-menu" className="chrome-menu">
             {/*
-             * Primary mode pill — Puzzle is the headline experience, so it
-             * gets a wide, full-width button at the top of the drawer. The
-             * secondary chip row below carries the rest. This visual split
-             * keeps the menu scannable as the secondary catalogue grows.
+             * Primary mode row — Classic and Puzzle sit as equal peers at
+             * the top of the drawer. They are the game's two headline
+             * modes; everything else lives behind the experimental
+             * disclosure below. Two equal-width pills make the parity
+             * unambiguous: neither is a sub-mode of the other.
              */}
             <div className="mode-selector mode-selector--primary" role="tablist" aria-label="Game mode">
+              <button
+                role="tab"
+                aria-selected={state.mode === 'classic'}
+                className={`mode-btn mode-btn--primary${state.mode === 'classic' ? ' mode-btn--active' : ''}`}
+                onClick={() => {
+                  if (state.mode !== 'classic') {
+                    clearShareHash();
+                    dispatch({ type: 'SET_MODE', mode: 'classic' });
+                  }
+                }}
+              >
+                Classic
+              </button>
               <button
                 role="tab"
                 aria-selected={state.mode === 'puzzle'}
@@ -1415,38 +1435,56 @@ export default function App() {
               </div>
             )}
             {/*
-             * Secondary modes — wrapped chip row, visually demoted from the
-             * primary Puzzle pill. The "Other modes" label keeps the
-             * hierarchy obvious; the active state still floats here when
-             * the player has picked a non-puzzle variant.
+             * Experimental modes — hidden behind a small disclosure so the
+             * menu reads as "Classic + Puzzle is the game; here are some
+             * extras". The section opens automatically when the active
+             * mode is one of these, so the player always sees their
+             * current pick. Otherwise it stays closed and out of the way.
              */}
-            <div className="chrome-menu__section">
-              <span className="chrome-menu__section-label" id="other-modes-label">
-                Other modes
-              </span>
-              <div
-                className="mode-selector mode-selector--secondary"
-                role="tablist"
-                aria-labelledby="other-modes-label"
-              >
-                {secondaryModes.map((m) => (
+            {(() => {
+              const expanded = experimentalOpen || experimentalActive;
+              return (
+                <div className="chrome-menu__section">
                   <button
-                    key={m.id}
-                    role="tab"
-                    aria-selected={m.id === state.mode}
-                    className={`mode-btn mode-btn--secondary${m.id === state.mode ? ' mode-btn--active' : ''}`}
-                    onClick={() => {
-                      if (m.id !== state.mode) {
-                        clearShareHash();
-                        dispatch({ type: 'SET_MODE', mode: m.id });
-                      }
-                    }}
+                    type="button"
+                    className="chrome-menu__experimental-toggle"
+                    aria-expanded={expanded}
+                    aria-controls="experimental-modes"
+                    onClick={() => setExperimentalOpen((v) => !v)}
                   >
-                    {m.label}
+                    <span className="chrome-menu__experimental-caret" aria-hidden>
+                      {expanded ? '▾' : '▸'}
+                    </span>
+                    Experimental modes
                   </button>
-                ))}
-              </div>
-            </div>
+                  {expanded && (
+                    <div
+                      id="experimental-modes"
+                      className="mode-selector mode-selector--secondary"
+                      role="tablist"
+                      aria-label="Experimental modes"
+                    >
+                      {experimentalModes.map((m) => (
+                        <button
+                          key={m.id}
+                          role="tab"
+                          aria-selected={m.id === state.mode}
+                          className={`mode-btn mode-btn--secondary${m.id === state.mode ? ' mode-btn--active' : ''}`}
+                          onClick={() => {
+                            if (m.id !== state.mode) {
+                              clearShareHash();
+                              dispatch({ type: 'SET_MODE', mode: m.id });
+                            }
+                          }}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {/*
              * "Custom puzzle…" is deliberately low-key: a small, muted text
              * link tucked under the difficulty row so it doesn't compete

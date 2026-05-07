@@ -546,11 +546,11 @@ function loadMode(): GameMode {
       return stored;
     }
   } catch { /* noop */ }
-  // First-time players land in Puzzle mode; combined with loadPuzzleDifficulty's
-  // default of 'tutorial', this drops new visitors straight into the guided
-  // intro instead of leaving them to figure Classic out on their own. Anyone
-  // who has played before has MODE_KEY saved and is unaffected.
-  return 'puzzle';
+  // First-time players land in Classic mode — Classic and Puzzle are the
+  // game's two headline modes, and Classic is the simpler, drop-and-clear
+  // entry point most players already know from similar block games.
+  // Anyone who has played before has MODE_KEY saved and is unaffected.
+  return 'classic';
 }
 
 function saveMode(mode: GameMode) {
