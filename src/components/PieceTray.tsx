@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import type { PieceShape } from '../game/types';
 import { DRAG_POINTER_OFFSET_X, DRAG_POINTER_OFFSET_Y } from '../dragConstants';
+import { headingForPiece, headingGlyph } from '../game/headingPuzzleGenerator';
 
 type PieceTrayProps = {
   onTrayPointerDown: (index: number, e: React.PointerEvent) => void;
@@ -87,6 +88,7 @@ function TraySlot({
   dragging,
   active,
   locked,
+  headingBadge,
   onPointerDown,
 }: {
   piece: PieceShape | null;
@@ -95,6 +97,14 @@ function TraySlot({
   dragging: boolean;
   active: boolean;
   locked: boolean;
+  /**
+   * Heading-mode per-slot glyph badge (↑→↓← or • for FULL). Rendered as a
+   * small absolutely-positioned label in the slot's top-left corner so the
+   * player can see at a glance which half a placement will half-clear.
+   * Undefined outside Heading mode and on empty slots — both render the
+   * slot exactly as before.
+   */
+  headingBadge?: string;
   onPointerDown: (index: number, e: React.PointerEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -126,9 +136,14 @@ function TraySlot({
       ref={ref}
       className={`piece-slot${dense ? ' piece-slot--dense' : ''}${!piece ? ' piece-slot--empty' : ''}${dragging ? ' piece-slot--dragging' : ''}${active ? ' piece-slot--active' : ''}${locked ? ' piece-slot--locked' : ''}`}
       onPointerDown={(e) => piece && !locked && onPointerDown(index, e)}
-      style={{ touchAction: 'none' }}
+      style={{ touchAction: 'none', position: 'relative' }}
     >
       {piece && !dragging && <PieceMiniGrid piece={piece} slotInnerPx={innerPx} />}
+      {headingBadge && piece && (
+        <span className="piece-slot__heading-badge" aria-label={`heading ${headingBadge}`}>
+          {headingBadge}
+        </span>
+      )}
     </div>
   );
 }
@@ -166,6 +181,13 @@ export function PieceTray({ onTrayPointerDown, draggingIndex, activeIndex }: Pie
         // non-active slot does nothing visible at all.
         const isActive = activeIndex !== undefined && i === activeIndex;
         const isLocked = activeIndex !== undefined && i !== activeIndex;
+        // Heading mode: each slot gets a per-piece compass-arrow badge (or
+        // "•" for symmetric/FULL pieces) so the player can see which half
+        // their placement will half-clear without reading the status text.
+        const headingBadge =
+          state.mode === 'heading' && piece
+            ? headingGlyph(headingForPiece(piece))
+            : undefined;
         return (
           <TraySlot
             key={i}
@@ -175,6 +197,7 @@ export function PieceTray({ onTrayPointerDown, draggingIndex, activeIndex }: Pie
             dragging={draggingIndex === i}
             active={isActive}
             locked={isLocked}
+            headingBadge={headingBadge}
             onPointerDown={onTrayPointerDown}
           />
         );

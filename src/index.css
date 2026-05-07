@@ -1820,6 +1820,27 @@ body {
   }
 }
 
+/*
+ * Heading-mode per-slot compass-arrow badge (↑→↓← or • for FULL/symmetric
+ * pieces). Pinned to the top-left corner of the slot so it never covers
+ * the mini-piece thumbnail and reads as a label rather than a sticker.
+ * `pointer-events: none` so the badge never blocks the slot's own
+ * pointerdown — the player can still tap-rotate / start a drag from
+ * anywhere in the slot, including under the badge.
+ */
+.piece-slot__heading-badge {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.95rem;
+  line-height: 1;
+  font-weight: 600;
+  color: rgba(255, 234, 167, 0.92);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  user-select: none;
+}
+
 .mini-grid {
   display: grid;
   gap: 2px;
