@@ -83,7 +83,30 @@ Slate diversity check: 1 resource (Erasures), 1 topology/temporal (Decay),
 1 spreading antagonist (Fuse), 2 coupling (Heading, Tether). Lost
 all of: deduction, negative-space, inversion, spatial-topology.
 
-## Stage 4 — generator feasibility (in progress)
+## Stage 4 — generator feasibility (complete)
+
+All 5 surviving candidates ruled FEASIBLE by 1 generator-design agent.
+See `stage4-feasibility.md` for per-candidate hidden state, validity
+checks, difficulty knobs, complexity, failure modes & mitigations.
+
+Most dangerous failure mode flagged per candidate (with mitigation):
+- **C11 Erasures**: tokens become decoration → `minMandatoryErases ≥ 1` filter.
+- **C14 Decay**: empty-board first 3 moves act like Classic → seed pre-fill at non-zero age.
+- **C39 Heading**: traces all happen to be full-half → `minHalfClears` quality filter.
+- **C47 Fuse**: backwards-construction yields ONE valid order, fragile → countdown slack.
+- **C62 Tether**: tether-window collapses mid-run → `minTetherOptions ≥ 2` at refill, free-piece fallback.
+
+## Stage 5 — implementation slate (complete)
+
+5-candidate slate locked at the spec floor. See `stage5-slate.md` for
+per-candidate rationale and the diversity audit.
+
+**Slate**: C11 Erasures, C14 Decay, C39 Heading, C47 Fuse, C62 Tether.
+
+Implementation order (simplest first): C39 → C14 → C47 → C11 → C62.
+
+## Stage 6 — full implementation (in progress)
+
 
 
 
