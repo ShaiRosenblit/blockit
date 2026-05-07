@@ -1,4 +1,4 @@
-import type { BoardCell, BoardGrid, CascadeStep, Coord, PieceShape, TargetPattern } from './types';
+import type { BoardCell, BoardGrid, CascadeStep, Coord, Heading, PieceShape, TargetPattern } from './types';
 import { BOARD_SIZE } from './types';
 
 export function createEmptyBoard(): BoardGrid {
@@ -113,6 +113,68 @@ export function clearLines(
       newBoard[r][c] = null;
     }
   }
+  return newBoard;
+}
+
+/**
+ * Heading-mode line clear. Like `clearLines`, but the placement's
+ * `heading` controls which half (if any) of each completed row/column is
+ * actually erased — the rest stays filled, even though the line was
+ * "complete" by the standard predicate.
+ *
+ * Axis pairing:
+ *   - LEFT / RIGHT are horizontal headings. They split row clears into
+ *     left half (cols 0..3) vs right half (cols 4..7); column clears are
+ *     unaffected and erase the FULL column.
+ *   - UP / DOWN are vertical headings. They split column clears into
+ *     top half (rows 0..3) vs bottom half (rows 4..7); row clears are
+ *     unaffected and erase the FULL row.
+ *   - FULL is the symmetric-piece sentinel (squares, monomino, plus):
+ *     both row and column clears erase the entire line, exactly like
+ *     Classic.
+ *
+ * This pairing matches the spec: a placement's heading axis only bites
+ * the line axis perpendicular to it, so a single placement can drive at
+ * most one half-clear per axis, never both halves of the same line.
+ */
+export function clearLinesHeadingHalf(
+  board: BoardGrid,
+  rows: number[],
+  cols: number[],
+  heading: Heading
+): BoardGrid {
+  const newBoard = board.map((row) => [...row]);
+
+  // Row clears. Horizontal headings restrict to one half of the row;
+  // vertical headings (UP/DOWN) and FULL clear the row entirely.
+  let rowStart = 0;
+  let rowEnd = BOARD_SIZE; // exclusive
+  if (heading === 'left') {
+    rowEnd = BOARD_SIZE / 2;
+  } else if (heading === 'right') {
+    rowStart = BOARD_SIZE / 2;
+  }
+  for (const r of rows) {
+    for (let c = rowStart; c < rowEnd; c++) {
+      newBoard[r][c] = null;
+    }
+  }
+
+  // Column clears. Vertical headings restrict to one half of the column;
+  // horizontal headings (LEFT/RIGHT) and FULL clear the column entirely.
+  let colStart = 0;
+  let colEnd = BOARD_SIZE; // exclusive
+  if (heading === 'up') {
+    colEnd = BOARD_SIZE / 2;
+  } else if (heading === 'down') {
+    colStart = BOARD_SIZE / 2;
+  }
+  for (const c of cols) {
+    for (let r = colStart; r < colEnd; r++) {
+      newBoard[r][c] = null;
+    }
+  }
+
   return newBoard;
 }
 

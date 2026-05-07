@@ -8,6 +8,7 @@ import type {
   DropDifficulty,
   GameMode,
   GravityDifficulty,
+  HeadingDifficulty,
   MirrorDifficulty,
   MonolithDifficulty,
   PieceShape,
@@ -25,6 +26,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   MONOLITH_DIFFICULTIES,
   PIPELINE_DIFFICULTIES,
@@ -41,6 +43,7 @@ import {
   placePieceMirrored,
   detectCompletedLines,
   clearLines,
+  clearLinesHeadingHalf,
   clearLinesPreservingWalls,
   detectClearableLinesQuarantine,
   hasValidMoves,
@@ -65,6 +68,7 @@ import { generateMirrorPuzzle } from './mirrorPuzzleGenerator';
 import { generateBreathePuzzle } from './breathePuzzleGenerator';
 import { generateMonolithPuzzle } from './monolithGenerator';
 import { generateQuarantinePuzzle } from './quarantineGenerator';
+import { generateHeadingPuzzle, headingForPiece } from './headingPuzzleGenerator';
 import {
   applyScars,
   clearLinesPreservingScars,
@@ -123,6 +127,8 @@ export type GameState = {
   monolithDifficulty: MonolithDifficulty;
   /** Remembered Quarantine-mode difficulty. */
   quarantineDifficulty: QuarantineDifficulty;
+  /** Remembered Heading-mode difficulty. */
+  headingDifficulty: HeadingDifficulty;
   /**
    * Quarantine mode region cell-list (one entry per region; each entry is
    * the list of `(row, col)` coords belonging to that region). Null
@@ -251,6 +257,7 @@ export type GameAction =
   | { type: 'SET_SCAR_DIFFICULTY'; difficulty: ScarDifficulty }
   | { type: 'SET_MONOLITH_DIFFICULTY'; difficulty: MonolithDifficulty }
   | { type: 'SET_QUARANTINE_DIFFICULTY'; difficulty: QuarantineDifficulty }
+  | { type: 'SET_HEADING_DIFFICULTY'; difficulty: HeadingDifficulty }
   /** Discard the active mirror puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MIRROR_PUZZLE' }
   /** Discard the active breathe puzzle and generate a fresh one at the current difficulty. */
@@ -258,6 +265,8 @@ export type GameAction =
   /** Discard the active monolith puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_MONOLITH_PUZZLE' }
   | { type: 'NEW_QUARANTINE_PUZZLE' }
+  /** Discard the active heading puzzle and generate a fresh one at the current difficulty. */
+  | { type: 'NEW_HEADING_PUZZLE' }
   /** Discard the active puzzle and generate a fresh one at the current difficulty. */
   | { type: 'NEW_PUZZLE' }
   /**
@@ -296,6 +305,8 @@ const PIPELINE_DIFFICULTY_KEY = 'blockit-pipeline-difficulty';
 const SCAR_DIFFICULTY_KEY = 'blockit-scar-difficulty';
 const MONOLITH_DIFFICULTY_KEY = 'blockit-monolith-difficulty';
 const QUARANTINE_DIFFICULTY_KEY = 'blockit-quarantine-difficulty';
+const HEADING_DIFFICULTY_KEY = 'blockit-heading-difficulty';
+const HEADING_PUZZLE_KEY_PREFIX = 'blockit-puzzle-heading-';
 const TUTORIAL_STEP_KEY = 'blockit-tutorial-step';
 const PUZZLE_FIRST_SOLVED_KEY_PREFIX = 'blockit-puzzle-first-solved-';
 
@@ -322,6 +333,7 @@ function bestScoreKey(
     | ScarDifficulty
     | MonolithDifficulty
     | QuarantineDifficulty
+    | HeadingDifficulty
 ): string {
   return `blockit-best-${mode}-${difficulty}`;
 }
@@ -344,6 +356,7 @@ function loadBestScore(
     | ScarDifficulty
     | MonolithDifficulty
     | QuarantineDifficulty
+    | HeadingDifficulty
 ): number {
   try {
     return Number(localStorage.getItem(bestScoreKey(mode, difficulty))) || 0;
@@ -365,7 +378,8 @@ function saveBestScore(
     | PipelineDifficulty
     | ScarDifficulty
     | MonolithDifficulty
-    | QuarantineDifficulty,
+    | QuarantineDifficulty
+    | HeadingDifficulty,
   score: number
 ) {
   try {
@@ -576,7 +590,8 @@ function loadMode(): GameMode {
       stored === 'pipeline' ||
       stored === 'scar' ||
       stored === 'monolith' ||
-      stored === 'quarantine'
+      stored === 'quarantine' ||
+      stored === 'heading'
     ) {
       return stored;
     }
@@ -790,6 +805,76 @@ function saveQuarantineDifficulty(difficulty: QuarantineDifficulty) {
   } catch { /* noop */ }
 }
 
+function loadHeadingDifficulty(): HeadingDifficulty {
+  try {
+    const stored = localStorage.getItem(HEADING_DIFFICULTY_KEY);
+    if (stored === 'easy' || stored === 'normal' || stored === 'hard') {
+      return stored;
+    }
+  } catch { /* noop */ }
+  return 'easy';
+}
+
+function saveHeadingDifficulty(difficulty: HeadingDifficulty) {
+  try {
+    localStorage.setItem(HEADING_DIFFICULTY_KEY, difficulty);
+  } catch { /* noop */ }
+}
+
+/**
+ * Shape of a stored Heading puzzle. Same skeleton as Breathe / Mirror —
+ * starting board (always empty for Heading), tray (carries per-piece
+ * `heading` rotation indices), and target. Persisted so a refresh
+ * restores the same challenge and Restart returns to this exact start.
+ */
+type StoredHeadingPuzzle = {
+  difficulty: HeadingDifficulty;
+  board: BoardGrid;
+  tray: PieceShape[];
+  target: TargetPattern;
+};
+
+function headingPuzzleStorageKey(difficulty: HeadingDifficulty): string {
+  return `${HEADING_PUZZLE_KEY_PREFIX}${difficulty}`;
+}
+
+function isValidStoredHeadingPuzzle(
+  p: unknown,
+  expected: HeadingDifficulty
+): p is StoredHeadingPuzzle {
+  if (!p || typeof p !== 'object') return false;
+  const r = p as Partial<StoredHeadingPuzzle>;
+  if (r.difficulty !== expected) return false;
+  if (!Array.isArray(r.board) || r.board.length !== BOARD_SIZE) return false;
+  for (const row of r.board) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  if (!Array.isArray(r.tray) || r.tray.length === 0) return false;
+  if (!Array.isArray(r.target) || r.target.length !== BOARD_SIZE) return false;
+  for (const row of r.target) {
+    if (!Array.isArray(row) || row.length !== BOARD_SIZE) return false;
+  }
+  return true;
+}
+
+function loadHeadingPuzzle(expected: HeadingDifficulty): StoredHeadingPuzzle | null {
+  try {
+    const raw = localStorage.getItem(headingPuzzleStorageKey(expected));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidStoredHeadingPuzzle(parsed, expected)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveHeadingPuzzle(p: StoredHeadingPuzzle) {
+  try {
+    localStorage.setItem(headingPuzzleStorageKey(p.difficulty), JSON.stringify(p));
+  } catch { /* noop */ }
+}
+
 /**
  * Fresh seed for a Scar run's RNG. XOR with a random 32-bit chunk on top
  * of `Date.now()` so two Scar runs started in the same millisecond still
@@ -875,6 +960,7 @@ function freshPuzzleState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved,
@@ -910,6 +996,7 @@ function freshPuzzleState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -944,6 +1031,7 @@ function freshTutorialState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   puzzleEverSolved: PuzzleEverSolved
 ): GameState {
   const safeStep = clampTutorialStep(step);
@@ -969,6 +1057,7 @@ function freshTutorialState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1003,6 +1092,7 @@ function freshPuzzleStateFromShared(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1028,6 +1118,7 @@ function freshPuzzleStateFromShared(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1056,6 +1147,7 @@ function freshClassicState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1082,6 +1174,7 @@ function freshClassicState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1115,6 +1208,7 @@ function freshChromaState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1141,6 +1235,7 @@ function freshChromaState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1175,6 +1270,7 @@ function freshGravityState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1201,6 +1297,7 @@ function freshGravityState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1235,6 +1332,7 @@ function freshDropState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1261,6 +1359,7 @@ function freshDropState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1301,6 +1400,7 @@ function freshMirrorState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1327,6 +1427,7 @@ function freshMirrorState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1367,6 +1468,7 @@ function freshBreatheState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1393,6 +1495,7 @@ function freshBreatheState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1432,6 +1535,7 @@ function freshPipelineState(
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1458,6 +1562,7 @@ function freshPipelineState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1494,6 +1599,7 @@ function freshScarState(
   pipelineDifficulty: PipelineDifficulty,
   monolithDifficulty: MonolithDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1520,6 +1626,7 @@ function freshScarState(
     scarRngSeed: freshScarRngSeed(),
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1560,6 +1667,7 @@ function freshMonolithState(
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
   quarantineDifficulty: QuarantineDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1586,6 +1694,7 @@ function freshMonolithState(
     scarRngSeed: 0,
     monolithDifficulty: difficulty,
     quarantineDifficulty,
+    headingDifficulty,
     quarantineRegions: null,
     quarantineTargets: null,
     quarantineInitialRegions: null,
@@ -1623,6 +1732,7 @@ function freshQuarantineState(
   pipelineDifficulty: PipelineDifficulty,
   scarDifficulty: ScarDifficulty,
   monolithDifficulty: MonolithDifficulty,
+  headingDifficulty: HeadingDifficulty,
   bestScore: number,
   tutorialStep: number,
   puzzleEverSolved: PuzzleEverSolved
@@ -1649,6 +1759,7 @@ function freshQuarantineState(
     scarRngSeed: 0,
     monolithDifficulty,
     quarantineDifficulty: difficulty,
+    headingDifficulty,
     quarantineRegions: regions.map((r) => r.map((c) => ({ ...c }))),
     quarantineTargets: [...targets],
     quarantineInitialRegions: regions.map((r) => r.map((c) => ({ ...c }))),
@@ -1657,6 +1768,84 @@ function freshQuarantineState(
     puzzleTarget: null,
     puzzleInitialBoard: cloneBoard(board),
     puzzleInitialTray: cloneTray(tray),
+    tutorialStep,
+    puzzleLevelUp: null,
+    puzzleEverSolved,
+    lastCascade: null,
+    puzzleUndoStack: [],
+  };
+}
+
+/**
+ * Build a fresh Heading state. Reuses the puzzle-mode goal/undo/restart
+ * scaffolding (`puzzleTarget`, `puzzleInitialBoard`, `puzzleInitialTray`,
+ * `puzzleResult`, `puzzleUndoStack`) since Heading is a puzzle-style mode
+ * with a target pattern and a finite tray. The placement pipeline keys
+ * off `mode === 'heading'` to apply the heading-aware half-clear rule
+ * (clears only erase the half of the row/column the placement's heading
+ * points toward; FULL-heading pieces revert to Classic full-line clears).
+ *
+ * Unlike Mirror/Breathe, Heading puzzles ARE persisted to localStorage —
+ * the per-piece rotation/heading state means a refresh-and-resume needs
+ * the original tray (and target) to keep the same instance, and the
+ * `forceNew` knob lets NEW_HEADING_PUZZLE / SET_HEADING_DIFFICULTY blow
+ * the cache when the player explicitly asks for a fresh challenge.
+ */
+function freshHeadingState(
+  difficulty: HeadingDifficulty,
+  classicDifficulty: ClassicDifficulty,
+  puzzleDifficulty: PuzzleDifficulty,
+  chromaDifficulty: ChromaDifficulty,
+  gravityDifficulty: GravityDifficulty,
+  dropDifficulty: DropDifficulty,
+  mirrorDifficulty: MirrorDifficulty,
+  breatheDifficulty: BreatheDifficulty,
+  pipelineDifficulty: PipelineDifficulty,
+  scarDifficulty: ScarDifficulty,
+  monolithDifficulty: MonolithDifficulty,
+  quarantineDifficulty: QuarantineDifficulty,
+  bestScore: number,
+  tutorialStep: number,
+  puzzleEverSolved: PuzzleEverSolved,
+  options: { forceNew?: boolean } = {}
+): GameState {
+  let stored = options.forceNew ? null : loadHeadingPuzzle(difficulty);
+  if (!stored) {
+    const { board, tray, target } = generateHeadingPuzzle({ difficulty });
+    stored = { difficulty, board, tray, target };
+    saveHeadingPuzzle(stored);
+  }
+
+  return {
+    board: cloneBoard(stored.board),
+    tray: cloneTray(stored.tray),
+    score: 0,
+    bestScore,
+    combo: 0,
+    isGameOver: false,
+    mode: 'heading',
+    classicDifficulty,
+    puzzleDifficulty,
+    chromaDifficulty,
+    gravityDifficulty,
+    dropDifficulty,
+    mirrorDifficulty,
+    breatheDifficulty,
+    pipelineDifficulty,
+    pipelinePhase: 0,
+    scarDifficulty,
+    scarRngSeed: 0,
+    monolithDifficulty,
+    quarantineDifficulty,
+    headingDifficulty: difficulty,
+    quarantineRegions: null,
+    quarantineTargets: null,
+    quarantineInitialRegions: null,
+    quarantineInitialTargets: null,
+    puzzleResult: null,
+    puzzleTarget: cloneTarget(stored.target),
+    puzzleInitialBoard: cloneBoard(stored.board),
+    puzzleInitialTray: cloneTray(stored.tray),
     tutorialStep,
     puzzleLevelUp: null,
     puzzleEverSolved,
@@ -1678,6 +1867,7 @@ export function createInitialState(): GameState {
   const scarDifficulty = loadScarDifficulty();
   const monolithDifficulty = loadMonolithDifficulty();
   const quarantineDifficulty = loadQuarantineDifficulty();
+  const headingDifficulty = loadHeadingDifficulty();
   const tutorialStep = loadTutorialStep();
   // Load the "ever solved" set exactly once at init — from here on the
   // reducer only reads/writes `state.puzzleEverSolved`. Keeping
@@ -1706,6 +1896,7 @@ export function createInitialState(): GameState {
         scarDifficulty,
         monolithDifficulty,
         quarantineDifficulty,
+        headingDifficulty,
         loadBestScore('puzzle', decoded.difficulty),
         tutorialStep,
         puzzleEverSolved
@@ -1731,6 +1922,7 @@ export function createInitialState(): GameState {
         scarDifficulty,
         monolithDifficulty,
         quarantineDifficulty,
+        headingDifficulty,
         puzzleEverSolved
       );
     }
@@ -1746,6 +1938,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('puzzle', puzzleDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1765,6 +1958,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('chroma', chromaDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1784,6 +1978,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('gravity', gravityDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1803,6 +1998,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('drop', dropDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1822,6 +2018,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('mirror', mirrorDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1841,6 +2038,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('breathe', breatheDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1860,6 +2058,7 @@ export function createInitialState(): GameState {
       scarDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('pipeline', pipelineDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1879,6 +2078,7 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       monolithDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('scar', scarDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1898,6 +2098,7 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       scarDifficulty,
       quarantineDifficulty,
+      headingDifficulty,
       loadBestScore('monolith', monolithDifficulty),
       tutorialStep,
       puzzleEverSolved
@@ -1917,7 +2118,28 @@ export function createInitialState(): GameState {
       pipelineDifficulty,
       scarDifficulty,
       monolithDifficulty,
+      headingDifficulty,
       loadBestScore('quarantine', quarantineDifficulty),
+      tutorialStep,
+      puzzleEverSolved
+    );
+  }
+
+  if (mode === 'heading') {
+    return freshHeadingState(
+      headingDifficulty,
+      classicDifficulty,
+      puzzleDifficulty,
+      chromaDifficulty,
+      gravityDifficulty,
+      dropDifficulty,
+      mirrorDifficulty,
+      breatheDifficulty,
+      pipelineDifficulty,
+      scarDifficulty,
+      monolithDifficulty,
+      quarantineDifficulty,
+      loadBestScore('heading', headingDifficulty),
       tutorialStep,
       puzzleEverSolved
     );
@@ -1935,6 +2157,7 @@ export function createInitialState(): GameState {
     scarDifficulty,
     monolithDifficulty,
     quarantineDifficulty,
+    headingDifficulty,
     loadBestScore('classic', classicDifficulty),
     tutorialStep,
     puzzleEverSolved
@@ -1957,7 +2180,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const piece = state.tray[trayIndex];
       if (!piece) return state;
       const newTray = [...state.tray];
-      newTray[trayIndex] = rotatePiece90Clockwise(piece);
+      const rotated = rotatePiece90Clockwise(piece);
+      // Heading mode: advance the piece's rotation index modulo 4 alongside
+      // the visual rotation. The clear pipeline reads this `heading` field
+      // (via `headingForPiece`) at placement time to decide which half of
+      // the row/column to actually erase. Other modes ignore the field and
+      // never read it.
+      if (state.mode === 'heading') {
+        const prev = piece.heading ?? 0;
+        rotated.heading = ((prev + 1) % 4) as 0 | 1 | 2 | 3;
+      }
+      newTray[trayIndex] = rotated;
       const enforceColorAdjacency = state.mode === 'chroma';
       const isGameOver =
         state.mode === 'mirror'
@@ -1972,7 +2205,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mode === 'mirror' ||
           state.mode === 'breathe' ||
           state.mode === 'monolith' ||
-          state.mode === 'quarantine') &&
+          state.mode === 'quarantine' ||
+          state.mode === 'heading') &&
         isGameOver
           ? 'failed'
           : state.puzzleResult;
@@ -2239,6 +2473,82 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           puzzleLevelUp: null,
           lastCascade: null,
           puzzleUndoStack: qUndoStack,
+        };
+      }
+
+      // Heading mode: structurally a puzzle (target pattern, finite tray,
+      // undo-able placements). The twist is that line clears use
+      // `clearLinesHeadingHalf`, which only erases the half of the row /
+      // column the placed piece's heading points toward; pieces with the
+      // FULL heading sentinel revert to Classic full-line clears. Win
+      // check on tray-empty: `boardMatchesTarget`.
+      if (state.mode === 'heading') {
+        if (!canPlacePiece(state.board, piece, action.origin)) return state;
+
+        const hUndoStack: PuzzleUndoSnapshot[] = [
+          ...state.puzzleUndoStack,
+          { board: state.board, tray: state.tray, score: state.score, combo: state.combo },
+        ];
+
+        let hboard = placePiece(state.board, piece, action.origin);
+        let hscore = state.score + calculatePlacementScore(piece);
+        let hcombo = state.combo;
+        const { rows: hrows, cols: hcols } = detectCompletedLines(hboard);
+        const hlinesCleared = hrows.length + hcols.length;
+        if (hlinesCleared > 0) {
+          const heading = headingForPiece(piece);
+          hboard = clearLinesHeadingHalf(hboard, hrows, hcols, heading);
+          hscore += calculateClearScore(hlinesCleared, hcombo);
+          hcombo += 1;
+        } else {
+          hcombo = 0;
+        }
+
+        const hNewTray = [...state.tray];
+        hNewTray[action.trayIndex] = null;
+        const hAllPlaced = hNewTray.every((s) => s === null);
+        const hTarget = state.puzzleTarget;
+        const hDifficulty = state.headingDifficulty;
+
+        if (hAllPlaced) {
+          const solved = hTarget !== null && boardMatchesTarget(hboard, hTarget);
+          if (solved) hscore += PUZZLE_SOLVE_BONUS;
+          const bestScore = Math.max(hscore, state.bestScore);
+          if (bestScore > state.bestScore) {
+            saveBestScore('heading', hDifficulty, bestScore);
+          }
+          return {
+            ...state,
+            board: hboard,
+            tray: hNewTray,
+            score: hscore,
+            bestScore,
+            combo: solved ? hcombo : 0,
+            isGameOver: true,
+            puzzleResult: solved ? 'solved' : 'failed',
+            puzzleLevelUp: null,
+            lastCascade: null,
+            puzzleUndoStack: hUndoStack,
+          };
+        }
+
+        const isGameOver = !hasValidMoves(hboard, hNewTray);
+        const bestScore = Math.max(hscore, state.bestScore);
+        if (bestScore > state.bestScore) {
+          saveBestScore('heading', hDifficulty, bestScore);
+        }
+        return {
+          ...state,
+          board: hboard,
+          tray: hNewTray,
+          score: hscore,
+          bestScore,
+          combo: hcombo,
+          isGameOver,
+          puzzleResult: isGameOver ? 'failed' : null,
+          puzzleLevelUp: null,
+          lastCascade: null,
+          puzzleUndoStack: hUndoStack,
         };
       }
 
@@ -2719,7 +3029,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             state.pipelineDifficulty,
             state.scarDifficulty,
             state.monolithDifficulty,
-        state.quarantineDifficulty,
+            state.quarantineDifficulty,
+            state.headingDifficulty,
             state.puzzleEverSolved
           );
         }
@@ -2734,7 +3045,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('puzzle', state.puzzleDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2752,7 +3064,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('chroma', state.chromaDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2770,7 +3083,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('gravity', state.gravityDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2788,7 +3102,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('drop', state.dropDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2806,7 +3121,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('mirror', state.mirrorDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2824,7 +3140,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('breathe', state.breatheDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2842,7 +3159,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('pipeline', state.pipelineDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2860,7 +3178,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.breatheDifficulty,
           state.pipelineDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('scar', state.scarDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2879,6 +3198,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('monolith', state.monolithDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
@@ -2897,7 +3217,27 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
+          state.headingDifficulty,
           loadBestScore('quarantine', state.quarantineDifficulty),
+          state.tutorialStep,
+          state.puzzleEverSolved
+        );
+      }
+      if (action.mode === 'heading') {
+        return freshHeadingState(
+          state.headingDifficulty,
+          state.classicDifficulty,
+          state.puzzleDifficulty,
+          state.chromaDifficulty,
+          state.gravityDifficulty,
+          state.dropDifficulty,
+          state.mirrorDifficulty,
+          state.breatheDifficulty,
+          state.pipelineDifficulty,
+          state.scarDifficulty,
+          state.monolithDifficulty,
+          state.quarantineDifficulty,
+          loadBestScore('heading', state.headingDifficulty),
           state.tutorialStep,
           state.puzzleEverSolved
         );
@@ -2914,6 +3254,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('classic', state.classicDifficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2936,6 +3277,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('classic', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -2959,7 +3301,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           state.puzzleEverSolved
         );
       }
@@ -2980,6 +3323,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('puzzle', target),
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3003,6 +3347,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('gravity', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3025,6 +3370,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('drop', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3047,6 +3393,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('mirror', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3069,6 +3416,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('breathe', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3091,6 +3439,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('pipeline', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3113,6 +3462,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('scar', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3135,6 +3485,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('monolith', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3157,9 +3508,34 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.monolithDifficulty,
+        state.headingDifficulty,
         loadBestScore('quarantine', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
+      );
+    }
+
+    case 'SET_HEADING_DIFFICULTY': {
+      if (!HEADING_DIFFICULTIES.includes(action.difficulty)) return state;
+      saveHeadingDifficulty(action.difficulty);
+      saveMode('heading');
+      return freshHeadingState(
+        action.difficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        loadBestScore('heading', action.difficulty),
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
       );
     }
 
@@ -3180,6 +3556,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved,
@@ -3201,6 +3578,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3221,6 +3599,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3241,6 +3620,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3261,9 +3641,32 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.pipelineDifficulty,
         state.scarDifficulty,
         state.monolithDifficulty,
+        state.headingDifficulty,
         state.bestScore,
         state.tutorialStep,
         state.puzzleEverSolved
+      );
+    }
+
+    case 'NEW_HEADING_PUZZLE': {
+      if (state.mode !== 'heading') return state;
+      return freshHeadingState(
+        state.headingDifficulty,
+        state.classicDifficulty,
+        state.puzzleDifficulty,
+        state.chromaDifficulty,
+        state.gravityDifficulty,
+        state.dropDifficulty,
+        state.mirrorDifficulty,
+        state.breatheDifficulty,
+        state.pipelineDifficulty,
+        state.scarDifficulty,
+        state.monolithDifficulty,
+        state.quarantineDifficulty,
+        state.bestScore,
+        state.tutorialStep,
+        state.puzzleEverSolved,
+        { forceNew: true }
       );
     }
 
@@ -3288,6 +3691,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         loadBestScore('puzzle', action.difficulty),
         state.tutorialStep,
         state.puzzleEverSolved
@@ -3313,7 +3717,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.pipelineDifficulty,
           state.scarDifficulty,
           state.monolithDifficulty,
-        state.quarantineDifficulty,
+          state.quarantineDifficulty,
+          state.headingDifficulty,
           loadBestScore('puzzle', 1),
           TUTORIAL_STEP_COUNT - 1,
           state.puzzleEverSolved,
@@ -3333,6 +3738,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -3354,6 +3760,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.scarDifficulty,
         state.monolithDifficulty,
         state.quarantineDifficulty,
+        state.headingDifficulty,
         state.puzzleEverSolved
       );
     }
@@ -3363,7 +3770,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         state.mode !== 'puzzle' &&
         state.mode !== 'mirror' &&
         state.mode !== 'breathe' &&
-        state.mode !== 'monolith'
+        state.mode !== 'monolith' &&
+        state.mode !== 'quarantine' &&
+        state.mode !== 'heading'
       )
         return state;
       const stack = state.puzzleUndoStack;
@@ -3398,7 +3807,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           state.mode === 'mirror' ||
           state.mode === 'breathe' ||
           state.mode === 'monolith' ||
-          state.mode === 'quarantine') &&
+          state.mode === 'quarantine' ||
+          state.mode === 'heading') &&
         state.puzzleInitialBoard &&
         state.puzzleInitialTray
       ) {

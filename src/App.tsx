@@ -23,6 +23,7 @@ import {
   CLASSIC_DIFFICULTIES,
   DROP_DIFFICULTIES,
   GRAVITY_DIFFICULTIES,
+  HEADING_DIFFICULTIES,
   MIRROR_DIFFICULTIES,
   MONOLITH_DIFFICULTIES,
   QUARANTINE_DIFFICULTIES,
@@ -47,12 +48,30 @@ import { PipelineIntro } from './components/PipelineIntro';
 import { ScarIntro } from './components/ScarIntro';
 import { MonolithIntro } from './components/MonolithIntro';
 import { QuarantineIntro } from './components/QuarantineIntro';
+import { HeadingIntro } from './components/HeadingIntro';
 import { CoachMark } from './components/CoachMark';
 import { CustomPuzzleModal } from './components/CustomPuzzleModal';
 import { useCoachMarks, type CoachSymbol } from './hooks/useCoachMarks';
-import type { PuzzleDifficulty } from './game/types';
+import type { PieceShape, PuzzleDifficulty, TraySlot } from './game/types';
+import { headingForPiece, headingGlyph } from './game/headingPuzzleGenerator';
 
 const DRAG_THRESHOLD_PX = 10;
+
+/**
+ * Build the inline status string for the Heading tray hint. Lists each
+ * remaining tray slot's heading glyph (compass arrow or • for FULL) so
+ * the player can read all upcoming half-clear directions at a glance,
+ * rather than having to mentally project rotation count for each piece.
+ * Empty (already-placed) slots are skipped. Mirrors the role of
+ * Pipeline's active-slot indicator: a tiny diegetic readout that lives
+ * with the pieces.
+ */
+function headingHintForTray(tray: readonly TraySlot[]): string {
+  const glyphs = tray
+    .filter((slot): slot is PieceShape => slot !== null)
+    .map((piece) => headingGlyph(headingForPiece(piece)));
+  return glyphs.length === 0 ? 'tray empty' : `headings ${glyphs.join(' ')}`;
+}
 
 type ScorePopup = { id: number; value: number; x: number; y: number };
 
@@ -1085,8 +1104,10 @@ export default function App() {
     | 'pipeline'
     | 'scar'
     | 'monolith'
-    | 'quarantine';
+    | 'quarantine'
+    | 'heading';
   const experimentalModes: { id: ExperimentalModeId; label: string }[] = [
+    { id: 'heading', label: 'Heading' },
     { id: 'quarantine', label: 'Quarantine' },
     { id: 'monolith', label: 'Monolith' },
     { id: 'mirror', label: 'Mirror' },
@@ -1172,6 +1193,14 @@ export default function App() {
     if (state.mode === 'monolith') {
       const d = state.monolithDifficulty;
       return `Monolith · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'quarantine') {
+      const d = state.quarantineDifficulty;
+      return `Quarantine · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
+    }
+    if (state.mode === 'heading') {
+      const d = state.headingDifficulty;
+      return `Heading · ${d.charAt(0).toUpperCase() + d.slice(1)}`;
     }
     if (state.puzzleDifficulty === 'tutorial') return 'Tutorial';
     return `Puzzle · ${puzzleDifficultyLabel(state.puzzleDifficulty)}`;
@@ -1430,6 +1459,24 @@ export default function App() {
                       {d}
                     </button>
                   ))}
+                {state.mode === 'heading' &&
+                  HEADING_DIFFICULTIES.map((d) => (
+                    <button
+                      key={d}
+                      role="tab"
+                      aria-selected={d === state.headingDifficulty}
+                      className={`difficulty-btn${d === state.headingDifficulty ? ' difficulty-btn--active' : ''}`}
+                      onClick={() => {
+                        if (d !== state.headingDifficulty) {
+                          clearShareHash();
+                          dispatch({ type: 'SET_HEADING_DIFFICULTY', difficulty: d });
+                        }
+                        setMenuOpen(false);
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
                 {state.mode === 'puzzle' &&
                   PUZZLE_DIFFICULTIES.map((d) => {
                     const label = puzzleDifficultyLabel(d);
@@ -1610,6 +1657,19 @@ export default function App() {
               <span className="board-restart-btn__label">New puzzle</span>
             </button>
           )}
+          {state.mode === 'heading' && (
+            <button
+              className="board-restart-btn board-restart-btn--ghost"
+              aria-label="Generate a new heading puzzle"
+              title="Generate a new heading puzzle"
+              onClick={() => {
+                dispatch({ type: 'NEW_HEADING_PUZZLE' });
+              }}
+            >
+              <span aria-hidden>{'\u2728'}</span>
+              <span className="board-restart-btn__label">New puzzle</span>
+            </button>
+          )}
           {state.mode === 'puzzle' &&
             state.puzzleDifficulty !== 'tutorial' &&
             state.puzzleInitialBoard &&
@@ -1664,11 +1724,17 @@ export default function App() {
             <PuzzleLegend />
           </>
         )}
+        {state.mode === 'heading' && (
+          <>
+            <HeadingIntro />
+            <PuzzleLegend />
+          </>
+        )}
         {state.isGameOver ? (
           <GameOverOverlay onShare={handleShare} shareStatus={shareStatus} />
         ) : (
           <div className="piece-tray-wrap">
-            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine') && (
+            {(state.mode === 'puzzle' || state.mode === 'mirror' || state.mode === 'breathe' || state.mode === 'monolith' || state.mode === 'quarantine' || state.mode === 'heading') && (
               // Move-level action, so it lives with the pieces (not with the
               // round/meta buttons in .board-controls above the board). Icon
               // only + right-aligned keeps the tray visually uncluttered;
@@ -1712,6 +1778,8 @@ export default function App() {
                           ? 'Monolith · every piece must extend the seed and stay connected'
                           : state.mode === 'quarantine'
                             ? 'Quarantine · hit each region\'s exact empty-cell target'
+                            : state.mode === 'heading'
+                              ? `Heading · ${headingHintForTray(state.tray)} · clears erase only that half`
                             : state.mode === 'chroma'
                       ? "Chroma · pieces can't touch a different color"
                       : state.mode === 'gravity'

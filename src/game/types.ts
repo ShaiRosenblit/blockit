@@ -6,6 +6,16 @@ export type PieceShape = {
   width: number;
   height: number;
   color: string;
+  /**
+   * Heading-mode metadata. Tracks the rotation count modulo 4 from the
+   * piece's canonical orientation in `PIECE_CATALOG`: 0 = canonical,
+   * 1 = rotated 90° CW, 2 = 180°, 3 = 270° CW. Set on tray pieces by the
+   * Heading generator (and incremented by `ROTATE_TRAY_PIECE`); ignored
+   * by every other mode. Optional so non-Heading code never has to mention
+   * it. See `headingForPiece` in `headingPuzzleGenerator.ts` for how this
+   * maps onto the 4 cardinal-or-FULL Heading directions.
+   */
+  heading?: 0 | 1 | 2 | 3;
 };
 
 export type TraySlot = PieceShape | null;
@@ -30,7 +40,8 @@ export type GameMode =
   | 'pipeline'
   | 'scar'
   | 'monolith'
-  | 'quarantine';
+  | 'quarantine'
+  | 'heading';
 
 export type ClassicDifficulty = 'zen' | 'easy' | 'normal' | 'hard';
 
@@ -81,6 +92,26 @@ export type MonolithDifficulty = 'easy' | 'normal' | 'hard';
  * independent per-mode.
  */
 export type QuarantineDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Heading mode difficulty. Three rungs control tray length, piece-cell
+ * bands, target-cell bands, and the minimum number of half-clears that
+ * must appear in the generator's reference solution. Kept as its own
+ * literal union (not aliased to other three-rung modes) so future
+ * Heading-only tuning stays a typed breaking change and persistence keys
+ * stay independent per-mode.
+ */
+export type HeadingDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Heading-mode direction enum. UP / RIGHT / DOWN / LEFT correspond to
+ * rotation indices 0 / 1 / 2 / 3 from the piece's canonical orientation,
+ * mirroring the standard "north = up = 0, clockwise" compass. `FULL` is
+ * the sentinel used for pieces with no meaningful orientation (the
+ * monomino, the 2×2 and 3×3 squares, and the X-pentomino plus): for those
+ * pieces both row and column clears revert to Classic (full-line) semantics.
+ */
+export type Heading = 'up' | 'right' | 'down' | 'left' | 'full';
 
 /**
  * Gravity mode shares the classic difficulty rungs (same piece families, same
@@ -145,7 +176,8 @@ export type ModeSelection =
   | { mode: 'pipeline'; difficulty: PipelineDifficulty }
   | { mode: 'scar'; difficulty: ScarDifficulty }
   | { mode: 'monolith'; difficulty: MonolithDifficulty }
-  | { mode: 'quarantine'; difficulty: QuarantineDifficulty };
+  | { mode: 'quarantine'; difficulty: QuarantineDifficulty }
+  | { mode: 'heading'; difficulty: HeadingDifficulty };
 
 export const CLASSIC_DIFFICULTIES: readonly ClassicDifficulty[] = [
   'zen',
@@ -200,6 +232,12 @@ export const MONOLITH_DIFFICULTIES: readonly MonolithDifficulty[] = [
 ] as const;
 
 export const QUARANTINE_DIFFICULTIES: readonly QuarantineDifficulty[] = [
+  'easy',
+  'normal',
+  'hard',
+] as const;
+
+export const HEADING_DIFFICULTIES: readonly HeadingDifficulty[] = [
   'easy',
   'normal',
   'hard',
